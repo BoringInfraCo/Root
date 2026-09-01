@@ -747,6 +747,7 @@ pub struct MockNixAdapter {
     pub nixpkgs_accessible: bool,
     pub generation_counter: std::sync::atomic::AtomicU64,
     pub profile_list_json_override: std::sync::Mutex<Option<String>>,
+    pub profile_present: std::sync::atomic::AtomicBool,
 }
 
 impl MockNixAdapter {
@@ -759,6 +760,7 @@ impl MockNixAdapter {
             nixpkgs_accessible: true,
             generation_counter: std::sync::atomic::AtomicU64::new(1),
             profile_list_json_override: std::sync::Mutex::new(None),
+            profile_present: std::sync::atomic::AtomicBool::new(installed),
         }
     }
 
@@ -798,7 +800,8 @@ impl NixAdapter for MockNixAdapter {
     }
 
     fn profile_exists(&self) -> bool {
-        self.installed
+        self.profile_present
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     fn profile_path(&self) -> Result<PathBuf, NixError> {

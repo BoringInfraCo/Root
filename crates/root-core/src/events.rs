@@ -15,6 +15,8 @@ pub enum RootEventType {
     VerificationFailed,
     Rollback,
     Restore,
+    RestorePlanned,
+    RestoreRecovered,
     Execution,
     Policy,
     Sandbox,
@@ -23,6 +25,7 @@ pub enum RootEventType {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RootEventStatus {
     Started,
+    Planned,
     Completed,
     Failed,
     Verified,
@@ -54,6 +57,14 @@ pub struct RootEvent {
     pub policy_decision: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sandbox_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_phase: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub installed_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kept_count: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +170,10 @@ pub fn create_event(
         duration_ms: None,
         policy_decision: None,
         sandbox_id: None,
+        failure_phase: None,
+        installed_count: None,
+        removed_count: None,
+        kept_count: None,
     }
 }
 

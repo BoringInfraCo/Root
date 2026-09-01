@@ -1,4 +1,4 @@
-# Root v0.2.3
+# Root v0.2.4
 
 > A curated package manager for developer CLI tools, backed by Nix.
 
@@ -7,6 +7,29 @@ undo it — without needing to learn Nix.
 
 [![CI](https://github.com/sgr0691/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/sgr0691/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+## What v0.2.4 Changed
+
+v0.2.4 is the **Restore Reliability** release:
+
+- **Restore audit** — Full restore subsystem audit at `Docs/Restore/V0_2_4_RESTORE_AUDIT.md`.
+- **Dry-run support** — `root restore root.lock --dry-run` shows the restore plan
+  (install, remove, keep, update) without changing Rootfile, `root.lock`, or the
+  Nix profile. It records a `RestorePlanned` event.
+- **Pre-restore validation** — Lockfile schema, store paths, platform compatibility,
+  Nix availability, and experimental features are all checked before any mutation.
+  A missing Root profile is created during restore.
+- **Partial failure recovery** — If restore fails mid-operation, Root automatically
+  restores Rootfile, `root.lock`, and the Nix profile from the pre-restore snapshot.
+- **Drift detection in status** — `root status` now detects missing output paths,
+  `.drv` paths in lockfiles, and platform mismatches in addition to existing
+  name-based drift checks.
+- **Restore event ledger** — Restore operations record `RestoreStarted`,
+  `RestorePlanned`, `RestoreCompleted`, `RestoreFailed`, and `RestoreRecovered`
+  events with package counts, failure phase, and duration.
+- **Error normalization** — Restore failures produce clear, actionable messages
+  with suggested next steps instead of raw Nix output.
+- **New docs** — Restore audit, restore notes, and a dedicated smoke test document.
 
 ## What v0.2.3 Changed
 
@@ -178,6 +201,7 @@ All commands support `--json` for structured output (useful for scripting).
 | `root lock` | Regenerate deterministic lockfile from current Rootfile |
 | `root sync` | Reconcile the Root profile with `root.lock` |
 | `root restore --lock ./root.lock` | Restore from a local or shared lockfile |
+| `root restore --lock ./root.lock --dry-run` | Preview restore plan without mutating Rootfile, lock, or profile |
 | `root run <task>` | Run a Rootfile task in the Root-managed environment |
 | `root run <workflow-file>` | Run commands from a TOML workflow file |
 | `root run -- <command...>` | Run an ad hoc command in the Root-managed environment |
@@ -385,7 +409,7 @@ contain the full deterministic lock state. The event ledger at
 `~/.root/events.jsonl` records every operation. Verification checks binaries
 from the Root-managed profile, not from PATH.
 
-## Limitations (v0.2.3)
+## Limitations (v0.2.4)
 
 - **Curated catalog only.** Root supports a curated catalog only — 42 packages
   across eleven categories. Arbitrary `root install <anything>` is not yet
@@ -406,6 +430,10 @@ from the Root-managed profile, not from PATH.
 - **Mutation lock recovery.** If Root crashes during a mutation, the mutation
   lock (`~/.root/root.lockfile`) may need to be deleted manually to unblock
   future operations. Run `root doctor` first if you encounter lock errors.
+- **Restore rollback is best-effort.** If a restore fails and recovery also
+  fails, Root preserves the previous Rootfile and root.lock but the Nix profile
+  may be in an inconsistent state. Run `root rollback --last` to attempt manual
+  recovery.
 - **Offline not supported.** Every install and update requires network access
   to resolve Nix flakes.
 - **No concurrent operations.** Root uses a file-based mutation lock that
@@ -416,7 +444,7 @@ from the Root-managed profile, not from PATH.
 
 ## Experimental Commands
 
-The CLI includes additional commands that are **not part of the v0.2.3 public
+The CLI includes additional commands that are **not part of the v0.2.4 public
 surface**. They may change, break, or be removed without notice:
 
 | Command | Status |
@@ -428,7 +456,7 @@ production use.
 
 ## Roadmap
 
-- **v0.2.x** — Harden the Phase 1–6 package, runtime, policy, sandbox, and sync surface
+- **v0.2.x** — Harden the Phase 1–6 package, runtime, policy, sandbox, sync, and restore surface
 - **v0.3** — Local model management with an Ollama-compatible adapter
 - **Later** — AI-native manifests, residency policies, and explainable routing
 

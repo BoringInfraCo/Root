@@ -5,6 +5,45 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2026-06-24
+
+### Added
+
+- **Restore audit.** Full restore subsystem audit at Docs/Restore/V0_2_4_RESTORE_AUDIT.md covering entry points, validation flow, Nix operations, mutation flow, event recording, rollback/recovery, drift detection, 13 failure modes, and 10 gaps. (Phase 1)
+- **Dry-run support.** `root restore root.lock --dry-run` reports the restore plan (will install, remove, keep, update) without mutating the Rootfile, root.lock, or Nix profile. It does append a `RestorePlanned` event to the event ledger. Supports human and JSON output. (Phase 2)
+- **Pre-restore validation.** Lockfile schema, store paths, platform compatibility, Nix availability, and experimental features (nix-command, flakes) are validated before any mutation. `.drv` paths in outputs are rejected with clear errors. A missing Root profile is allowed; restore creates it. (Phase 3)
+- **Partial failure recovery.** If restore fails mid-operation, Root captures a pre-restore snapshot and restores Rootfile, root.lock, and the Nix profile from that snapshot. If recovery fails, clear instructions are provided for manual rollback. (Phase 4)
+- **Strengthened drift detection.** `root status` now detects missing output paths per package, `.drv` paths in lockfiles, and platform mismatches in addition to existing name-based drift checks. (Phase 5)
+- **Restore event ledger.** New `RestorePlanned` and `RestoreRecovered` event types, new `Planned` event status, and event fields for `failure_phase`, `installed_count`, `removed_count`, `kept_count`. Restore operations record detailed events at every stage. (Phase 6)
+- **Restore error normalization.** Clear, actionable error messages for all restore failure modes: invalid lockfile, incompatible platform, missing Nix, missing experimental features, `.drv` output paths, profile validation failure, partial restore failure, failed recovery, stale mutation lock, and permission denied. (Phase 7)
+- **Restore smoke tests.** New smoke test document at Docs/Release/V0_2_4_RESTORE_SMOKE_TEST.md covering clean restore, dry-run, invalid lockfile, partial failure, and drift detection scenarios. (Phase 8)
+- **Restore documentation.** New reference document at Docs/Restore/V0_2_4_RESTORE_NOTES.md. (Phase 9)
+
+### Changed
+
+- README updated for v0.2.4.
+- `RootEventType` gains `RestorePlanned` and `RestoreRecovered` variants.
+- `RootEventStatus` gains `Planned` variant.
+- `RootEvent` gains `failure_phase`, `installed_count`, `removed_count`, `kept_count` fields.
+- `RestoreReport` renamed conceptually — restore output now includes automatic rollback reporting on failure.
+- Validation failures now record a `Restore` / `Failed` event before returning.
+
+### Fixed
+
+- Restore no longer requires an existing Nix profile; a missing `~/.root/profiles/default` is created by `nix profile add` during restore.
+- Automatic restore recovery now rewrites `root.lock` and Rootfile from the pre-restore snapshot, not only the Nix profile.
+- `root status` marks `platform-mismatch` as unhealthy (`NeedsAttention`).
+
+### Tests Added
+
+- `test_restore_partial_failure_rolls_back_profile` — mid-restore install failure automatically rolls back the Nix profile and preserves Rootfile/`root.lock`.
+- `test_restore_with_no_existing_lockfile` — restore from a shared lock when no local `root.lock` exists.
+- `test_restore_from_v1_lockfile` — v1 lock fallback via `to_v2()`.
+- `test_restore_recovers_stale_mutation_lock` — dead-PID `root.lockfile` is recovered and restore proceeds.
+- `test_restore_blocked_by_live_mutation_lock` — live mutation lock blocks restore.
+- `test_restore_creates_missing_profile` — restore proceeds and installs when the Root profile does not exist yet.
+- `test_restore_rollback_restores_lock_and_rootfile` — auto-rollback rewrites Rootfile and `root.lock` from the snapshot.
+
 ## [0.2.3] - 2026-06-24
 
 ### Added
