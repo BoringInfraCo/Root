@@ -2976,7 +2976,7 @@ fn restore_validate(
                 package.name
             ));
         }
-        for (_, path) in &package.store_paths {
+        for path in package.store_paths.values() {
             if path.ends_with(".drv") {
                 return Err(anyhow::anyhow!(
                     "Restore validation failed: package '{}' has a .drv path in its outputs.\n\
@@ -3090,14 +3090,14 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
                             None,
                             Some("Automatic rollback to pre-restore state succeeded.".to_string()),
                         );
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Restore failed during {}.\n\n\
                              Error: {}\n\n\
                              Your previous Rootfile and root.lock were preserved.\n\
                              Root automatically rolled back your Nix profile to its pre-restore state.\n\n\
                              Next step:\n  Run `root status` to verify the system state.",
                             failure_phase, e
-                        ));
+                        ))
                     }
                     Err(recovery_err) => {
                         let _ = events::record_event(
@@ -3109,24 +3109,24 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
                             None,
                             Some(format!("Automatic rollback failed: {}", recovery_err)),
                         );
-                        return Err(anyhow::anyhow!(
+                        Err(anyhow::anyhow!(
                             "Restore failed during {}.\n\n\
                              Error: {}\n\n\
                              Your previous Rootfile and root.lock were preserved.\n\
                              Automatic rollback of the Nix profile also failed: {}\n\n\
                              Next steps:\n  Run `root status` to assess the state.\n  Run `root rollback --last` to attempt manual rollback.",
                             failure_phase, e, recovery_err
-                        ));
+                        ))
                     }
                 }
             } else {
-                return Err(anyhow::anyhow!(
+                Err(anyhow::anyhow!(
                     "Restore failed during {}.\n\n\
                      Error: {}\n\n\
                      Your previous Rootfile and root.lock were preserved.\n\n\
                      Next step:\n  Run `root status` to verify the system state.\n  Run `root doctor` for diagnostics.",
                     failure_phase, e
-                ));
+                ))
             }
         }
     }
