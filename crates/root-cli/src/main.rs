@@ -899,25 +899,40 @@ fn main() {
             });
         }
         Commands::Restore { lock, dry_run } => {
-            if *dry_run {
+            if dry_run {
                 let _ = handle_structured(
                     cli.json,
                     root_core::restore_dry_run(&adapter, lock.as_deref()),
                     |r| {
                         let mut msg = String::from("Restore plan\n");
                         if !r.will_install.is_empty() {
-                            msg.push_str(&format!("\nWill install:\n  {}\n", r.will_install.join("\n  ")));
+                            msg.push_str(&format!(
+                                "\nWill install:\n  {}\n",
+                                r.will_install.join("\n  ")
+                            ));
                         }
                         if !r.will_remove.is_empty() {
-                            msg.push_str(&format!("\nWill remove:\n  {}\n", r.will_remove.join("\n  ")));
+                            msg.push_str(&format!(
+                                "\nWill remove:\n  {}\n",
+                                r.will_remove.join("\n  ")
+                            ));
                         }
                         if !r.will_keep.is_empty() {
-                            msg.push_str(&format!("\nWill keep:\n  {}\n", r.will_keep.join("\n  ")));
+                            msg.push_str(&format!(
+                                "\nWill keep:\n  {}\n",
+                                r.will_keep.join("\n  ")
+                            ));
                         }
                         if !r.will_update.is_empty() {
-                            msg.push_str(&format!("\nWill update:\n  {}\n", r.will_update.join("\n  ")));
+                            msg.push_str(&format!(
+                                "\nWill update:\n  {}\n",
+                                r.will_update.join("\n  ")
+                            ));
                         }
-                        if r.will_install.is_empty() && r.will_remove.is_empty() && r.will_update.is_empty() {
+                        if r.will_install.is_empty()
+                            && r.will_remove.is_empty()
+                            && r.will_update.is_empty()
+                        {
                             msg.push_str("\nNo changes needed.");
                         }
                         msg
@@ -1183,8 +1198,19 @@ mod tests {
 
         let restore = Cli::try_parse_from(["root", "restore", "--lock", "./root.lock"]).unwrap();
         match restore.command {
-            Commands::Restore { lock } => {
-                assert_eq!(lock.unwrap(), std::path::PathBuf::from("./root.lock"))
+            Commands::Restore { lock, dry_run } => {
+                assert_eq!(lock.unwrap(), std::path::PathBuf::from("./root.lock"));
+                assert!(!dry_run);
+            }
+            other => panic!("expected restore command, got {:?}", other),
+        }
+
+        let restore_dry =
+            Cli::try_parse_from(["root", "restore", "--lock", "./root.lock", "--dry-run"]).unwrap();
+        match restore_dry.command {
+            Commands::Restore { lock, dry_run } => {
+                assert_eq!(lock.unwrap(), std::path::PathBuf::from("./root.lock"));
+                assert!(dry_run);
             }
             other => panic!("expected restore command, got {:?}", other),
         }

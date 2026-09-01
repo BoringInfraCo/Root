@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Restore audit.** Full restore subsystem audit at Docs/Restore/V0_2_4_RESTORE_AUDIT.md covering entry points, validation flow, Nix operations, mutation flow, event recording, rollback/recovery, drift detection, 13 failure modes, and 10 gaps. (Phase 1)
-- **Dry-run support.** `root restore root.lock --dry-run` reports the restore plan (will install, remove, keep, update) without mutating the Rootfile, root.lock, Nix profile, or event ledger. Supports human and JSON output. (Phase 2)
+- **Dry-run support.** `root restore root.lock --dry-run` reports the restore plan (will install, remove, keep, update) without mutating the Rootfile, root.lock, or Nix profile. It does append a `RestorePlanned` event to the event ledger. Supports human and JSON output. (Phase 2)
 - **Pre-restore validation.** Lockfile schema, store paths, platform compatibility, Nix availability, experimental features (nix-command, flakes), and Root profile existence are all validated before any mutation. `.drv` paths in outputs are rejected with clear errors. (Phase 3)
 - **Partial failure recovery.** If restore fails mid-operation, Root captures a pre-restore snapshot, preserves previous Rootfile/root.lock, and automatically rolls back the Nix profile. If recovery fails, clear instructions are provided for manual rollback. (Phase 4)
 - **Strengthened drift detection.** `root status` now detects missing output paths per package, `.drv` paths in lockfiles, and platform mismatches in addition to existing name-based drift checks. (Phase 5)
@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `RootEventStatus` gains `Planned` variant.
 - `RootEvent` gains `failure_phase`, `installed_count`, `removed_count`, `kept_count` fields.
 - `RestoreReport` renamed conceptually — restore output now includes automatic rollback reporting on failure.
+- Validation failures now record a `Restore` / `Failed` event before returning.
+
+### Tests Added
+
+- `test_restore_partial_failure_rolls_back_profile` — mid-restore install failure automatically rolls back the Nix profile and preserves Rootfile/`root.lock`.
+- `test_restore_with_no_existing_lockfile` — restore from a shared lock when no local `root.lock` exists.
+- `test_restore_from_v1_lockfile` — v1 lock fallback via `to_v2()`.
+- `test_restore_recovers_stale_mutation_lock` — dead-PID `root.lockfile` is recovered and restore proceeds.
+- `test_restore_blocked_by_live_mutation_lock` — live mutation lock blocks restore.
 
 ## [0.2.3] - 2026-06-24
 

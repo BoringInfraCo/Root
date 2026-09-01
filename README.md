@@ -14,7 +14,8 @@ v0.2.4 is the **Restore Reliability** release:
 
 - **Restore audit** — Full restore subsystem audit at `Docs/Restore/V0_2_4_RESTORE_AUDIT.md`.
 - **Dry-run support** — `root restore root.lock --dry-run` shows the restore plan
-  (install, remove, keep, update) without mutating anything.
+  (install, remove, keep, update) without changing Rootfile, `root.lock`, or the
+  Nix profile. It records a `RestorePlanned` event.
 - **Pre-restore validation** — Lockfile schema, store paths, platform compatibility,
   Nix availability, experimental features, and profile existence are all checked
   before any mutation.
@@ -30,6 +31,10 @@ v0.2.4 is the **Restore Reliability** release:
 - **Error normalization** — Restore failures produce clear, actionable messages
   with suggested next steps instead of raw Nix output.
 - **New docs** — Restore audit, restore notes, and a dedicated smoke test document.
+
+## What v0.2.3 Changed
+
+v0.2.3 is the **Sandbox Hardening** release:
 
 - **Lifecycle validation** — Sandboxes follow a strict state machine: Created →
   Running → Completed/Destroyed. Invalid state transitions are rejected.
@@ -197,6 +202,7 @@ All commands support `--json` for structured output (useful for scripting).
 | `root lock` | Regenerate deterministic lockfile from current Rootfile |
 | `root sync` | Reconcile the Root profile with `root.lock` |
 | `root restore --lock ./root.lock` | Restore from a local or shared lockfile |
+| `root restore --lock ./root.lock --dry-run` | Preview restore plan without mutating Rootfile, lock, or profile |
 | `root run <task>` | Run a Rootfile task in the Root-managed environment |
 | `root run <workflow-file>` | Run commands from a TOML workflow file |
 | `root run -- <command...>` | Run an ad hoc command in the Root-managed environment |

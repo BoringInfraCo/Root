@@ -2854,11 +2854,8 @@ fn infer_restore_failure_phase(err: &anyhow::Error) -> &'static str {
     }
 }
 
-fn attempt_rollback_to_snapshot(
-    adapter: &impl NixAdapter,
-    snapshot: &Snapshot,
-) -> Result<()> {
-    let restored = snapshot.restored_lock()?;
+fn attempt_rollback_to_snapshot(adapter: &impl NixAdapter, snapshot: &Snapshot) -> Result<()> {
+    let restored = snapshot.restored_lock();
     root_lockfile::validate_store_paths(&restored)
         .context("Rollback validation failed: snapshot lockfile is invalid")?;
 
@@ -2880,9 +2877,11 @@ fn attempt_rollback_to_snapshot(
     for package in &restored.packages {
         if !locked_package_installed(&profile_entries, package) {
             if let Some(installable) = package.installable.as_deref() {
-                adapter.install_installable(&package.name, installable).map_err(|e| {
-                    anyhow::anyhow!("Rollback failed to install '{}': {}", package.name, e)
-                })?;
+                adapter
+                    .install_installable(&package.name, installable)
+                    .map_err(|e| {
+                        anyhow::anyhow!("Rollback failed to install '{}': {}", package.name, e)
+                    })?;
             } else {
                 adapter.install(&package.name).map_err(|e| {
                     anyhow::anyhow!("Rollback failed to install '{}': {}", package.name, e)
@@ -2899,10 +2898,13 @@ fn restore_validate(
     target_lock: &RootLockV2,
     lock_path: &Path,
 ) -> Result<()> {
-    root_lockfile::validate_store_paths(target_lock).context(format!(
-        "Restore validation failed: lockfile at {} contains invalid store paths",
-        lock_path.display()
-    ))?;
+    root_lockfile::validate_store_paths(target_lock).map_err(|e| {
+        anyhow::anyhow!(
+            "Restore validation failed: lockfile at {} contains invalid store paths. {}",
+            lock_path.display(),
+            e
+        )
+    })?;
 
     let nix_ok = adapter
         .check_availability()
@@ -3006,18 +3008,38 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
     };
     let target_lock = RootLockV2::read_from_file(&selected_lock_path)
         .or_else(|_| RootLock::read_from_file(&selected_lock_path).map(|lock| lock.to_v2()))?;
-    restore_validate(adapter, &target_lock, &selected_lock_path)?;
+    if let Err(e) = restore_validate(adapter, &target_lock, &selected_lock_path) {
+        let failure_phase = infer_restore_failure_phase(&e);
+        let _ = events::record_event(
+            events::RootEventType::Restore,
+            events::RootEventStatus::Failed,
+            "root restore",
+            None,
+            None,
+            None,
+            Some(format!(
+                "Restore failed during {}. Error: {}",
+                failure_phase, e
+            )),
+        );
+        return Err(anyhow::anyhow!(
+            "{}\nLockfile failed validation before restore",
+            e
+        ));
+    }
     enforce_policy(policy::PolicyAction::Restore, None)?;
     for package in &target_lock.packages {
         enforce_policy(policy::PolicyAction::Restore, Some(&package.name))?;
     }
     let _guard = MutationGuard::acquire()?;
 
-    let start_time = SystemTime::now();
     let pre_restore_lock = get_or_create_lock_v2().ok();
     let pre_restore_snapshot = pre_restore_lock.as_ref().and_then(|lock| {
         Snapshot::create_from_v2(
-            &format!("before restore from {}", selected_lock_path.to_string_lossy()),
+            &format!(
+                "before restore from {}",
+                selected_lock_path.to_string_lossy()
+            ),
             lock,
         )
         .ok()
@@ -3033,16 +3055,14 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
         "root restore",
         events::RootEventType::Restore,
     ) {
-        Ok(report) => {
-            Ok(RestoreReport {
-                success: true,
-                lock_path: selected_lock_path.to_string_lossy().to_string(),
-                installed: report.installed,
-                removed: report.removed,
-                unchanged: report.unchanged,
-                snapshot_id: report.snapshot_id,
-            })
-        }
+        Ok(report) => Ok(RestoreReport {
+            success: true,
+            lock_path: selected_lock_path.to_string_lossy().to_string(),
+            installed: report.installed,
+            removed: report.removed,
+            unchanged: report.unchanged,
+            snapshot_id: report.snapshot_id,
+        }),
         Err(e) => {
             let failure_phase = infer_restore_failure_phase(&e);
             let _ = events::record_event(
@@ -3490,10 +3510,7 @@ pub fn status(adapter: &impl root_nix::NixAdapter) -> Result<StatusReport> {
                         .values()
                         .all(|path| entry.store_paths.iter().any(|ep| ep == path));
                     if !all_paths_present {
-                        let profile_json = adapter
-                            .profile_list_json()
-                            .ok()
-                            .unwrap_or_default();
+                        let profile_json = adapter.profile_list_json().ok().unwrap_or_default();
                         let missing: Vec<&String> = pkg
                             .store_paths
                             .values()
@@ -3518,8 +3535,7 @@ pub fn status(adapter: &impl root_nix::NixAdapter) -> Result<StatusReport> {
                         category: "lockfile-has-drv-path".to_string(),
                         description: format!(
                             "Package '{}' has a .drv path ({}) where an output path is expected",
-                            pkg.name,
-                            pkg.store_path
+                            pkg.name, pkg.store_path
                         ),
                         suggestion: "Regenerate root.lock with `root lock`".to_string(),
                     });
@@ -3559,10 +3575,11 @@ pub fn status(adapter: &impl root_nix::NixAdapter) -> Result<StatusReport> {
 
     let state = if healthy {
         "Healthy".to_string()
-    } else if drift_details
-        .iter()
-        .any(|d| d.category == "lockfile-profile-mismatch" || d.category == "profile-unavailable" || d.category == "lockfile-output-missing")
-    {
+    } else if drift_details.iter().any(|d| {
+        d.category == "lockfile-profile-mismatch"
+            || d.category == "profile-unavailable"
+            || d.category == "lockfile-output-missing"
+    }) {
         "NeedsAttention".to_string()
     } else {
         "Drifted".to_string()
@@ -6113,7 +6130,7 @@ mod tests {
         let root_dir = root_lockfile::init_root_dir().unwrap();
         let adapter = MockNixAdapter::new(true);
 
-        adapter.install("ripgrep").unwrap();
+        adapter.install("fd").unwrap();
         let (flake, installable) = locked_installable_for(&adapter, "ripgrep").unwrap();
         let resolution = adapter
             .resolve_locked_package("ripgrep", Some(&installable))
@@ -6181,18 +6198,20 @@ mod tests {
             &resolution_rg,
         )
         .unwrap();
-        let (flake_fd, installable_fd) = locked_installable_for(&adapter, "fd").unwrap();
+        let (_flake_fd, installable_fd) = locked_installable_for(&adapter, "fd").unwrap();
         let resolution_fd = adapter
             .resolve_locked_package("fd", Some(&installable_fd))
             .unwrap();
-        let locked_fd = deterministic_package_from_resolution("fd", "fd", &installable_fd, &resolution_fd)
-            .unwrap();
-        let (flake_jq, installable_jq) = locked_installable_for(&adapter, "jq").unwrap();
+        let locked_fd =
+            deterministic_package_from_resolution("fd", "fd", &installable_fd, &resolution_fd)
+                .unwrap();
+        let (_flake_jq, installable_jq) = locked_installable_for(&adapter, "jq").unwrap();
         let resolution_jq = adapter
             .resolve_locked_package("jq", Some(&installable_jq))
             .unwrap();
-        let locked_jq = deterministic_package_from_resolution("jq", "jq", &installable_jq, &resolution_jq)
-            .unwrap();
+        let locked_jq =
+            deterministic_package_from_resolution("jq", "jq", &installable_jq, &resolution_jq)
+                .unwrap();
 
         let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
         let base = RootLockV2 {
@@ -6201,14 +6220,20 @@ mod tests {
         };
 
         // Lock has ripgrep, fd, jq. Profile has ripgrep only.
-        let shared_lock = build_v2_lock(&base, &flake_rg, vec![locked_rg]).unwrap();
+        let shared_lock =
+            build_v2_lock(&base, &flake_rg, vec![locked_rg, locked_fd, locked_jq]).unwrap();
         let shared_lock_path = root_dir.join("three-pkg.lock");
         shared_lock.write_to_file(&shared_lock_path).unwrap();
 
         let plan = restore_dry_run(&adapter, Some(&shared_lock_path)).unwrap();
-        assert!(plan.will_install.contains(&"ripgrep".to_string()));
-        assert!(plan.will_keep.is_empty() || !plan.will_keep.contains(&"ripgrep".to_string()));
-        assert!(plan.total_packages == 1);
+        assert!(plan.will_install.contains(&"fd".to_string()));
+        assert!(plan.will_install.contains(&"jq".to_string()));
+        assert!(
+            plan.will_update.contains(&"ripgrep".to_string())
+                || plan.will_keep.contains(&"ripgrep".to_string())
+        );
+        assert!(!plan.will_install.contains(&"ripgrep".to_string()));
+        assert_eq!(plan.total_packages, 3);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -6307,7 +6332,13 @@ mod tests {
             binaries: vec!["rg".into()],
             ..Default::default()
         });
-        lock.platform = "x86_64-linux".into();
+        let current_platform =
+            root_lockfile::detect_platform().unwrap_or_else(|_| "x86_64-linux".into());
+        lock.platform = if current_platform == "x86_64-linux" {
+            "aarch64-darwin".into()
+        } else {
+            "x86_64-linux".into()
+        };
         save_lock_v2(&lock).unwrap();
 
         let status = status(&adapter).unwrap();
@@ -6315,10 +6346,7 @@ mod tests {
             .drift_details
             .iter()
             .any(|d| d.category == "platform-mismatch");
-        assert!(
-            has_platform_drift,
-            "Status should detect platform mismatch"
-        );
+        assert!(has_platform_drift, "Status should detect platform mismatch");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -6388,6 +6416,257 @@ mod tests {
             "Expected Failed Restore event after validation failure"
         );
 
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_partial_failure_rolls_back_profile() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_partial_rb");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        install(&adapter, "fd").unwrap();
+
+        let (flake, installable) = locked_installable_for(&adapter, "ripgrep").unwrap();
+        let resolution = adapter
+            .resolve_locked_package("ripgrep", Some(&installable))
+            .unwrap();
+        let ripgrep_locked =
+            deterministic_package_from_resolution("ripgrep", "ripgrep", &installable, &resolution)
+                .unwrap();
+
+        let missing_store =
+            "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-missing_pkg-1.0".to_string();
+        let mut missing_store_paths = BTreeMap::new();
+        missing_store_paths.insert("out".to_string(), missing_store.clone());
+        let missing_pkg_locked = LockedPackageV2 {
+            name: "missing_pkg".into(),
+            requested: "missing_pkg".into(),
+            version: "1.0".into(),
+            attribute: "missing_pkg".into(),
+            store_path: missing_store.clone(),
+            binaries: vec!["missing_pkg".into()],
+            installable: Some("nixpkgs#missing_pkg".into()),
+            store_paths: missing_store_paths,
+            ..Default::default()
+        };
+
+        let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
+        let base_v2 = RootLockV2 {
+            platform: platform.clone(),
+            ..RootLockV2::default()
+        };
+        let shared_lock =
+            build_v2_lock(&base_v2, &flake, vec![ripgrep_locked, missing_pkg_locked]).unwrap();
+        let shared_lock_path = root_dir.join("shared-root.lock");
+        shared_lock.write_to_file(&shared_lock_path).unwrap();
+
+        let err = restore(&adapter, Some(&shared_lock_path)).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("automatically rolled back")
+                && err_msg.contains("pre-restore state")
+                && err_msg.contains("package installation"),
+            "Expected automatic rollback / pre-restore state / package installation, got: {}",
+            err_msg
+        );
+
+        let active_lock = RootLockV2::read_from_file(&root_dir.join("root.lock")).unwrap();
+        assert!(active_lock.packages.iter().any(|p| p.name == "fd"));
+        assert!(!active_lock.packages.iter().any(|p| p.name == "missing_pkg"));
+        assert!(!active_lock.packages.iter().any(|p| p.name == "ripgrep"));
+
+        let rf = get_or_create_rootfile().unwrap();
+        assert!(rf.packages.contains_key("fd"));
+        assert!(!rf.packages.contains_key("missing_pkg"));
+        assert!(!rf.packages.contains_key("ripgrep"));
+
+        let profile = profile_packages(&adapter).unwrap();
+        assert!(profile.iter().any(|e| e.package == "fd"));
+        assert!(!profile.iter().any(|e| e.package == "ripgrep"));
+
+        let hist = history().unwrap();
+        assert!(
+            hist.events.iter().any(|e| {
+                e.event_type == events::RootEventType::RestoreRecovered
+                    && e.status == events::RootEventStatus::Completed
+            }),
+            "Expected RestoreRecovered Completed after automatic rollback"
+        );
+        assert!(
+            hist.events.iter().any(|e| {
+                e.event_type == events::RootEventType::Restore
+                    && e.status == events::RootEventStatus::Failed
+            }),
+            "Expected Restore Failed after partial restore failure"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_with_no_existing_lockfile() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_no_lock");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        let _ = std::fs::remove_file(root_dir.join("root.lock"));
+
+        let (flake, installable) = locked_installable_for(&adapter, "ripgrep").unwrap();
+        let resolution = adapter
+            .resolve_locked_package("ripgrep", Some(&installable))
+            .unwrap();
+        let locked_pkg =
+            deterministic_package_from_resolution("ripgrep", "ripgrep", &installable, &resolution)
+                .unwrap();
+        let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
+        let base_v2 = RootLockV2 {
+            platform: platform.clone(),
+            ..RootLockV2::default()
+        };
+        let shared_lock = build_v2_lock(&base_v2, &flake, vec![locked_pkg]).unwrap();
+        let shared_lock_path = root_dir.join("shared-root.lock");
+        shared_lock.write_to_file(&shared_lock_path).unwrap();
+
+        let report = restore(&adapter, Some(&shared_lock_path)).unwrap();
+        assert!(report.success);
+        assert!(report.installed.contains(&"ripgrep".to_string()));
+
+        let active_lock_path = root_dir.join("root.lock");
+        assert!(active_lock_path.exists());
+        let active_lock = RootLockV2::read_from_file(&active_lock_path).unwrap();
+        assert!(active_lock.packages.iter().any(|p| p.name == "ripgrep"));
+
+        let profile = profile_packages(&adapter).unwrap();
+        assert!(profile.iter().any(|e| e.package == "ripgrep"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_from_v1_lockfile() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_v1");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        let derived = root_lockfile::derive_store_path("ripgrep", "14.1.1");
+        let store_path = if derived.starts_with("/nix/store/") {
+            derived
+        } else {
+            "/nix/store/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-ripgrep-14.1.1".to_string()
+        };
+        let v1_lock = RootLock {
+            version: 1,
+            platform: root_lockfile::detect_platform().unwrap_or_else(|_| "x86_64-linux".into()),
+            nixpkgs: NixpkgsConfig {
+                rev: "unknown".into(),
+                source: "github:NixOS/nixpkgs".into(),
+            },
+            packages: vec![LockedPackage {
+                name: "ripgrep".into(),
+                requested: "ripgrep".into(),
+                version: "14.1.1".into(),
+                attribute: "ripgrep".into(),
+                store_path,
+                binaries: vec!["rg".into()],
+            }],
+        };
+        let v1_path = root_dir.join("v1-root.lock");
+        v1_lock.write_to_file(&v1_path).unwrap();
+
+        let report = restore(&adapter, Some(&v1_path)).unwrap();
+        assert!(report.success);
+
+        let profile = profile_packages(&adapter).unwrap();
+        assert!(
+            profile.iter().any(|e| e.package == "ripgrep"),
+            "Profile should include ripgrep after v1 restore"
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_recovers_stale_mutation_lock() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_stale_lock");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        adapter.install("fd").unwrap();
+        let (flake, installable) = locked_installable_for(&adapter, "ripgrep").unwrap();
+        let resolution = adapter
+            .resolve_locked_package("ripgrep", Some(&installable))
+            .unwrap();
+        let locked_pkg =
+            deterministic_package_from_resolution("ripgrep", "ripgrep", &installable, &resolution)
+                .unwrap();
+        let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
+        let base_v2 = RootLockV2 {
+            platform: platform.clone(),
+            ..RootLockV2::default()
+        };
+        let shared_lock = build_v2_lock(&base_v2, &flake, vec![locked_pkg]).unwrap();
+        let shared_lock_path = root_dir.join("shared-root.lock");
+        shared_lock.write_to_file(&shared_lock_path).unwrap();
+
+        std::fs::write(root_dir.join("root.lockfile"), "999999\n0\n").unwrap();
+
+        let report = restore(&adapter, Some(&shared_lock_path)).unwrap();
+        assert!(report.success);
+        assert!(!root_dir.join("root.lockfile").exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_blocked_by_live_mutation_lock() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_live_lock");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        let (flake, installable) = locked_installable_for(&adapter, "ripgrep").unwrap();
+        let resolution = adapter
+            .resolve_locked_package("ripgrep", Some(&installable))
+            .unwrap();
+        let locked_pkg =
+            deterministic_package_from_resolution("ripgrep", "ripgrep", &installable, &resolution)
+                .unwrap();
+        let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
+        let base_v2 = RootLockV2 {
+            platform: platform.clone(),
+            ..RootLockV2::default()
+        };
+        let shared_lock = build_v2_lock(&base_v2, &flake, vec![locked_pkg]).unwrap();
+        let shared_lock_path = root_dir.join("shared-root.lock");
+        shared_lock.write_to_file(&shared_lock_path).unwrap();
+
+        let lockfile_path = root_dir.join("root.lockfile");
+        std::fs::write(&lockfile_path, format!("{}\n0\n", std::process::id())).unwrap();
+
+        let err = restore(&adapter, Some(&shared_lock_path)).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("Another Root mutation is in progress"),
+            "Expected live mutation lock error, got: {}",
+            err_msg
+        );
+
+        let _ = std::fs::remove_file(&lockfile_path);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
