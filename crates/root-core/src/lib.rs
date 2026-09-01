@@ -680,6 +680,7 @@ impl Drop for MutationGuard {
 pub mod brew;
 pub mod events;
 pub mod execution;
+pub mod inventory;
 pub mod policy;
 
 pub use execution::{run, RunReport, RunRequest};
@@ -1109,6 +1110,20 @@ fn get_or_create_lock_v2() -> Result<RootLockV2> {
     } else {
         Ok(get_or_create_lock()?.to_v2())
     }
+}
+
+fn refuse_unsupported_lock_at(path: &Path) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let content = std::fs::read_to_string(path)
+        .with_context(|| format!("Failed to read lockfile at {}", path.display()))?;
+    let version = root_lockfile::peek_lock_schema_version(&content)?;
+    root_lockfile::validate_supported_lock_version(version)
+}
+
+fn refuse_unsupported_active_lock() -> Result<()> {
+    refuse_unsupported_lock_at(&get_root_dir()?.join("root.lock"))
 }
 
 fn save_lock_v2(lock: &RootLockV2) -> Result<()> {
@@ -1549,6 +1564,8 @@ pub fn install(adapter: &impl NixAdapter, pkg: &str) -> Result<InstallReport> {
     })?;
     let canonical = spec.name;
     let original = pkg;
+    refuse_unsupported_active_lock()?;
+    get_or_create_rootfile()?;
     enforce_policy(policy::PolicyAction::Install, Some(canonical))?;
     let _guard = MutationGuard::acquire()?;
     let lock = get_or_create_lock_v2()?;
@@ -1696,6 +1713,7 @@ pub fn update(adapter: &impl NixAdapter, pkg: Option<&str>) -> Result<UpdateRepo
         });
     }
 
+    refuse_unsupported_active_lock()?;
     for (_, spec) in &targets {
         enforce_policy(policy::PolicyAction::Update, Some(spec.name))?;
     }
@@ -1853,6 +1871,8 @@ pub fn list(adapter: &impl NixAdapter) -> Result<ListOutput> {
 
 pub fn remove(adapter: &impl NixAdapter, pkg: &str) -> Result<RemoveReport> {
     root_lockfile::init_root_dir()?;
+    refuse_unsupported_active_lock()?;
+    get_or_create_rootfile()?;
     enforce_policy(policy::PolicyAction::Remove, Some(pkg))?;
     let _guard = MutationGuard::acquire()?;
     let mut lock = get_or_create_lock_v2()?;
@@ -1903,6 +1923,8 @@ pub fn history_with_limit(limit: Option<usize>) -> Result<HistoryOutput> {
 
 pub fn rollback_last(adapter: &impl NixAdapter) -> Result<RollbackReport> {
     root_lockfile::init_root_dir()?;
+    refuse_unsupported_active_lock()?;
+    get_or_create_rootfile()?;
     let _guard = MutationGuard::acquire()?;
     let snaps = list_snapshots()?;
     if snaps.is_empty() {
@@ -2183,6 +2205,7 @@ pub struct LockReport {
 
 pub fn lock(adapter: &impl NixAdapter) -> Result<LockReport> {
     root_lockfile::init_root_dir()?;
+    refuse_unsupported_active_lock()?;
     let _guard = MutationGuard::acquire()?;
     let rootfile = get_or_create_rootfile()?;
     let current_v2_lock = get_or_create_lock_v2()?;
@@ -2322,6 +2345,7 @@ pub struct StatusReport {
     pub machine_id: String,
     pub hostname: String,
     pub drift_details: Vec<DriftIssue>,
+    pub inventory: inventory::InventoryReport,
 }
 
 #[derive(Debug, Serialize)]
@@ -2731,6 +2755,8 @@ fn reconcile_profile_to_lock(
 
 pub fn sync(adapter: &impl NixAdapter) -> Result<SyncReport> {
     root_lockfile::init_root_dir()?;
+    refuse_unsupported_active_lock()?;
+    get_or_create_rootfile()?;
     enforce_policy(policy::PolicyAction::Sync, None)?;
     let policy_lock = get_or_create_lock_v2()?;
     for package in &policy_lock.packages {
@@ -3009,6 +3035,9 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
         Some(path) => path.to_path_buf(),
         None => get_root_dir()?.join("root.lock"),
     };
+    refuse_unsupported_lock_at(&selected_lock_path)?;
+    refuse_unsupported_active_lock()?;
+    get_or_create_rootfile()?;
     let target_lock = RootLockV2::read_from_file(&selected_lock_path)
         .or_else(|_| RootLock::read_from_file(&selected_lock_path).map(|lock| lock.to_v2()))?;
     if let Err(e) = restore_validate(adapter, &target_lock, &selected_lock_path) {
@@ -3142,6 +3171,9 @@ pub fn restore_dry_run(
         Some(path) => path.to_path_buf(),
         None => get_root_dir()?.join("root.lock"),
     };
+    refuse_unsupported_lock_at(&selected_lock_path)?;
+    refuse_unsupported_active_lock()?;
+    get_or_create_rootfile()?;
     let target_lock = RootLockV2::read_from_file(&selected_lock_path)
         .or_else(|_| RootLock::read_from_file(&selected_lock_path).map(|lock| lock.to_v2()))?;
 
@@ -3438,6 +3470,13 @@ pub fn sandbox_destroy(provider: &impl SandboxProvider, id: &str) -> Result<Sand
 }
 
 pub fn status(adapter: &impl root_nix::NixAdapter) -> Result<StatusReport> {
+    status_with_probe(adapter, &inventory::SystemInventoryProbe::default())
+}
+
+pub fn status_with_probe(
+    adapter: &impl root_nix::NixAdapter,
+    probe: &impl inventory::InventoryProbe,
+) -> Result<StatusReport> {
     root_lockfile::init_root_dir()?;
     let machine_id = get_or_create_machine_id()?;
     let hostname = std::env::var("HOSTNAME")
@@ -3445,148 +3484,226 @@ pub fn status(adapter: &impl root_nix::NixAdapter) -> Result<StatusReport> {
         .unwrap_or_else(|_| "unknown".to_string());
 
     let rootfile = get_or_create_rootfile()?;
-    let lock = get_or_create_lock_v2()?;
+    let lock_path = get_root_dir()?.join("root.lock");
+    let mut lock_unsupported = false;
+    let mut unsupported_lock_version = None;
+    let lock = if lock_path.exists() {
+        let content = std::fs::read_to_string(&lock_path)
+            .with_context(|| format!("Failed to read lockfile at {}", lock_path.display()))?;
+        let version = root_lockfile::peek_lock_schema_version(&content)?;
+        if version > ROOT_LOCK_SCHEMA_VERSION {
+            lock_unsupported = true;
+            unsupported_lock_version = Some(version);
+            None
+        } else {
+            Some(get_or_create_lock_v2()?)
+        }
+    } else {
+        Some(get_or_create_lock_v2()?)
+    };
     let rootfile_count = rootfile.packages.len();
-    let lockfile_count = lock.packages.len();
+    let lockfile_count = lock.as_ref().map(|lock| lock.packages.len()).unwrap_or(0);
 
     let mut drift_details = Vec::new();
     let mut healthy = true;
 
-    // Local checks first (no Nix calls)
-    for pkg_name in rootfile.packages.keys() {
-        if !lock.packages.iter().any(|p| p.name == *pkg_name) {
-            drift_details.push(DriftIssue {
-                category: "rootfile-lockfile-mismatch".to_string(),
-                description: format!("Package '{}' is in Rootfile but not in root.lock", pkg_name),
-                suggestion: "Run `root lock` to regenerate root.lock from Rootfile intent"
-                    .to_string(),
-            });
-            healthy = false;
+    if lock_unsupported {
+        drift_details.push(DriftIssue {
+            category: "incompatible-lock-schema".to_string(),
+            description: format!(
+                "root.lock schema version {} is newer than this Root supports ({ROOT_LOCK_SCHEMA_VERSION}). Upgrade Root to use this lockfile.",
+                unsupported_lock_version.unwrap_or(0)
+            ),
+            suggestion: "Install a newer Root release before running mutating commands against this lockfile.".to_string(),
+        });
+        healthy = false;
+    }
+
+    // Local checks first (no Nix calls). Skip comparison against an unsupported lock.
+    if let Some(lock) = lock.as_ref() {
+        for pkg_name in rootfile.packages.keys() {
+            if !lock.packages.iter().any(|p| p.name == *pkg_name) {
+                drift_details.push(DriftIssue {
+                    category: "rootfile-lockfile-mismatch".to_string(),
+                    description: format!(
+                        "Package '{}' is in Rootfile but not in root.lock",
+                        pkg_name
+                    ),
+                    suggestion: "Run `root lock` to regenerate root.lock from Rootfile intent"
+                        .to_string(),
+                });
+                healthy = false;
+            }
         }
     }
 
     // If there's no rootfile or lockfile with packages, don't bother calling Nix
-    let (profile_entries, profile_count) = if rootfile_count > 0 || lockfile_count > 0 {
-        match profile_packages(adapter) {
-            Ok(entries) => {
-                let count = entries.len();
-                (entries, count)
+    let (profile_entries, profile_count) =
+        if !lock_unsupported && (rootfile_count > 0 || lockfile_count > 0) {
+            match profile_packages(adapter) {
+                Ok(entries) => {
+                    let count = entries.len();
+                    (entries, count)
+                }
+                Err(error) => {
+                    drift_details.push(DriftIssue {
+                        category: "profile-unavailable".to_string(),
+                        description: format!(
+                            "Could not inspect the Root-managed Nix profile: {}",
+                            error
+                        ),
+                        suggestion: "Run `root doctor` to diagnose Nix and profile availability"
+                            .to_string(),
+                    });
+                    healthy = false;
+                    (Vec::new(), 0)
+                }
             }
-            Err(error) => {
-                drift_details.push(DriftIssue {
-                    category: "profile-unavailable".to_string(),
-                    description: format!(
-                        "Could not inspect the Root-managed Nix profile: {}",
-                        error
-                    ),
-                    suggestion: "Run `root doctor` to diagnose Nix and profile availability"
-                        .to_string(),
-                });
-                healthy = false;
-                (Vec::new(), 0)
-            }
-        }
-    } else {
-        (Vec::new(), 0)
-    };
+        } else {
+            (Vec::new(), 0)
+        };
 
     // Compare lockfile vs profile (only if profile was checked)
-    for pkg in &lock.packages {
-        match profile_entries.iter().find(|e| e.package == pkg.name) {
-            None => {
-                drift_details.push(DriftIssue {
-                    category: "lockfile-profile-mismatch".to_string(),
-                    description: format!(
-                        "Package '{}' is in root.lock but not in Nix profile",
-                        pkg.name
-                    ),
-                    suggestion: "Run `root sync` to install the locked package".to_string(),
-                });
-                healthy = false;
-            }
-            Some(entry) => {
-                if !pkg.store_paths.is_empty() {
-                    let all_paths_present = pkg
-                        .store_paths
-                        .values()
-                        .all(|path| entry.store_paths.iter().any(|ep| ep == path));
-                    if !all_paths_present {
-                        let profile_json = adapter.profile_list_json().ok().unwrap_or_default();
-                        let missing: Vec<&String> = pkg
-                            .store_paths
-                            .values()
-                            .filter(|path| !profile_json.contains(path.as_str()))
-                            .collect();
-                        if !missing.is_empty() {
-                            drift_details.push(DriftIssue {
-                                category: "lockfile-output-missing".to_string(),
-                                description: format!(
-                                    "Package '{}' is installed but expected output paths are missing from the profile:\n  {}",
-                                    pkg.name,
-                                    missing.iter().map(|p| p.as_str()).collect::<Vec<_>>().join("\n  ")
-                                ),
-                                suggestion: "Run `root sync` to restore missing outputs".to_string(),
-                            });
-                            healthy = false;
-                        }
-                    }
-                }
-                if !pkg.store_path.is_empty() && pkg.store_path.ends_with(".drv") {
+    if let Some(lock) = lock.as_ref() {
+        for pkg in &lock.packages {
+            match profile_entries.iter().find(|e| e.package == pkg.name) {
+                None => {
                     drift_details.push(DriftIssue {
-                        category: "lockfile-has-drv-path".to_string(),
+                        category: "lockfile-profile-mismatch".to_string(),
                         description: format!(
-                            "Package '{}' has a .drv path ({}) where an output path is expected",
-                            pkg.name, pkg.store_path
+                            "Package '{}' is in root.lock but not in Nix profile",
+                            pkg.name
                         ),
-                        suggestion: "Regenerate root.lock with `root lock`".to_string(),
+                        suggestion: "Run `root sync` to install the locked package".to_string(),
                     });
                     healthy = false;
                 }
+                Some(entry) => {
+                    if !pkg.store_paths.is_empty() {
+                        let all_paths_present = pkg
+                            .store_paths
+                            .values()
+                            .all(|path| entry.store_paths.iter().any(|ep| ep == path));
+                        if !all_paths_present {
+                            let profile_json = adapter.profile_list_json().ok().unwrap_or_default();
+                            let missing: Vec<&String> = pkg
+                                .store_paths
+                                .values()
+                                .filter(|path| !profile_json.contains(path.as_str()))
+                                .collect();
+                            if !missing.is_empty() {
+                                drift_details.push(DriftIssue {
+                                    category: "lockfile-output-missing".to_string(),
+                                    description: format!(
+                                        "Package '{}' is installed but expected output paths are missing from the profile:\n  {}",
+                                        pkg.name,
+                                        missing.iter().map(|p| p.as_str()).collect::<Vec<_>>().join("\n  ")
+                                    ),
+                                    suggestion: "Run `root sync` to restore missing outputs".to_string(),
+                                });
+                                healthy = false;
+                            }
+                        }
+                    }
+                    if !pkg.store_path.is_empty() && pkg.store_path.ends_with(".drv") {
+                        drift_details.push(DriftIssue {
+                            category: "lockfile-has-drv-path".to_string(),
+                            description: format!(
+                                "Package '{}' has a .drv path ({}) where an output path is expected",
+                                pkg.name, pkg.store_path
+                            ),
+                            suggestion: "Regenerate root.lock with `root lock`".to_string(),
+                        });
+                        healthy = false;
+                    }
+                }
+            }
+        }
+
+        for entry in &profile_entries {
+            if !lock.packages.iter().any(|p| p.name == entry.package) {
+                drift_details.push(DriftIssue {
+                    category: "profile-lockfile-mismatch".to_string(),
+                    description: format!(
+                        "Package '{}' is in Nix profile but not in root.lock",
+                        entry.package
+                    ),
+                    suggestion: "Run `root sync` to remove the extra package".to_string(),
+                });
+                healthy = false;
+            }
+        }
+
+        if !lock.platform.is_empty() {
+            let current_platform = root_lockfile::detect_platform().unwrap_or_default();
+            if lock.platform != current_platform {
+                drift_details.push(DriftIssue {
+                    category: "platform-mismatch".to_string(),
+                    description: format!(
+                        "root.lock was created on platform '{}' but current platform is '{}'",
+                        lock.platform, current_platform
+                    ),
+                    suggestion: "Regenerate root.lock on the current platform".to_string(),
+                });
+                healthy = false;
             }
         }
     }
 
-    for entry in &profile_entries {
-        if !lock.packages.iter().any(|p| p.name == entry.package) {
-            drift_details.push(DriftIssue {
-                category: "profile-lockfile-mismatch".to_string(),
-                description: format!(
-                    "Package '{}' is in Nix profile but not in root.lock",
-                    entry.package
-                ),
-                suggestion: "Run `root sync` to remove the extra package".to_string(),
-            });
-            healthy = false;
-        }
-    }
-
-    if !lock.platform.is_empty() {
-        let current_platform = root_lockfile::detect_platform().unwrap_or_default();
-        if lock.platform != current_platform {
-            drift_details.push(DriftIssue {
-                category: "platform-mismatch".to_string(),
-                description: format!(
-                    "root.lock was created on platform '{}' but current platform is '{}'",
-                    lock.platform, current_platform
-                ),
-                suggestion: "Regenerate root.lock on the current platform".to_string(),
-            });
-            healthy = false;
-        }
-    }
-
-    let state = if healthy {
+    let package_state = if healthy {
         "Healthy".to_string()
     } else if drift_details.iter().any(|d| {
         d.category == "lockfile-profile-mismatch"
             || d.category == "profile-unavailable"
             || d.category == "lockfile-output-missing"
             || d.category == "platform-mismatch"
+            || d.category == "incompatible-lock-schema"
     }) {
         "NeedsAttention".to_string()
     } else {
         "Drifted".to_string()
     };
+
+    let inventory_report = if rootfile.agents.is_empty() && rootfile.models.is_empty() {
+        inventory::InventoryReport::default()
+    } else {
+        inventory::inspect_declarations(&rootfile, probe)
+    };
+
+    for item in inventory_report
+        .agents
+        .iter()
+        .chain(inventory_report.models.iter())
+    {
+        if let Some(category) = inventory::drift_category_for(item) {
+            drift_details.push(DriftIssue {
+                category: category.to_string(),
+                description: format!(
+                    "{} '{}' is {} ({})",
+                    match item.kind {
+                        inventory::ResourceKind::Agent => "Agent",
+                        inventory::ResourceKind::Model => "Model",
+                    },
+                    item.name,
+                    match item.evaluation {
+                        inventory::EvaluationState::Missing => "missing",
+                        inventory::EvaluationState::Unknown => "unknown",
+                        inventory::EvaluationState::Unsupported => "unsupported",
+                        inventory::EvaluationState::Drifted => "drifted",
+                        inventory::EvaluationState::Satisfied => "satisfied",
+                    },
+                    item.reason
+                        .as_deref()
+                        .map(inventory::reason_phrase)
+                        .unwrap_or("declared environment issue")
+                ),
+                suggestion: inventory::drift_suggestion_for(category).to_string(),
+            });
+        }
+    }
+
+    let (healthy, state) =
+        inventory::combine_environment_state(&package_state, inventory_report.evaluations());
 
     Ok(StatusReport {
         success: true,
@@ -3598,6 +3715,7 @@ pub fn status(adapter: &impl root_nix::NixAdapter) -> Result<StatusReport> {
         machine_id,
         hostname,
         drift_details,
+        inventory: inventory_report,
     })
 }
 
@@ -6761,6 +6879,453 @@ mod tests {
         assert!(profile.iter().any(|e| e.package == "fd"));
         assert!(!profile.iter().any(|e| e.package == "ripgrep"));
 
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn seed_declared_inventory() {
+        let mut rootfile = get_or_create_rootfile().unwrap();
+        rootfile.agents.insert("codex".into(), "*".into());
+        rootfile.models.insert(
+            "qwen3:8b".into(),
+            root_lockfile::ModelDeclaration {
+                runtime: "ollama".into(),
+            },
+        );
+        save_rootfile(&rootfile).unwrap();
+    }
+
+    fn assert_declared_inventory_preserved() {
+        let rootfile = get_or_create_rootfile().unwrap();
+        assert_eq!(rootfile.agents.get("codex").map(String::as_str), Some("*"));
+        assert_eq!(
+            rootfile
+                .models
+                .get("qwen3:8b")
+                .map(|model| model.runtime.as_str()),
+            Some("ollama")
+        );
+    }
+
+    fn write_future_lock(root_dir: &std::path::Path) -> String {
+        let json = r#"{
+  "version": 3,
+  "platform": "aarch64-darwin",
+  "packages": [],
+  "models": [{"name": "must-not-be-copied"}]
+}"#;
+        std::fs::write(root_dir.join("root.lock"), json).unwrap();
+        json.to_string()
+    }
+
+    fn satisfied_probe() -> inventory::MockInventoryProbe {
+        let mut probe = inventory::MockInventoryProbe::default();
+        probe.agents.insert(
+            "codex".into(),
+            inventory::ProbeResult {
+                presence: inventory::Presence::Present,
+                observed_version: Some("0.42.0".into()),
+                observed_digest: None,
+                evidence_source: inventory::EvidenceSource::VersionCommand,
+                reason: None,
+            },
+        );
+        probe.models.insert(
+            "qwen3:8b".into(),
+            inventory::ProbeResult {
+                presence: inventory::Presence::Present,
+                observed_version: Some("0.11.0".into()),
+                observed_digest: Some("sha256:abc".into()),
+                evidence_source: inventory::EvidenceSource::OllamaApiTags,
+                reason: None,
+            },
+        );
+        probe
+    }
+
+    #[test]
+    fn test_rootfile_inventory_survives_package_rewrites() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("inventory_preserve");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        seed_declared_inventory();
+        install(&adapter, "ripgrep").unwrap();
+        assert_declared_inventory_preserved();
+
+        update(&adapter, Some("ripgrep")).unwrap();
+        assert_declared_inventory_preserved();
+
+        lock(&adapter).unwrap();
+        assert_declared_inventory_preserved();
+
+        sync(&adapter).unwrap();
+        assert_declared_inventory_preserved();
+
+        remove(&adapter, "ripgrep").unwrap();
+        assert_declared_inventory_preserved();
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_rootfile_inventory_survives_restore_and_rollback() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("inventory_restore");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        seed_declared_inventory();
+        install(&adapter, "ripgrep").unwrap();
+        let shared = root_dir.join("shared.lock");
+        std::fs::copy(root_dir.join("root.lock"), &shared).unwrap();
+
+        restore(&adapter, Some(&shared)).unwrap();
+        assert_declared_inventory_preserved();
+
+        rollback_last(&adapter).unwrap();
+        assert_declared_inventory_preserved();
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_invalid_inventory_declaration_does_not_write() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("inventory_invalid");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let path = root_dir.join("Rootfile");
+        std::fs::write(&path, "[packages]\nripgrep = \"14.1.1\"\n").unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let mut invalid = get_or_create_rootfile().unwrap();
+        invalid.agents.insert("codex".into(), "1.2.3".into());
+        assert!(save_rootfile(&invalid).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_invalid_rootfile_blocks_mutation_before_nix() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("invalid_rootfile_nix");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        std::fs::write(
+            root_dir.join("Rootfile"),
+            "[packages]\nripgrep = \"14.1.1\"\n\n[agents]\ncodex = \"1.2.3\"\n",
+        )
+        .unwrap();
+        let rootfile_before = std::fs::read(root_dir.join("Rootfile")).unwrap();
+
+        for result in [
+            install(&adapter, "ripgrep").map(|_| ()),
+            remove(&adapter, "ripgrep").map(|_| ()),
+            sync(&adapter).map(|_| ()),
+            rollback_last(&adapter).map(|_| ()),
+        ] {
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("version constraints are not supported in v0.2.5"),
+                "unexpected error: {err}"
+            );
+        }
+
+        assert!(adapter.installed_packages.lock().unwrap().is_empty());
+        assert!(!root_dir.join("root.lock").exists());
+        assert_eq!(
+            std::fs::read(root_dir.join("Rootfile")).unwrap(),
+            rootfile_before
+        );
+        assert!(list_snapshots().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_from_v2_refuses_active_future_lock() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_v2_active_v3");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let original = write_future_lock(&root_dir);
+        let shared = root_dir.join("shared-v2.lock");
+        std::fs::write(
+            &shared,
+            r#"{"version":2,"platform":"aarch64-darwin","packages":[]}"#,
+        )
+        .unwrap();
+
+        let err = restore(&adapter, Some(&shared)).unwrap_err().to_string();
+        assert!(
+            err.contains("newer than this Root supports"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root_dir.join("root.lock")).unwrap(),
+            original
+        );
+        assert!(list_snapshots().unwrap().is_empty());
+        assert!(adapter.installed_packages.lock().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_future_lock_is_rejected_before_mutation() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("future_lock");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let original = write_future_lock(&root_dir);
+        let rootfile_path = root_dir.join("Rootfile");
+        std::fs::write(&rootfile_path, "[packages]\nripgrep = \"14.1.1\"\n").unwrap();
+        let rootfile_before = std::fs::read(&rootfile_path).unwrap();
+        let events_before = events::read_events().unwrap().len();
+        let snapshots_before = list_snapshots().unwrap().len();
+        let installed_before = adapter.installed_packages.lock().unwrap().len();
+
+        for result in [
+            install(&adapter, "ripgrep").map(|_| ()),
+            update(&adapter, Some("ripgrep")).map(|_| ()),
+            remove(&adapter, "ripgrep").map(|_| ()),
+            lock(&adapter).map(|_| ()),
+            sync(&adapter).map(|_| ()),
+            restore(&adapter, None).map(|_| ()),
+            restore_dry_run(&adapter, None).map(|_| ()),
+            rollback_last(&adapter).map(|_| ()),
+        ] {
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains("newer than this Root supports"),
+                "unexpected error: {err}"
+            );
+        }
+
+        assert_eq!(
+            std::fs::read_to_string(root_dir.join("root.lock")).unwrap(),
+            original
+        );
+        assert_eq!(std::fs::read(&rootfile_path).unwrap(), rootfile_before);
+        assert_eq!(events::read_events().unwrap().len(), events_before);
+        assert_eq!(list_snapshots().unwrap().len(), snapshots_before);
+        assert_eq!(
+            adapter.installed_packages.lock().unwrap().len(),
+            installed_before
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_reports_future_lock_without_rewrite() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_future_lock");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let original = write_future_lock(&root_dir);
+        let adapter = MockNixAdapter::new(true);
+        let report = status(&adapter).unwrap();
+        assert!(!report.healthy);
+        assert_eq!(report.state, "NeedsAttention");
+        assert!(report.drift_details.iter().any(|issue| {
+            issue.category == "incompatible-lock-schema"
+                && issue.description.contains("schema version 3")
+        }));
+        assert_eq!(
+            std::fs::read_to_string(root_dir.join("root.lock")).unwrap(),
+            original
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_empty_inventory_json_keeps_legacy_fields() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_json_legacy");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let report = status(&adapter).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json["success"].is_boolean());
+        assert!(json["healthy"].is_boolean());
+        assert!(json["state"].is_string());
+        assert!(json["rootfile_packages"].is_number());
+        assert!(json["lockfile_packages"].is_number());
+        assert!(json["profile_packages"].is_number());
+        assert!(json["machine_id"].is_string());
+        assert!(json["hostname"].is_string());
+        assert!(json["drift_details"].is_array());
+        assert!(json["inventory"].is_object());
+        assert!(json["inventory"]["agents"].as_array().unwrap().is_empty());
+        assert!(json["inventory"]["models"].as_array().unwrap().is_empty());
+        assert!(report.inventory.is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_inventory_present_satisfied_and_missing() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_inventory");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        seed_declared_inventory();
+
+        let satisfied = status_with_probe(&adapter, &satisfied_probe()).unwrap();
+        assert!(satisfied.healthy);
+        assert_eq!(satisfied.state, "Healthy");
+        assert_eq!(
+            satisfied.inventory.agents[0].evaluation,
+            inventory::EvaluationState::Satisfied
+        );
+        assert_eq!(
+            satisfied.inventory.models[0].evaluation,
+            inventory::EvaluationState::Satisfied
+        );
+
+        let missing =
+            status_with_probe(&adapter, &inventory::MockInventoryProbe::default()).unwrap();
+        assert!(!missing.healthy);
+        assert_eq!(missing.state, "Drifted");
+        assert!(missing
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "agent-missing"));
+        assert!(missing
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "model-missing"));
+        assert!(!missing
+            .drift_details
+            .iter()
+            .any(|issue| issue.suggestion.contains("root sync")
+                && (issue.category.starts_with("agent-") || issue.category.starts_with("model-"))));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_inventory_unknown_and_unsupported_need_attention() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_inventory_attn");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        let mut rootfile = get_or_create_rootfile().unwrap();
+        rootfile.agents.insert("codex".into(), "*".into());
+        rootfile.agents.insert("gemini".into(), "*".into());
+        save_rootfile(&rootfile).unwrap();
+
+        let mut probe = inventory::MockInventoryProbe::default();
+        probe.agents.insert(
+            "codex".into(),
+            inventory::ProbeResult {
+                presence: inventory::Presence::Unknown,
+                observed_version: None,
+                observed_digest: None,
+                evidence_source: inventory::EvidenceSource::VersionCommand,
+                reason: Some(inventory::REASON_TIMED_OUT.into()),
+            },
+        );
+        let report = status_with_probe(&adapter, &probe).unwrap();
+        assert_eq!(report.state, "NeedsAttention");
+        assert!(report
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "agent-observation-unknown"));
+        assert!(report
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "agent-not-supported-by-this-release"));
+        assert!(!probe
+            .agent_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|name| name == "gemini"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_package_needs_attention_dominates_inventory_drift() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_combo");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        install(&adapter, "ripgrep").unwrap();
+        adapter.remove("ripgrep").unwrap();
+        seed_declared_inventory();
+
+        let report =
+            status_with_probe(&adapter, &inventory::MockInventoryProbe::default()).unwrap();
+        assert_eq!(report.state, "NeedsAttention");
+        assert!(report
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "lockfile-profile-mismatch"));
+        assert!(report
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "agent-missing"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_does_not_probe_without_declarations() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_no_probe");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let probe = inventory::MockInventoryProbe::default();
+        let report = status_with_probe(&adapter, &probe).unwrap();
+        assert!(report.healthy);
+        assert!(probe.agent_calls.lock().unwrap().is_empty());
+        assert!(probe.model_calls.lock().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_emitted_lock_remains_v2_without_inventory() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("lock_no_inventory");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        seed_declared_inventory();
+        install(&adapter, "ripgrep").unwrap();
+        let lock = get_or_create_lock_v2().unwrap();
+        assert_eq!(lock.version, ROOT_LOCK_SCHEMA_VERSION);
+        let raw = std::fs::read_to_string(get_root_dir().unwrap().join("root.lock")).unwrap();
+        assert!(!raw.contains("\"agents\""));
+        assert!(!raw.contains("codex"));
+        assert!(!raw.contains("qwen3:8b"));
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }

@@ -5,6 +5,20 @@ poppler = "24.08.0"
 ffmpeg = "7.1"
 ripgrep = "14.1.1"
 
+# Declared environment inspection (v0.2.5+). `root status` reports whether these
+# agents and models are present. Root does not install agents, pull or delete
+# models, or pin them in root.lock. Mutating this file with Root v0.2.4 drops
+# these tables — use v0.2.5+ for any command that rewrites Rootfile.
+#
+# [agents]
+# codex = "*"
+# claude = "*"
+# opencode = "*"
+# pi = "*"
+#
+# [models."qwen3:8b"]
+# runtime = "ollama"
+
 [settings]
 snapshots = true
 verify_installs = true

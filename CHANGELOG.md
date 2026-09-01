@@ -5,6 +5,31 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2026-09-01
+
+### Added
+
+- **Declared environment status.** Optional Rootfile `[agents]` and `[models]` tables are inspected by `root status` as `present | absent | unknown` and evaluated as `satisfied | missing | drifted | unknown | unsupported`. Supported agents: Codex, Claude Code, OpenCode, and Pi. Supported model runtime: Ollama on `127.0.0.1:11434` via `GET /api/version` and `GET /api/tags`.
+- **Typed inventory JSON.** `StatusReport` gains an additive `inventory` object with `agents` and `models` arrays. Namespaced drift categories include `agent-missing`, `agent-observation-unknown`, `agent-not-supported-by-this-release`, `model-missing`, `model-observation-unknown`, `model-runtime-not-supported-by-this-release`, and `model-runtime-protocol-unsupported`.
+- **Future lock schema guard.** Locks with `version > 2` are refused before install, update, remove, lock, sync, restore, restore dry-run, and rollback. `root status` reports them as `NeedsAttention` without rewriting.
+
+### Changed
+
+- README updated for v0.2.5.
+- `root status` human output adds `Agents` and `Models` sections when declarations are present. Existing package headings and JSON fields are unchanged.
+- Empty `[agents]` / `[models]` tables are omitted when serializing Rootfile so package-only rewrites do not introduce new sections.
+
+### Fixed
+
+- Future `root.lock` schema versions can no longer be parsed and rewritten as v2 package locks by mutating commands.
+
+### Tests Added
+
+- Rootfile inventory round-trip, empty-section omission, constraint rejection, and control-character validation.
+- Future lock version peek/guard tests in `root-lockfile`.
+- Agent/model observation fixtures (present, absent, unknown, unsupported, protocol mismatch, sanitization, Codex/Claude/OpenCode/Pi flags, Ollama HTTP).
+- Status JSON legacy-field contract, inventory aggregation, rewrite-path preservation, and mutation refusal for version-3 locks.
+
 ## [0.2.4] - 2026-06-24
 
 ### Added

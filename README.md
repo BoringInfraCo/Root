@@ -1,4 +1,4 @@
-# Root v0.2.4
+# Root v0.2.5
 
 > A curated package manager for developer CLI tools, backed by Nix.
 
@@ -7,6 +7,29 @@ undo it — without needing to learn Nix.
 
 [![CI](https://github.com/sgr0691/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/sgr0691/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+## What v0.2.5 Changed
+
+v0.2.5 is the **Declared Environment Status** release:
+
+- **Rootfile declarations** — Optional `[agents]` and `[models]` tables declare
+  coding agents and Ollama-hosted models. v0.2.5 accepts agent `"*"` (presence
+  only) and `runtime = "ollama"` for models.
+- **Read-only inspection** — `root status` inspects declared agents (Codex,
+  Claude Code, OpenCode, Pi) and Ollama models. It does not install agents,
+  pull or delete models, or write them to `root.lock`.
+- **Honest uncertainty** — Observations are `present`, `absent`, or `unknown`.
+  Evaluations are `satisfied`, `missing`, `drifted`, `unknown`, or
+  `unsupported`. A failed probe is never reported as missing.
+- **Additive JSON** — Existing status fields keep their names and meanings.
+  New results live under `inventory.agents` and `inventory.models`.
+- **Lock safety** — Emitted locks remain schema v2. Locks with `version > 2`
+  are refused before mutation; `root status` reports them without rewriting.
+- **Compatibility** — Rootfiles that use `[agents]` or `[models]` require
+  Root v0.2.5+ for mutating commands. v0.2.4 will drop those tables on rewrite.
+
+`root sync`, `root restore`, and `root rollback` remain package/Nix operations.
+A `present` agent or model is not a restoration claim.
 
 ## What v0.2.4 Changed
 
@@ -113,7 +136,8 @@ v0.2.0 is the **Roadmap Phases 1–6** release:
 - **Docker-backed sandboxes** — Create, execute in, list, and destroy disposable
   Root-managed sandboxes through `root sandbox`.
 - **Machine drift reporting** — `root status` compares Rootfile intent,
-  lock state, and the Root-managed profile while maintaining machine identity.
+  lock state, and the Root-managed profile, and inspects declared agents and
+  models without mutating them.
 - **Structured history** — Execution, policy, sandbox, restore, and update
   decisions are recorded in the event ledger and exposed through JSON output.
 
@@ -209,7 +233,7 @@ All commands support `--json` for structured output (useful for scripting).
 | `root sandbox run <id> -- <command...>` | Execute a command in a running sandbox |
 | `root sandbox list` | List all Root-managed sandboxes |
 | `root sandbox destroy <id>` | Destroy a Root-managed sandbox |
-| `root status` | Show machine identity and Root-managed drift |
+| `root status` | Show machine identity, package drift, and declared agent/model inspection |
 | `root doctor` | Check that Root and Nix are ready |
 | `root history` | Show snapshot summaries and event ledger |
 | `root verify ripgrep` | Verify installed package binaries are functional |
@@ -358,8 +382,8 @@ v0.1.3 is the **Curated Package Catalog** release:
 ## Rootfile (`~/.root/Rootfile`)
 
 The Rootfile is a TOML file at `~/.root/Rootfile` that declares which packages
-and tasks Root manages. It is created automatically when you install your first
-package.
+and tasks Root manages, plus optional agent and model presence declarations.
+It is created automatically when you install your first package.
 
 ```toml
 [packages]
@@ -372,10 +396,24 @@ build   = "cargo build --release"
 test    = "cargo test --all"
 lint    = "cargo clippy -- -D warnings"
 
+[agents]
+codex = "*"
+claude = "*"
+opencode = "*"
+pi = "*"
+
+[models."qwen3:8b"]
+runtime = "ollama"
+
 [settings]
 snapshots     = true
 verify_installs = true
 ```
+
+`[agents]` and `[models]` are inspected by `root status` only. Root does not
+install those agents, pull those models, or record them in `root.lock`. Agent
+values other than `"*"` are rejected in v0.2.5. A Rootfile that uses these
+tables must be rewritten only by Root v0.2.5+.
 
 ### Sections
 
@@ -383,6 +421,8 @@ verify_installs = true
 |---------|----------|-------------|
 | `[packages]` | No | Package name → version mappings (e.g., `ripgrep = "latest"`) |
 | `[tasks]` | No | Task name → shell command mappings (e.g., `build = "cargo build"`) |
+| `[agents]` | No | Agent name → `"*"` (presence-only). Inspected by `root status`; not realized |
+| `[models]` | No | Model name → `{ runtime = "ollama" }`. Inspected by `root status`; not realized |
 | `[settings]` | No | Global settings (`snapshots`, `verify_installs` — both default to `true`) |
 
 Use `root list` to show installed packages, `root remove <package>` to uninstall,
@@ -392,7 +432,7 @@ and `root run <task-name>` to execute a task in the Root-managed environment.
 
 | Concept | Description |
 |---------|-------------|
-| **Rootfile** | TOML file at `~/.root/Rootfile` — your intent (packages and tasks you want) |
+| **Rootfile** | TOML file at `~/.root/Rootfile` — your intent (packages, tasks, and optional agent/model declarations) |
 | **root.lock** | JSON file at `~/.root/root.lock` — the deterministic lock with pinned Nix metadata |
 | **Snapshot** | JSON file at `~/.root/snapshots/` — a pre-mutation copy of the lock state for rollback |
 | **Event ledger** | JSONL file at `~/.root/events.jsonl` — an append-only audit trail of every operation |
@@ -409,7 +449,7 @@ contain the full deterministic lock state. The event ledger at
 `~/.root/events.jsonl` records every operation. Verification checks binaries
 from the Root-managed profile, not from PATH.
 
-## Limitations (v0.2.4)
+## Limitations (v0.2.5)
 
 - **Curated catalog only.** Root supports a curated catalog only — 42 packages
   across eleven categories. Arbitrary `root install <anything>` is not yet
@@ -425,6 +465,18 @@ from the Root-managed profile, not from PATH.
   when a disposable Docker container boundary is required.
 - **Rollback applies only to Root-managed packages.** Root cannot undo
   changes made by Homebrew, manual installs, or other tools.
+- **Agents and models are inspected, not realized.** `root status` can report
+  presence for declared Codex/Claude/OpenCode/Pi installs and Ollama models.
+  Root does not install agents, pull or delete models, migrate credentials, or
+  pin them in `root.lock`. `root sync` / `root restore` / `root rollback` do
+  not change agents or models.
+- **Mixed-version Rootfile edits.** A Rootfile that contains `[agents]` or
+  `[models]` must be rewritten only by Root v0.2.5+. v0.2.4 parses those
+  tables and then drops them on any mutating rewrite.
+- **Ollama inspection is local and protocol-specific.** v0.2.5 queries
+  `http://127.0.0.1:11434/api/version` and `/api/tags` only. Other runtimes
+  evaluate as `unsupported`. An endpoint that answers but lacks that contract
+  evaluates as `unsupported` with `protocol_unsupported`.
 - **Nix must be installed.** Root manages a Nix profile but does not
   bundle Nix.
 - **Mutation lock recovery.** If Root crashes during a mutation, the mutation
@@ -444,7 +496,7 @@ from the Root-managed profile, not from PATH.
 
 ## Experimental Commands
 
-The CLI includes additional commands that are **not part of the v0.2.4 public
+The CLI includes additional commands that are **not part of the v0.2.5 public
 surface**. They may change, break, or be removed without notice:
 
 | Command | Status |

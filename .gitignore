@@ -7,6 +7,8 @@ target
 # Internal design docs — not part of the public repo
 Docs/v0.1/
 Docs/Core/
+Docs/Audit/
+Docs/Release/V0_2_5_DECLARED_ENVIRONMENT_STATUS_SMOKE_TEST.md
 
 # Release build artifacts
 dist/

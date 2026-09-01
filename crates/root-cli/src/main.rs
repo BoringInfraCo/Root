@@ -119,7 +119,7 @@ enum Commands {
         #[command(subcommand)]
         subcommand: SandboxSubcommands,
     },
-    /// Show machine status and drift summary
+    /// Show machine status, package drift, and declared agent/model inspection
     Status,
 }
 
@@ -189,6 +189,57 @@ struct GenericOutput {
 
 fn print_json<T: Serialize>(output: &T) {
     println!("{}", serde_json::to_string_pretty(output).unwrap());
+}
+
+fn append_inventory_section(
+    msg: &mut String,
+    heading: &str,
+    items: &[root_core::inventory::InventoryItem],
+) {
+    if items.is_empty() {
+        return;
+    }
+    msg.push_str(&format!("\n{heading}:"));
+    for item in items {
+        msg.push_str(&format!(
+            "\n  {}  {}  {}  {}",
+            item.name,
+            item.desired,
+            inventory_presence_label(item.observation),
+            inventory_evaluation_label(item.evaluation)
+        ));
+        if let Some(version) = &item.observed_version {
+            msg.push_str(&format!("  {version}"));
+        }
+        if let Some(digest) = &item.observed_digest {
+            msg.push_str(&format!("  {digest}"));
+        }
+        if let Some(reason) = &item.reason {
+            msg.push_str(&format!(
+                "  ({})",
+                root_core::inventory::reason_phrase(reason)
+            ));
+        }
+    }
+    msg.push('\n');
+}
+
+fn inventory_presence_label(presence: root_core::inventory::Presence) -> &'static str {
+    match presence {
+        root_core::inventory::Presence::Present => "present",
+        root_core::inventory::Presence::Absent => "absent",
+        root_core::inventory::Presence::Unknown => "unknown",
+    }
+}
+
+fn inventory_evaluation_label(evaluation: root_core::inventory::EvaluationState) -> &'static str {
+    match evaluation {
+        root_core::inventory::EvaluationState::Satisfied => "satisfied",
+        root_core::inventory::EvaluationState::Missing => "missing",
+        root_core::inventory::EvaluationState::Drifted => "drifted",
+        root_core::inventory::EvaluationState::Unknown => "unknown",
+        root_core::inventory::EvaluationState::Unsupported => "unsupported",
+    }
 }
 
 fn json_error_output(e: &anyhow::Error) -> GenericOutput {
@@ -1041,6 +1092,8 @@ fn main() {
                 msg.push_str(&format!("Rootfile packages: {}\n", r.rootfile_packages));
                 msg.push_str(&format!("Lockfile packages: {}\n", r.lockfile_packages));
                 msg.push_str(&format!("Profile packages: {}\n", r.profile_packages));
+                append_inventory_section(&mut msg, "Agents", &r.inventory.agents);
+                append_inventory_section(&mut msg, "Models", &r.inventory.models);
                 if r.drift_details.is_empty() {
                     msg.push_str("\n✓ No drift detected. All systems aligned.");
                 } else {

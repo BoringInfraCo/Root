@@ -14,8 +14,18 @@ pub struct Rootfile {
     pub packages: BTreeMap<String, String>,
     #[serde(default)]
     pub tasks: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub agents: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub models: BTreeMap<String, ModelDeclaration>,
     #[serde(default)]
     pub settings: RootSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ModelDeclaration {
+    pub runtime: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq)]
@@ -43,6 +53,7 @@ impl Rootfile {
     pub fn read_from_str(content: &str) -> Result<Self> {
         let rootfile: Rootfile =
             toml::from_str(content).context("Failed to parse Rootfile TOML")?;
+        rootfile.validate()?;
         Ok(rootfile)
     }
 
@@ -52,14 +63,76 @@ impl Rootfile {
     }
 
     pub fn write_to_file(&self, path: &Path) -> Result<()> {
+        self.validate()?;
         let content = toml::to_string_pretty(self).context("Failed to serialize Rootfile")?;
         atomic_write(path, content.as_bytes()).context("Failed to write Rootfile")?;
         Ok(())
     }
+
+    /// Reject empty/control-character identifiers and unsupported agent constraints.
+    pub fn validate(&self) -> Result<()> {
+        for (name, constraint) in &self.agents {
+            validate_rootfile_ident("agent name", name)?;
+            validate_rootfile_ident("agent constraint", constraint)?;
+            if constraint != "*" {
+                anyhow::bail!(
+                    "Agent version constraints are not supported in v0.2.5. \
+                     Use \"*\" for presence-only declarations (got \"{constraint}\" for agent '{name}')."
+                );
+            }
+        }
+        for (name, declaration) in &self.models {
+            validate_rootfile_ident("model name", name)?;
+            validate_rootfile_ident("model runtime", &declaration.runtime)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_rootfile_ident(label: &str, value: &str) -> Result<()> {
+    if value.is_empty() {
+        anyhow::bail!("Rootfile {label} cannot be empty");
+    }
+    if value.chars().any(char::is_control) {
+        anyhow::bail!("Rootfile {label} contains control characters");
+    }
+    Ok(())
 }
 
 /// Current root.lock schema version emitted by Root v0.1.2+.
 pub const ROOT_LOCK_SCHEMA_VERSION: u32 = 2;
+
+/// Read the lock schema version without interpreting package fields.
+///
+/// A missing `version` field is treated as the current schema, matching
+/// `RootLockV2` deserialization defaults.
+pub fn peek_lock_schema_version(content: &str) -> Result<u32> {
+    let value: serde_json::Value =
+        serde_json::from_str(content).context("Failed to parse root.lock JSON")?;
+    match value.get("version") {
+        None => Ok(ROOT_LOCK_SCHEMA_VERSION),
+        Some(version) => {
+            let parsed = version
+                .as_u64()
+                .context("root.lock version must be a non-negative integer")?;
+            u32::try_from(parsed).context("root.lock version is out of range")
+        }
+    }
+}
+
+/// Reject lockfiles written by a newer Root than this binary understands.
+///
+/// Versions below the current schema remain readable (v1 fallback). Versions
+/// above it must not be mutated or rewritten as v2.
+pub fn validate_supported_lock_version(version: u32) -> Result<()> {
+    if version > ROOT_LOCK_SCHEMA_VERSION {
+        anyhow::bail!(
+            "root.lock schema version {version} is newer than this Root supports ({ROOT_LOCK_SCHEMA_VERSION}). \
+             Upgrade Root to use this lockfile."
+        );
+    }
+    Ok(())
+}
 
 /// The legacy root.lock JSON format.
 ///
@@ -1013,6 +1086,7 @@ mod tests {
             .into_iter()
             .collect(),
             settings: RootSettings::default(),
+            ..Rootfile::default()
         };
         let serialized = toml::to_string_pretty(&rootfile).unwrap();
         let parsed: Rootfile = toml::from_str(&serialized).unwrap();
@@ -1196,5 +1270,138 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("bad-pkg"));
         assert!(msg.contains("derivation path where an output path was expected"));
+    }
+
+    #[test]
+    fn parse_rootfile_without_inventory_omits_empty_sections() {
+        let toml_str = r#"
+        [packages]
+        node = "22.11.0"
+
+        [settings]
+        snapshots = true
+        verify_installs = true
+        "#;
+        let rootfile = Rootfile::read_from_str(toml_str).unwrap();
+        assert!(rootfile.agents.is_empty());
+        assert!(rootfile.models.is_empty());
+        let serialized = toml::to_string_pretty(&rootfile).unwrap();
+        assert!(
+            !serialized.contains("[agents]"),
+            "empty agents must not be serialized: {serialized}"
+        );
+        assert!(
+            !serialized.contains("[models]"),
+            "empty models must not be serialized: {serialized}"
+        );
+    }
+
+    #[test]
+    fn parse_rootfile_inventory_round_trips() {
+        let toml_str = r#"
+        [packages]
+        ripgrep = "14.1.1"
+
+        [agents]
+        codex = "*"
+        claude = "*"
+
+        [models."qwen3:8b"]
+        runtime = "ollama"
+        "#;
+        let rootfile = Rootfile::read_from_str(toml_str).unwrap();
+        assert_eq!(rootfile.agents.get("codex").unwrap(), "*");
+        assert_eq!(rootfile.agents.get("claude").unwrap(), "*");
+        assert_eq!(rootfile.models["qwen3:8b"].runtime, "ollama");
+
+        let serialized = toml::to_string_pretty(&rootfile).unwrap();
+        let parsed = Rootfile::read_from_str(&serialized).unwrap();
+        assert_eq!(parsed, rootfile);
+        assert!(serialized.contains("[agents]"));
+        assert!(serialized.contains("qwen3:8b"));
+    }
+
+    #[test]
+    fn parse_rootfile_rejects_unknown_model_fields() {
+        let err = Rootfile::read_from_str(
+            r#"
+            [models."qwen3:8b"]
+            runtime = "ollama"
+            digest = "sha256:abc"
+            "#,
+        )
+        .unwrap_err();
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("unknown field") || msg.contains("digest"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn parse_rootfile_rejects_agent_version_constraint() {
+        let err = Rootfile::read_from_str(
+            r#"
+            [agents]
+            codex = "0.42.0"
+            "#,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("version constraints are not supported in v0.2.5"));
+        assert!(msg.contains("codex"));
+    }
+
+    #[test]
+    fn parse_rootfile_rejects_empty_and_control_characters() {
+        let mut empty_agent = Rootfile::default();
+        empty_agent.agents.insert(String::new(), "*".into());
+        let empty_err = empty_agent.validate().unwrap_err();
+        assert!(empty_err.to_string().contains("cannot be empty"));
+
+        let mut control = Rootfile::default();
+        control
+            .agents
+            .insert("codex".into(), format!("*{}", '\u{0007}'));
+        let control_err = control.validate().unwrap_err();
+        assert!(control_err.to_string().contains("control characters"));
+
+        let empty_runtime = Rootfile::read_from_str(
+            r#"
+            [models."qwen3:8b"]
+            runtime = ""
+            "#,
+        )
+        .unwrap_err();
+        assert!(empty_runtime.to_string().contains("cannot be empty"));
+    }
+
+    #[test]
+    fn peek_and_validate_lock_schema_version() {
+        assert_eq!(
+            peek_lock_schema_version(r#"{"platform":"aarch64-darwin","packages":[]}"#).unwrap(),
+            ROOT_LOCK_SCHEMA_VERSION
+        );
+        assert_eq!(
+            peek_lock_schema_version(r#"{"version":2,"platform":"aarch64-darwin"}"#).unwrap(),
+            2
+        );
+        assert_eq!(
+            peek_lock_schema_version(r#"{"version":3,"platform":"aarch64-darwin"}"#).unwrap(),
+            3
+        );
+        validate_supported_lock_version(1).unwrap();
+        validate_supported_lock_version(2).unwrap();
+        let err = validate_supported_lock_version(3).unwrap_err();
+        assert!(err.to_string().contains("newer than this Root supports"));
+        assert!(err.to_string().contains("Upgrade Root"));
+    }
+
+    #[test]
+    fn future_lock_version_still_deserializes_but_is_rejected_by_guard() {
+        let json = r#"{"version":3,"platform":"aarch64-darwin","packages":[],"models":[]}"#;
+        let parsed = RootLockV2::read_from_str(json).unwrap();
+        assert_eq!(parsed.version, 3);
+        assert!(validate_supported_lock_version(parsed.version).is_err());
     }
 }
