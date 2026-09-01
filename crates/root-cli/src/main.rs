@@ -291,8 +291,6 @@ fn format_user_error(e: &anyhow::Error) -> String {
             "Restore requires Nix, but Nix is not installed or not in PATH.\n\n\
              Install Nix from https://nixos.org/download.html"
                 .to_string()
-        } else if msg.contains("Root profile does not exist") {
-            format!("{}\n\nRun:  root init", msg)
         } else if msg.contains(".drv path") {
             format!(
                 "{}\n\n\

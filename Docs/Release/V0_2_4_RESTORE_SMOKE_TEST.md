@@ -501,9 +501,9 @@ root restore /tmp/root.lock
 ```
 
 **Expected:**
-- Error: "Restore validation failed: Root profile does not exist."
-- Suggestion: "Run 'root init' to create the profile."
-- Exit code 1.
+- Restore succeeds and recreates `~/.root/profiles/default` via `nix profile add`.
+- Locked packages are installed.
+- Exit code 0.
 
 **Cleanup:**
 

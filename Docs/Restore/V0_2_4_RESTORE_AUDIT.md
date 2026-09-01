@@ -9,12 +9,12 @@ v0.2.4 shipped restore reliability around the existing `reconcile_profile_to_loc
 | Item | Where |
 |------|--------|
 | `--dry-run` (plan only; no Rootfile / `root.lock` / Nix profile mutation) | CLI `Commands::Restore { dry_run }`; `restore_dry_run()` |
-| Pre-mutation `restore_validate()` (store paths, Nix, experimental features, profile, platform, `.drv` outputs) | `restore()` and `restore_dry_run()` |
-| Best-effort automatic rollback of the Nix profile after mid-restore failure | `attempt_rollback_to_snapshot()` from `restore()` error path |
+| Pre-mutation `restore_validate()` (store paths, Nix, experimental features, platform, `.drv` outputs). Missing profile is allowed. | `restore()` and `restore_dry_run()` |
+| Best-effort automatic rollback of Nix profile, Rootfile, and `root.lock` after mid-restore failure | `attempt_rollback_to_snapshot()` from `restore()` error path |
 | `RestorePlanned` / `RestoreRecovered` event types, `Planned` status | `crates/root-core/src/events.rs` |
 | `failure_phase` inferred into Failed-event **messages** and user-facing errors | `infer_restore_failure_phase()` |
 | `failure_phase`, `installed_count`, `removed_count`, `kept_count` fields on `RootEvent` | `events.rs` (struct fields exist; `record_event` currently leaves them `None`) |
-| Status drift: missing outputs, `.drv` in lock, platform mismatch | `status()` |
+| Status drift: missing outputs, `.drv` in lock, platform mismatch (unhealthy / NeedsAttention) | `status()` |
 
 **Still deferred / inherent** (not claimed as 0.2.4 fixes)
 
@@ -88,7 +88,7 @@ Steps in order:
     - record `Restore` / `Failed` (phase + error in the message)
     - `attempt_rollback_to_snapshot(adapter, snapshot)` when a pre-restore snapshot exists
     - record `RestoreRecovered` / `Completed` or `Failed`
-    - return a user-facing error that says Rootfile/`root.lock` were preserved and either that the profile was rolled back, or to run `root rollback --last`
+    - return a user-facing error that says Rootfile, `root.lock`, and the Nix profile were restored from the snapshot, or to run `root rollback --last`
 
 Validation / policy failures in steps 4–6 return via `?` **before** the reconcile `match`, so they do not take the auto-rollback path (nothing has been mutated yet).
 
@@ -198,7 +198,6 @@ Called by both `restore()` and `restore_dry_run()` before mutation (and before d
 | `validate_store_paths` | `Restore validation failed: lockfile at {} contains invalid store paths` |
 | `adapter.check_availability()` | `Restore validation failed: Nix is not available` |
 | `adapter.probe_experimental_features()` | missing `nix-command` / `flakes` / both / nixpkgs resolution |
-| `adapter.profile_exists()` | `Restore validation failed: Root profile does not exist` |
 | lock `platform` vs `detect_platform()` | `lockfile platform '{}' does not match current platform '{}'` |
 | `.drv` suffix on `store_path`, `store_paths`, `outputs.*.store_path` | `package '{}' has a .drv path ...` |
 
@@ -283,7 +282,7 @@ Validates every package in the lock:
 **Profile directory:** `~/.root/profiles/default`  
 **All commands pass:** `--profile <profile_path>` for profile operations.
 
-Restore uses: availability + experimental-feature probe + `profile_exists` (validation); `profile_list_json` / `list` (inspect); `profile_generation`, `install_installable` / `install`, `remove` (reconcile and auto-rollback).
+Restore uses: availability + experimental-feature probe; `profile_exists` is **not** a restore gate (a missing profile is treated as empty). Restore then uses `profile_list_json` / `list` (inspect); `profile_generation`, `install_installable` / `install`, `remove` (reconcile and auto-rollback); and rewrites `root.lock` / Rootfile from the snapshot on recovery.
 
 ### MockNixAdapter (testing)
 
@@ -743,8 +742,8 @@ Unreadable lock still requires **manual delete**. A crash that leaves a live-loo
 
 ### 8.12 Profile drift before restore
 
-**What happens:** `reconcile_profile_to_lock()` reads current profile via `profile_packages(adapter)` (`lib.rs:2565`). If the profile was manually modified (e.g., `nix profile remove` outside Root), restore will correctly handle it — extra packages are removed, missing packages installed.  
-**If profile is completely broken** (e.g., symlink corrupted): `profile_packages()` returns error → `reconcile_profile_to_lock()` fails; auto-rollback is attempted if a snapshot exists. `restore_validate` already requires `profile_exists()`.  
+**What happens:** `reconcile_profile_to_lock()` reads current profile via `profile_packages_or_empty(adapter)`. A missing profile is treated as empty so restore can create it with `nix profile add`. If the profile was manually modified (e.g., `nix profile remove` outside Root), restore will correctly handle it — extra packages are removed, missing packages installed.  
+**If profile is completely broken** (e.g., symlink corrupted but `profile_exists()` is true): `profile_packages()` returns error → `reconcile_profile_to_lock()` fails; auto-rollback is attempted if a snapshot exists.  
 **Recovery:** `root doctor` to diagnose profile issues.
 
 ### 8.13 Profile drift after restore
@@ -769,7 +768,7 @@ Unreadable lock still requires **manual delete**. A crash that leaves a live-loo
 
 If `reconcile_profile_to_lock()` fails mid-way, `restore()` infers a failure phase, records `Restore` / `Failed`, and calls `attempt_rollback_to_snapshot()` against the pre-restore snapshot.
 
-- Success: `RestoreRecovered` / `Completed`; user is told the Nix profile was rolled back and Rootfile/`root.lock` were preserved.
+- Success: `RestoreRecovered` / `Completed`; user is told Rootfile, `root.lock`, and the Nix profile were restored from the pre-restore snapshot.
 - Failure: `RestoreRecovered` / `Failed`; user is told to run `root rollback --last`.
 - No snapshot: rollback skipped; user is pointed at `root status` / `root doctor`.
 

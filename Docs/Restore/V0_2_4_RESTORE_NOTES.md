@@ -61,7 +61,6 @@ CLI: root restore [root.lock] [--dry-run]
 | Platform | Lockfile platform matches current platform | "lockfile platform ... does not match current platform" |
 | Nix availability | `nix` binary found in PATH | "Nix is not available" |
 | Experimental features | `nix-command` and `flakes` enabled | "experimental feature ... is not enabled" |
-| Profile existence | `~/.root/profiles/default` exists | "Root profile does not exist" |
 | Mutation lock | No other Root mutation running | "Another Root mutation is in progress" |
 | Policy | Restore action not denied | "Policy denied restore" |
 
@@ -86,8 +85,10 @@ CLI: root restore [root.lock] [--dry-run]
 
 If restore fails at any point:
 
-1. **Previous Rootfile and root.lock are preserved** — they are only overwritten
-   after all Nix mutations succeed.
+1. **Rootfile and root.lock are restored from the pre-restore snapshot** if
+   automatic recovery runs. They are only overwritten with the target lock after
+   Nix mutations succeed; if a later metadata write fails, recovery rewrites
+   both files from the snapshot.
 2. **Failure event is recorded** with failure phase (e.g., "package installation",
    "profile verification", "package removal").
 3. **Automatic rollback is attempted** — Root recreates the pre-restore state

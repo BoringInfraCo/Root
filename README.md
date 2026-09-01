@@ -17,11 +17,10 @@ v0.2.4 is the **Restore Reliability** release:
   (install, remove, keep, update) without changing Rootfile, `root.lock`, or the
   Nix profile. It records a `RestorePlanned` event.
 - **Pre-restore validation** — Lockfile schema, store paths, platform compatibility,
-  Nix availability, experimental features, and profile existence are all checked
-  before any mutation.
+  Nix availability, and experimental features are all checked before any mutation.
+  A missing Root profile is created during restore.
 - **Partial failure recovery** — If restore fails mid-operation, Root automatically
-  rolls back the Nix profile to its pre-restore state and preserves the previous
-  Rootfile and root.lock.
+  restores Rootfile, `root.lock`, and the Nix profile from the pre-restore snapshot.
 - **Drift detection in status** — `root status` now detects missing output paths,
   `.drv` paths in lockfiles, and platform mismatches in addition to existing
   name-based drift checks.
