@@ -13,7 +13,7 @@ use crate::ollama::{
     REASON_REMOTE_OR_CLOUD_UNSUPPORTED,
 };
 use anyhow::{Context, Result};
-use root_lockfile::{get_root_dir, LockedModel, Rootfile, ROOT_LOCK_MAX_SUPPORTED_VERSION};
+use root_lockfile::{get_root_dir, LockedModel, Rootfile};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -57,7 +57,8 @@ impl PlannedAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PlanRuntimeProtocol {
-    Ready,
+    #[serde(rename = "supported")]
+    Supported,
     Unreachable,
     TimedOut,
     Malformed,
@@ -82,7 +83,7 @@ pub struct ExpectedDownload {
 pub struct PlanRuntime {
     pub name: String,
     pub endpoint: String,
-    pub reachable: bool,
+    pub reachable: Option<bool>,
     pub version: Option<String>,
     pub protocol: PlanRuntimeProtocol,
     pub reason: Option<String>,
@@ -119,11 +120,16 @@ pub struct PlanModelsReport {
 }
 
 struct RuntimeSnapshot {
-    reachable: bool,
+    reachable: Option<bool>,
     version: Option<String>,
     protocol: PlanRuntimeProtocol,
     reason: Option<String>,
     listed: Option<Vec<ListedModel>>,
+}
+
+struct LockLookup {
+    has_entry: bool,
+    digest: Option<String>,
 }
 
 fn unsupported_operations() -> Vec<UnsupportedOperation> {
@@ -167,10 +173,14 @@ fn load_lock_models() -> Result<BTreeMap<String, BTreeMap<String, LockedModel>>>
     let content = std::fs::read_to_string(&path)
         .with_context(|| format!("Failed to read lockfile at {}", path.display()))?;
     let version = root_lockfile::peek_lock_schema_version(&content)?;
-    if version > ROOT_LOCK_MAX_SUPPORTED_VERSION {
-        return Ok(BTreeMap::new());
-    }
+    root_lockfile::validate_supported_lock_version(version)?;
     let lock = root_lockfile::read_compatible_lock_v2_from_str(&content)?;
+    root_lockfile::validate_locked_models(&lock).with_context(|| {
+        format!(
+            "Existing lockfile at {} failed models validation",
+            path.display()
+        )
+    })?;
     Ok(lock.models)
 }
 
@@ -188,7 +198,7 @@ fn snapshot_from_error(err: InspectError, version: Option<String>) -> RuntimeSna
         ),
     };
     RuntimeSnapshot {
-        reachable: false,
+        reachable: Some(false),
         version,
         protocol,
         reason: Some(reason.to_string()),
@@ -201,9 +211,9 @@ fn snapshot_runtime(inspector: &impl OllamaInspector) -> RuntimeSnapshot {
     match probe.protocol {
         RuntimeProtocol::Ready => match inspector.list_models() {
             Ok(listed) => RuntimeSnapshot {
-                reachable: true,
+                reachable: Some(true),
                 version: probe.version,
-                protocol: PlanRuntimeProtocol::Ready,
+                protocol: PlanRuntimeProtocol::Supported,
                 reason: None,
                 listed: Some(listed),
             },
@@ -220,16 +230,24 @@ fn snapshot_runtime(inspector: &impl OllamaInspector) -> RuntimeSnapshot {
     }
 }
 
-fn locked_digest_for(
+fn lock_lookup(
     lock_models: &BTreeMap<String, BTreeMap<String, LockedModel>>,
     runtime: &str,
     name: &str,
-) -> Option<String> {
-    lock_models
+) -> LockLookup {
+    match lock_models
         .get(&runtime.to_ascii_lowercase())
         .and_then(|models| models.get(name))
-        .map(|model| model.observed_digest.as_str())
-        .and_then(canonicalize_digest)
+    {
+        Some(model) => LockLookup {
+            has_entry: true,
+            digest: canonicalize_digest(&model.observed_digest),
+        },
+        None => LockLookup {
+            has_entry: false,
+            digest: None,
+        },
+    }
 }
 
 fn needs_runtime_probe(name: &str, runtime: &str) -> bool {
@@ -243,7 +261,8 @@ fn plan_one(
     lock_models: &BTreeMap<String, BTreeMap<String, LockedModel>>,
 ) -> PlanModel {
     let resolved_name = resolve_model_tag(name);
-    let locked_digest = locked_digest_for(lock_models, runtime, name);
+    let lock = lock_lookup(lock_models, runtime, name);
+    let locked_digest = lock.digest.clone();
 
     if runtime.to_ascii_lowercase() != OLLAMA_RUNTIME {
         return PlanModel {
@@ -291,7 +310,8 @@ fn plan_one(
     match snapshot.protocol {
         PlanRuntimeProtocol::NotProbed
         | PlanRuntimeProtocol::Unreachable
-        | PlanRuntimeProtocol::TimedOut => PlanModel {
+        | PlanRuntimeProtocol::TimedOut
+        | PlanRuntimeProtocol::Malformed => PlanModel {
             name: name.to_string(),
             runtime: runtime.to_string(),
             observation: Presence::Unknown,
@@ -309,32 +329,25 @@ fn plan_one(
             addressability: ADDRESSABILITY,
             reason: snapshot.reason.clone(),
         },
-        PlanRuntimeProtocol::Malformed | PlanRuntimeProtocol::ProtocolUnsupported => {
-            let evaluation = if snapshot.reason.as_deref() == Some(REASON_PROTOCOL_UNSUPPORTED) {
-                EvaluationState::Unsupported
-            } else {
-                EvaluationState::Unknown
-            };
-            PlanModel {
-                name: name.to_string(),
-                runtime: runtime.to_string(),
-                observation: Presence::Unknown,
-                evaluation,
-                desired_tag: name.to_string(),
-                resolved_name,
-                current_tag: None,
-                current_digest: None,
-                locked_digest,
-                digest_match: None,
-                expected_download: expected_download(),
-                planned_action: PlannedAction::ProtocolUnsupported,
-                would_mutate: false,
-                would_write_lock: false,
-                addressability: ADDRESSABILITY,
-                reason: snapshot.reason.clone(),
-            }
-        }
-        PlanRuntimeProtocol::Ready => {
+        PlanRuntimeProtocol::ProtocolUnsupported => PlanModel {
+            name: name.to_string(),
+            runtime: runtime.to_string(),
+            observation: Presence::Unknown,
+            evaluation: EvaluationState::Unsupported,
+            desired_tag: name.to_string(),
+            resolved_name,
+            current_tag: None,
+            current_digest: None,
+            locked_digest,
+            digest_match: None,
+            expected_download: expected_download(),
+            planned_action: PlannedAction::ProtocolUnsupported,
+            would_mutate: false,
+            would_write_lock: false,
+            addressability: ADDRESSABILITY,
+            reason: snapshot.reason.clone(),
+        },
+        PlanRuntimeProtocol::Supported => {
             let found = snapshot.listed.as_ref().and_then(|models| {
                 models
                     .iter()
@@ -366,7 +379,7 @@ fn plan_one(
                         _ => None,
                     };
                     let (planned_action, evaluation, would_write_lock, reason) =
-                        match (locked_digest.is_some(), digest_match) {
+                        match (lock.has_entry, digest_match) {
                             (true, Some(true)) => (
                                 PlannedAction::AlreadyVerified,
                                 EvaluationState::Satisfied,
@@ -406,10 +419,10 @@ fn plan_one(
                     }
                 }
                 None => {
-                    let (would_write_lock, reason) = if locked_digest.is_some() {
-                        (false, Some("ollama_api_pull_is_tag_only".to_string()))
+                    let reason = if lock.has_entry {
+                        Some("ollama_api_pull_is_tag_only".to_string())
                     } else {
-                        (true, Some(REASON_NOT_FOUND.to_string()))
+                        Some(REASON_NOT_FOUND.to_string())
                     };
                     PlanModel {
                         name: name.to_string(),
@@ -425,7 +438,7 @@ fn plan_one(
                         expected_download: expected_download(),
                         planned_action: PlannedAction::PullTagThenVerify,
                         would_mutate: true,
-                        would_write_lock,
+                        would_write_lock: true,
                         addressability: ADDRESSABILITY,
                         reason,
                     }
@@ -464,7 +477,7 @@ fn plan_models_from(
     let (snapshot, empty_reason) = if selected.is_empty() {
         (
             RuntimeSnapshot {
-                reachable: false,
+                reachable: None,
                 version: None,
                 protocol: PlanRuntimeProtocol::NotProbed,
                 reason: Some(REASON_NO_DECLARED_MODELS.to_string()),
@@ -477,7 +490,7 @@ fn plan_models_from(
     } else {
         (
             RuntimeSnapshot {
-                reachable: false,
+                reachable: None,
                 version: None,
                 protocol: PlanRuntimeProtocol::NotProbed,
                 reason: None,
@@ -549,14 +562,7 @@ fn evaluation_label(evaluation: EvaluationState) -> &'static str {
 }
 
 pub fn format_plan_models_human(report: &PlanModelsReport) -> String {
-    let mut out = String::new();
-    if report.models.is_empty() {
-        out.push_str("No declared Ollama models.\n\n");
-    } else {
-        out.push_str("Plan for declared Ollama models\n\n");
-    }
-
-    out.push_str("Unsupported operations:\n");
+    let mut out = String::from("Unsupported operations:\n");
     for operation in &report.unsupported_operations {
         out.push_str(&format!(
             "  - {} ({})\n",
@@ -564,20 +570,25 @@ pub fn format_plan_models_human(report: &PlanModelsReport) -> String {
         ));
     }
 
-    for model in &report.models {
-        out.push_str(&format!(
-            "\n{}\n  runtime: {}\n  observation: {}\n  evaluation: {}\n  planned action: {}\n",
-            model.name,
-            model.runtime,
-            presence_label(model.observation),
-            evaluation_label(model.evaluation),
-            model.planned_action.as_str()
-        ));
-        if model.planned_action == PlannedAction::PullTagThenVerify {
-            out.push_str(&format!("  would pull {}\n", model.resolved_name));
-        }
-        if let Some(reason) = &model.reason {
-            out.push_str(&format!("  reason: {reason}\n"));
+    if report.models.is_empty() {
+        out.push_str("\nNo declared Ollama models.\n");
+    } else {
+        out.push_str("\nPlan for declared Ollama models\n");
+        for model in &report.models {
+            out.push_str(&format!(
+                "\n{}\n  runtime: {}\n  observation: {}\n  evaluation: {}\n  planned action: {}\n",
+                model.name,
+                model.runtime,
+                presence_label(model.observation),
+                evaluation_label(model.evaluation),
+                model.planned_action.as_str()
+            ));
+            if model.planned_action == PlannedAction::PullTagThenVerify {
+                out.push_str(&format!("  would pull {}\n", model.resolved_name));
+            }
+            if let Some(reason) = &model.reason {
+                out.push_str(&format!("  reason: {reason}\n"));
+            }
         }
     }
 
@@ -723,7 +734,7 @@ mod tests {
                 "runtime": {
                     "name": "ollama",
                     "endpoint": "127.0.0.1:11434",
-                    "reachable": false,
+                    "reachable": null,
                     "version": null,
                     "protocol": "not_probed",
                     "reason": "no_declared_models"
@@ -738,8 +749,14 @@ mod tests {
             })
         );
         let human = format_plan_models_human(&report);
-        assert!(human.starts_with("No declared Ollama models."));
-        assert!(human.contains("This is a preview. No changes have been made."));
+        assert!(human.starts_with("Unsupported operations:"));
+        let unsupported_at = human.find("Unsupported operations:").unwrap();
+        let empty_at = human.find("No declared Ollama models.").unwrap();
+        let preview_at = human
+            .find("This is a preview. No changes have been made.")
+            .unwrap();
+        assert!(unsupported_at < empty_at);
+        assert!(empty_at < preview_at);
     }
 
     #[test]
@@ -775,6 +792,12 @@ mod tests {
         );
         assert!(report.would_mutate);
         assert_eq!(report.command, "plan models");
+        assert_eq!(report.runtime.protocol, PlanRuntimeProtocol::Supported);
+        assert_eq!(report.runtime.reachable, Some(true));
+        assert_eq!(
+            serde_json::to_value(report.runtime.protocol).unwrap(),
+            serde_json::json!("supported")
+        );
         assert_unsupported(&report);
     }
 
@@ -789,7 +812,7 @@ mod tests {
         let model = &report.models[0];
         assert_eq!(model.planned_action, PlannedAction::PullTagThenVerify);
         assert!(model.would_mutate);
-        assert!(!model.would_write_lock);
+        assert!(model.would_write_lock);
         assert_eq!(model.locked_digest.as_deref(), Some(digest.as_str()));
         assert_eq!(model.reason.as_deref(), Some("ollama_api_pull_is_tag_only"));
         assert_eq!(model.addressability, ADDRESSABILITY);
@@ -856,7 +879,7 @@ mod tests {
         let report = plan(&[("qwen3:8b", "ollama")], BTreeMap::new(), &inspector);
         assert!(report.success);
         assert!(!report.would_mutate);
-        assert!(!report.runtime.reachable);
+        assert_eq!(report.runtime.reachable, Some(false));
         assert_eq!(report.runtime.protocol, PlanRuntimeProtocol::Unreachable);
         let model = &report.models[0];
         assert_eq!(model.observation, Presence::Unknown);
@@ -895,6 +918,7 @@ mod tests {
         assert_eq!(inspector.list_count(), 0);
         assert!(!report.would_mutate);
         assert_eq!(report.runtime.protocol, PlanRuntimeProtocol::NotProbed);
+        assert_eq!(report.runtime.reachable, None);
         assert_eq!(report.models.len(), 2);
         for model in &report.models {
             assert_eq!(
@@ -941,6 +965,7 @@ mod tests {
             report.models[0].planned_action,
             PlannedAction::UnsupportedRuntime
         );
+        assert_eq!(report.runtime.reachable, None);
         assert!(!report.would_mutate);
     }
 
@@ -956,7 +981,30 @@ mod tests {
             PlannedAction::ProtocolUnsupported
         );
         assert_eq!(report.models[0].observation, Presence::Unknown);
+        assert_eq!(report.runtime.reachable, Some(false));
         assert!(!report.would_mutate);
+    }
+
+    #[test]
+    fn malformed_runtime_is_unavailable_not_protocol() {
+        let inspector = MockOllama::default().with_runtime(RuntimeProbe {
+            version: None,
+            protocol: RuntimeProtocol::Malformed,
+        });
+        let report = plan(&[("qwen3:8b", "ollama")], BTreeMap::new(), &inspector);
+        assert_eq!(report.runtime.protocol, PlanRuntimeProtocol::Malformed);
+        assert_eq!(report.runtime.reachable, Some(false));
+        assert_eq!(
+            report.models[0].planned_action,
+            PlannedAction::RuntimeUnavailable
+        );
+        assert_eq!(report.models[0].observation, Presence::Unknown);
+        assert_ne!(
+            report.models[0].planned_action,
+            PlannedAction::ProtocolUnsupported
+        );
+        assert!(!report.would_mutate);
+        assert_eq!(inspector.captured_pull_body(), None);
     }
 
     #[test]
@@ -1086,5 +1134,105 @@ mod tests {
             report.models[0].planned_action,
             PlannedAction::AlreadyVerified
         );
+    }
+
+    #[test]
+    fn present_noncanonical_lock_is_not_unlocked() {
+        let inspector =
+            MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&sha(HEX64)))]);
+        let report = plan(
+            &[("qwen3:8b", "ollama")],
+            locked("qwen3:8b", "not-a-canonical-digest"),
+            &inspector,
+        );
+        assert_eq!(
+            report.models[0].planned_action,
+            PlannedAction::CannotReproduceLockedDigest
+        );
+        assert!(!report.models[0].would_write_lock);
+        assert_eq!(report.models[0].locked_digest, None);
+    }
+
+    fn isolated_root(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "root_plan_models_{name}_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn future_lock_is_refused_without_rewrite() {
+        let _guard = crate::TEST_MUTEX.lock().unwrap();
+        let tmp = isolated_root("future_lock");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("ROOT_DIR", &tmp);
+        rootfile_with(&[("qwen3:8b", "ollama")])
+            .write_to_file(&tmp.join("Rootfile"))
+            .unwrap();
+        let original = r#"{
+  "version": 4,
+  "platform": "aarch64-darwin",
+  "packages": [],
+  "models": [{"name": "must-not-be-copied"}]
+}"#;
+        std::fs::write(tmp.join("root.lock"), original).unwrap();
+        let err = plan_models_with_inspector(None, &MockOllama::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("newer than this Root supports"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("root.lock")).unwrap(),
+            original
+        );
+        assert!(!tmp.join("model-pull.json").exists());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn invalid_locked_digest_is_refused_without_rewrite() {
+        let _guard = crate::TEST_MUTEX.lock().unwrap();
+        let tmp = isolated_root("invalid_digest");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("ROOT_DIR", &tmp);
+        rootfile_with(&[("qwen3:8b", "ollama")])
+            .write_to_file(&tmp.join("Rootfile"))
+            .unwrap();
+        let original = r#"{
+  "version": 3,
+  "platform": "aarch64-darwin",
+  "packages": [],
+  "models": {
+    "ollama": {
+      "qwen3:8b": {
+        "runtime": "ollama",
+        "requested_name": "qwen3:8b",
+        "observed_digest": "not-canonical",
+        "locked_at": "2026-09-01T00:00:00Z",
+        "verified_at": "2026-09-01T00:00:01Z",
+        "verification_method": "inspect_tags_digest",
+        "addressability": "verification_record_only"
+      }
+    }
+  }
+}"#;
+        std::fs::write(tmp.join("root.lock"), original).unwrap();
+        let err = plan_models_with_inspector(None, &MockOllama::default()).unwrap_err();
+        assert!(
+            err.to_string().contains("failed models validation")
+                || err.to_string().contains("observed_digest"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(tmp.join("root.lock")).unwrap(),
+            original
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

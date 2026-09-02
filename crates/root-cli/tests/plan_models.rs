@@ -30,9 +30,13 @@ fn empty_models_exits_0() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("No declared Ollama models."));
-    assert!(stdout.contains("Unsupported operations:"));
-    assert!(stdout.contains("This is a preview. No changes have been made."));
+    let unsupported_at = stdout.find("Unsupported operations:").unwrap();
+    let empty_at = stdout.find("No declared Ollama models.").unwrap();
+    let preview_at = stdout
+        .find("This is a preview. No changes have been made.")
+        .unwrap();
+    assert!(unsupported_at < empty_at);
+    assert!(empty_at < preview_at);
     assert!(!dir.join("root.lock").exists());
     assert!(!dir.join("model-pull.json").exists());
     let _ = std::fs::remove_dir_all(&dir);
@@ -73,6 +77,7 @@ fn empty_models_json_is_preview() {
     assert!(stdout.contains("\"command\": \"plan models\""));
     assert!(stdout.contains("\"would_mutate\": false"));
     assert!(stdout.contains("\"protocol\": \"not_probed\""));
+    assert!(stdout.contains("\"reachable\": null"));
     assert!(stdout.contains("\"reason\": \"no_declared_models\""));
     assert!(stdout.contains("digest_addressable_restore"));
     let _ = std::fs::remove_dir_all(&dir);
