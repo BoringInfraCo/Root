@@ -1112,7 +1112,8 @@ fn main() {
                      Execution: run={:?}\n\
                      Sandboxes: create={:?}, run={:?}, destroy={:?}\n\
                      Resources: network={:?}, filesystem={:?}\n\
-                     Agent actions: {:?}",
+                     Agent actions: {:?}\n\
+                     Models: pull={:?}",
                     r.path,
                     r.source,
                     r.policy.packages.install,
@@ -1126,7 +1127,8 @@ fn main() {
                     r.policy.sandboxes.destroy,
                     r.policy.resources.network,
                     r.policy.resources.filesystem,
-                    r.policy.approvals.agent
+                    r.policy.approvals.agent,
+                    r.policy.models.pull
                 )
             });
         }

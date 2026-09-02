@@ -82,6 +82,26 @@ fn unknown_name_pull_exits_2() {
 }
 
 #[test]
+fn permissions_human_lists_models_pull() {
+    let dir = tmp("permissions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let output = Command::new(root_bin())
+        .args(["permissions"])
+        .env("ROOT_DIR", &dir)
+        .output()
+        .unwrap();
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Models: pull=Allow"), "stdout={stdout}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn policy_deny_pull_exits_9_without_marker() {
     let dir = tmp("policy_deny");
     std::fs::create_dir_all(&dir).unwrap();
@@ -102,6 +122,15 @@ fn policy_deny_pull_exits_9_without_marker() {
         "stderr={} stdout={}",
         String::from_utf8_lossy(&output.stderr),
         String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("Policy denied: model-pull actions are denied by policy"),
+        "stderr={stderr}"
+    );
+    assert!(
+        !stderr.contains("Policy denied: Policy denied"),
+        "stderr={stderr}"
     );
     assert!(!dir.join("model-pull.json").exists());
     assert!(!dir.join("root.lock").exists());

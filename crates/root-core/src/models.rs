@@ -897,11 +897,18 @@ fn empty_pull_report() -> ModelsPullReport {
     }
 }
 
+fn policy_denied_inner_reason(message: &str) -> Option<String> {
+    message
+        .strip_prefix("Policy denied")
+        .and_then(|rest| rest.rsplit_once(": "))
+        .map(|(_, reason)| reason.to_string())
+}
+
 fn enforce_model_pull_policy(subject: &str) -> Result<()> {
     crate::enforce_policy(PolicyAction::ModelPull, Some(subject)).map_err(|err| {
         let message = err.to_string();
-        if message.contains("Policy denied") {
-            anyhow::Error::new(ModelError::PolicyDenied(message))
+        if let Some(reason) = policy_denied_inner_reason(&message) {
+            anyhow::Error::new(ModelError::PolicyDenied(reason))
         } else {
             err
         }
@@ -2709,6 +2716,11 @@ mod tests {
                 pull_models_with_backend(None, &backend, &backend, &mut |_, _| {}).unwrap_err();
             let model_err = err.downcast_ref::<ModelError>().unwrap();
             assert_eq!(model_err.exit_code(), 9);
+            assert_eq!(
+                model_err.to_string(),
+                "Policy denied: model-pull actions are denied by policy"
+            );
+            assert_eq!(model_err.to_string().matches("Policy denied").count(), 1);
             assert_eq!(backend.inspect_count(), 0);
             assert_eq!(backend.pull_count(), 0);
             assert!(!tmp.join("model-pull.json").exists());
