@@ -681,6 +681,7 @@ pub mod brew;
 pub mod events;
 pub mod execution;
 pub mod inventory;
+pub mod ollama;
 pub mod policy;
 
 pub use execution::{run, RunReport, RunRequest};

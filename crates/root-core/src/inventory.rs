@@ -3,11 +3,10 @@
 //! Inspects Rootfile `[agents]` and `[models]` declarations. Probes never
 //! install, pull, remove, resolve, or restore resources.
 
+use crate::ollama::{self, HttpOllama, OllamaInspector};
 use root_lockfile::Rootfile;
 use serde::Serialize;
 use std::collections::BTreeMap;
-use std::io::{Read, Write};
-use std::net::{SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -15,7 +14,6 @@ use std::time::{Duration, Instant};
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
 const OUTPUT_LIMIT: usize = 4096;
-const HTTP_BODY_LIMIT: usize = 1_048_576;
 const DEFAULT_OLLAMA_HOST: &str = "127.0.0.1";
 const DEFAULT_OLLAMA_PORT: u16 = 11434;
 
@@ -187,9 +185,8 @@ impl InventoryProbe for MockInventoryProbe {
 
 pub struct SystemInventoryProbe {
     path_dirs: Option<Vec<PathBuf>>,
-    ollama_host: String,
-    ollama_port: u16,
     timeout: Duration,
+    inspector: HttpOllama,
     ollama_cache: Mutex<Option<OllamaSnapshot>>,
 }
 
@@ -197,9 +194,8 @@ impl Default for SystemInventoryProbe {
     fn default() -> Self {
         Self {
             path_dirs: None,
-            ollama_host: DEFAULT_OLLAMA_HOST.to_string(),
-            ollama_port: DEFAULT_OLLAMA_PORT,
             timeout: PROBE_TIMEOUT,
+            inspector: HttpOllama::new(DEFAULT_OLLAMA_HOST, DEFAULT_OLLAMA_PORT),
             ollama_cache: Mutex::new(None),
         }
     }
@@ -209,9 +205,13 @@ impl SystemInventoryProbe {
     pub fn for_tests(path_dirs: Vec<PathBuf>, ollama_port: u16, timeout: Duration) -> Self {
         Self {
             path_dirs: Some(path_dirs),
-            ollama_host: DEFAULT_OLLAMA_HOST.to_string(),
-            ollama_port,
             timeout,
+            inspector: HttpOllama::for_tests(
+                DEFAULT_OLLAMA_HOST,
+                ollama_port,
+                timeout,
+                ollama::OLLAMA_PULL_IDLE_TIMEOUT,
+            ),
             ollama_cache: Mutex::new(None),
         }
     }
@@ -505,14 +505,40 @@ impl SystemInventoryProbe {
         if let Some(existing) = cache.clone() {
             return existing;
         }
-        let snapshot = probe_ollama(&self.ollama_host, self.ollama_port, self.timeout);
+        let snapshot = snapshot_from_inspector(&self.inspector);
         *cache = Some(snapshot.clone());
         snapshot
     }
 }
 
+fn snapshot_from_inspector(inspector: &impl OllamaInspector) -> OllamaSnapshot {
+    use crate::ollama::{InspectError, RuntimeProtocol};
+    match inspector.inspect_runtime().protocol {
+        RuntimeProtocol::Unreachable => OllamaSnapshot::Unreachable,
+        RuntimeProtocol::TimedOut => OllamaSnapshot::TimedOut,
+        RuntimeProtocol::Malformed => OllamaSnapshot::Malformed,
+        RuntimeProtocol::ProtocolUnsupported => OllamaSnapshot::ProtocolUnsupported,
+        RuntimeProtocol::Ready => match inspector.list_models() {
+            Ok(models) => OllamaSnapshot::Ready {
+                models: models
+                    .into_iter()
+                    .map(|model| OllamaListedModel {
+                        name: model.name,
+                        model: model.model,
+                        digest: model.digest,
+                    })
+                    .collect(),
+            },
+            Err(InspectError::EndpointUnreachable) => OllamaSnapshot::Unreachable,
+            Err(InspectError::TimedOut) => OllamaSnapshot::TimedOut,
+            Err(InspectError::Malformed) => OllamaSnapshot::Malformed,
+            Err(InspectError::ProtocolUnsupported) => OllamaSnapshot::ProtocolUnsupported,
+        },
+    }
+}
+
 fn model_matches(declared: &str, listed: &OllamaListedModel) -> bool {
-    listed.name == declared || listed.model.as_deref() == Some(declared)
+    ollama::model_matches(declared, &listed.name, listed.model.as_deref())
 }
 
 fn inspect_agent_descriptor(
@@ -682,184 +708,13 @@ fn is_version_token(token: &str) -> bool {
             .unwrap_or(false)
 }
 
-fn looks_secret(value: &str) -> bool {
+pub(crate) fn looks_secret(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     lower.contains("canary")
         || lower.contains("token")
         || lower.contains("secret")
         || lower.contains("bearer")
         || lower.contains("api_key")
-}
-
-fn probe_ollama(host: &str, port: u16, timeout: Duration) -> OllamaSnapshot {
-    match http_get_json(host, port, "/api/version", timeout) {
-        HttpOutcome::Unreachable => return OllamaSnapshot::Unreachable,
-        HttpOutcome::TimedOut => return OllamaSnapshot::TimedOut,
-        HttpOutcome::Malformed => return OllamaSnapshot::Malformed,
-        HttpOutcome::ProtocolUnsupported => return OllamaSnapshot::ProtocolUnsupported,
-        HttpOutcome::Json(value) => {
-            if value.get("version").and_then(|v| v.as_str()).is_none() {
-                return OllamaSnapshot::ProtocolUnsupported;
-            }
-        }
-    }
-    match http_get_json(host, port, "/api/tags", timeout) {
-        HttpOutcome::Unreachable => OllamaSnapshot::Unreachable,
-        HttpOutcome::TimedOut => OllamaSnapshot::TimedOut,
-        HttpOutcome::Malformed => OllamaSnapshot::Malformed,
-        HttpOutcome::ProtocolUnsupported => OllamaSnapshot::ProtocolUnsupported,
-        HttpOutcome::Json(value) => match value.get("models").and_then(|v| v.as_array()) {
-            None => OllamaSnapshot::ProtocolUnsupported,
-            Some(models) => {
-                let mut listed = Vec::new();
-                for model in models {
-                    let Some(name) = model.get("name").and_then(|v| v.as_str()) else {
-                        return OllamaSnapshot::ProtocolUnsupported;
-                    };
-                    listed.push(OllamaListedModel {
-                        name: name.to_string(),
-                        model: model
-                            .get("model")
-                            .and_then(|v| v.as_str())
-                            .map(str::to_string),
-                        digest: model
-                            .get("digest")
-                            .and_then(|v| v.as_str())
-                            .filter(|digest| !looks_secret(digest))
-                            .map(str::to_string),
-                    });
-                }
-                OllamaSnapshot::Ready { models: listed }
-            }
-        },
-    }
-}
-
-enum HttpOutcome {
-    Json(serde_json::Value),
-    Unreachable,
-    TimedOut,
-    Malformed,
-    ProtocolUnsupported,
-}
-
-fn http_get_json(host: &str, port: u16, path: &str, timeout: Duration) -> HttpOutcome {
-    if port == 0 {
-        return HttpOutcome::Unreachable;
-    }
-    let addr = match to_loopback_addr(host, port) {
-        Some(addr) => addr,
-        None => return HttpOutcome::Unreachable,
-    };
-    let mut stream = match TcpStream::connect_timeout(&addr, timeout) {
-        Ok(stream) => stream,
-        Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
-            return HttpOutcome::TimedOut;
-        }
-        Err(_) => return HttpOutcome::Unreachable,
-    };
-    if stream.set_read_timeout(Some(timeout)).is_err()
-        || stream.set_write_timeout(Some(timeout)).is_err()
-    {
-        return HttpOutcome::Unreachable;
-    }
-
-    let request = format!(
-        "GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\nAccept: application/json\r\n\r\n"
-    );
-    if stream.write_all(request.as_bytes()).is_err() {
-        return HttpOutcome::Unreachable;
-    }
-
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 4096];
-    let started = Instant::now();
-    loop {
-        if started.elapsed() >= timeout {
-            return HttpOutcome::TimedOut;
-        }
-        match stream.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => {
-                if buf.len() + n > HTTP_BODY_LIMIT {
-                    return HttpOutcome::Malformed;
-                }
-                buf.extend_from_slice(&chunk[..n]);
-            }
-            Err(error)
-                if error.kind() == std::io::ErrorKind::WouldBlock
-                    || error.kind() == std::io::ErrorKind::TimedOut =>
-            {
-                return HttpOutcome::TimedOut;
-            }
-            Err(_) => return HttpOutcome::Unreachable,
-        }
-    }
-
-    parse_http_json(&buf)
-}
-
-fn to_loopback_addr(host: &str, port: u16) -> Option<SocketAddr> {
-    if host != "127.0.0.1" && host != "localhost" {
-        return None;
-    }
-    (host, port)
-        .to_socket_addrs()
-        .ok()?
-        .find(|addr| addr.ip().is_loopback())
-}
-
-fn parse_http_json(response: &[u8]) -> HttpOutcome {
-    let text = String::from_utf8_lossy(response);
-    let Some((header, body)) = text.split_once("\r\n\r\n") else {
-        return HttpOutcome::Malformed;
-    };
-    let status_line = header.lines().next().unwrap_or("");
-    let status = status_line
-        .split_whitespace()
-        .nth(1)
-        .and_then(|code| code.parse::<u16>().ok())
-        .unwrap_or(0);
-    if status == 404 || status == 405 {
-        return HttpOutcome::ProtocolUnsupported;
-    }
-    if !(200..300).contains(&status) {
-        return HttpOutcome::Malformed;
-    }
-    let decoded = match decode_http_body(header, body) {
-        Some(decoded) => decoded,
-        None => return HttpOutcome::Malformed,
-    };
-    match serde_json::from_str::<serde_json::Value>(&decoded) {
-        Ok(value) => HttpOutcome::Json(value),
-        Err(_) => HttpOutcome::Malformed,
-    }
-}
-
-fn decode_http_body(header: &str, body: &str) -> Option<String> {
-    let chunked = header.lines().any(|line| {
-        line.to_ascii_lowercase().starts_with("transfer-encoding:")
-            && line.to_ascii_lowercase().contains("chunked")
-    });
-    if !chunked {
-        return Some(body.to_string());
-    }
-    decode_chunked(body)
-}
-
-fn decode_chunked(body: &str) -> Option<String> {
-    let mut rest = body;
-    let mut out = String::new();
-    loop {
-        let (size_line, after) = rest.split_once("\r\n")?;
-        let size = usize::from_str_radix(size_line.trim(), 16).ok()?;
-        if size == 0 {
-            return Some(out);
-        }
-        let chunk = after.get(..size)?;
-        out.push_str(chunk);
-        rest = after.get(size..)?.strip_prefix("\r\n")?;
-    }
 }
 
 #[cfg(test)]
@@ -1299,5 +1154,35 @@ mod tests {
         let encoded = serde_json::to_string(&result.observed_digest).unwrap();
         assert!(!encoded.contains("CANARY_SECRET_TOKEN"));
         assert_eq!(result.observed_digest.as_deref(), Some("sha256:abc"));
+    }
+
+    #[test]
+    fn ollama_http_latest_tag_resolution() {
+        let tags =
+            r#"{"models":[{"name":"qwen3:latest","model":"qwen3:latest","digest":"sha256:abc"}]}"#;
+        let (port, _handle) = spawn_json_server(r#"{"version":"0.11.0"}"#, tags, 200, 200);
+        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(2));
+        let untagged = probe.inspect_model("qwen3", "ollama");
+        assert_eq!(untagged.presence, Presence::Present);
+        assert_eq!(untagged.observed_digest.as_deref(), Some("sha256:abc"));
+        let tagged = probe.inspect_model("qwen3:latest", "ollama");
+        assert_eq!(tagged.presence, Presence::Present);
+        let other = probe.inspect_model("qwen3:7b", "ollama");
+        assert_eq!(other.presence, Presence::Absent);
+    }
+
+    #[test]
+    fn ollama_http_untagged_list_matches_latest() {
+        let tags = r#"{"models":[{"name":"qwen3","digest":"sha256:abc"}]}"#;
+        let (port, _handle) = spawn_json_server(r#"{"version":"0.11.0"}"#, tags, 200, 200);
+        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(2));
+        assert_eq!(
+            probe.inspect_model("qwen3", "ollama").presence,
+            Presence::Present
+        );
+        assert_eq!(
+            probe.inspect_model("qwen3:latest", "ollama").presence,
+            Presence::Present
+        );
     }
 }
