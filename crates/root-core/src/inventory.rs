@@ -129,11 +129,18 @@ pub struct InventoryItem {
     pub evaluation: EvaluationState,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_version: Option<String>,
+    /// Raw daemon digest; never rewritten by lock overlay.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub observed_digest: Option<String>,
     pub evidence_source: EvidenceSource,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    /// Canonical `sha256:<64 lowercase hex>` from a v3 lock entry.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locked_digest: Option<String>,
+    /// Canonical compare of `observed_digest` vs `locked_digest`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub digest_match: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
@@ -303,6 +310,8 @@ fn evaluate_agent(name: &str, desired: &str, probe: &impl InventoryProbe) -> Inv
             observed_digest: None,
             evidence_source: EvidenceSource::None,
             reason: Some(REASON_NOT_SUPPORTED.to_string()),
+            locked_digest: None,
+            digest_match: None,
         };
     }
 
@@ -328,6 +337,8 @@ fn evaluate_model(name: &str, runtime: &str, probe: &impl InventoryProbe) -> Inv
             observed_digest: None,
             evidence_source: EvidenceSource::None,
             reason: Some(REASON_NOT_SUPPORTED.to_string()),
+            locked_digest: None,
+            digest_match: None,
         };
     }
 
@@ -369,6 +380,8 @@ fn item_from_probe(
         observed_digest: probed.observed_digest,
         evidence_source: probed.evidence_source,
         reason: probed.reason,
+        locked_digest: None,
+        digest_match: None,
     }
 }
 
@@ -414,7 +427,7 @@ pub fn drift_category_for(item: &InventoryItem) -> Option<&'static str> {
         (ResourceKind::Model, EvaluationState::Unsupported, _) => {
             Some("model-runtime-not-supported-by-this-release")
         }
-        (ResourceKind::Model, EvaluationState::Drifted, _) => None,
+        (ResourceKind::Model, EvaluationState::Drifted, _) => Some("model-digest-drift"),
     }
 }
 
@@ -429,8 +442,9 @@ pub fn drift_suggestion_for(category: &str) -> &'static str {
         "agent-not-supported-by-this-release" => {
             "This Root release cannot inspect that agent. Presence is not reported as missing."
         }
-        "model-missing" => {
-            "The declared model was not listed by Ollama. Root does not pull or restore models in v0.2.5."
+        "model-missing" => "Run `root plan models` then `root models pull`.",
+        "model-digest-drift" => {
+            "The Ollama tag no longer matches the locked verification digest. Root cannot pull by digest. Re-pull will fetch the current tag, not the locked bits."
         }
         "model-observation-unknown" => {
             "Ensure the Ollama daemon is reachable at 127.0.0.1:11434, then re-run `root status`."
@@ -816,6 +830,34 @@ mod tests {
             report.models[0].observed_digest.as_deref(),
             Some("sha256:abc")
         );
+        assert!(report.models[0].locked_digest.is_none());
+        assert!(report.models[0].digest_match.is_none());
+    }
+
+    #[test]
+    fn digest_drift_category_and_suggestions() {
+        let drifted = InventoryItem {
+            name: "qwen3:8b".into(),
+            kind: ResourceKind::Model,
+            desired: "ollama".into(),
+            observation: Presence::Present,
+            evaluation: EvaluationState::Drifted,
+            observed_version: None,
+            observed_digest: Some("b".repeat(64)),
+            evidence_source: EvidenceSource::OllamaApiTags,
+            reason: None,
+            locked_digest: Some(format!("sha256:{}", "a".repeat(64))),
+            digest_match: Some(false),
+        };
+        assert_eq!(drift_category_for(&drifted), Some("model-digest-drift"));
+        assert_eq!(
+            drift_suggestion_for("model-digest-drift"),
+            "The Ollama tag no longer matches the locked verification digest. Root cannot pull by digest. Re-pull will fetch the current tag, not the locked bits."
+        );
+        assert_eq!(
+            drift_suggestion_for("model-missing"),
+            "Run `root plan models` then `root models pull`."
+        );
     }
 
     #[test]
@@ -1068,6 +1110,8 @@ mod tests {
             observed_digest: None,
             evidence_source: result.evidence_source,
             reason: result.reason.clone(),
+            locked_digest: None,
+            digest_match: None,
         })
         .unwrap();
         assert!(

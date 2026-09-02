@@ -219,6 +219,14 @@ fn append_inventory_section(
         if let Some(digest) = &item.observed_digest {
             msg.push_str(&format!("  {digest}"));
         }
+        if let Some(locked) = &item.locked_digest {
+            msg.push_str(&format!("  locked {locked}"));
+        }
+        match item.digest_match {
+            Some(true) => msg.push_str("  digest match"),
+            Some(false) => msg.push_str("  digest mismatch"),
+            None => {}
+        }
         if let Some(reason) = &item.reason {
             msg.push_str(&format!(
                 "  ({})",
@@ -1403,5 +1411,31 @@ mod tests {
             Commands::Status => {}
             other => panic!("expected status, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn inventory_human_lines_include_locked_digest_overlay() {
+        let item = root_core::inventory::InventoryItem {
+            name: "qwen3:8b".into(),
+            kind: root_core::inventory::ResourceKind::Model,
+            desired: "ollama".into(),
+            observation: root_core::inventory::Presence::Present,
+            evaluation: root_core::inventory::EvaluationState::Drifted,
+            observed_version: None,
+            observed_digest: Some("C".repeat(64)),
+            evidence_source: root_core::inventory::EvidenceSource::OllamaApiTags,
+            reason: None,
+            locked_digest: Some(format!("sha256:{}", "a".repeat(64))),
+            digest_match: Some(false),
+        };
+        let mut msg = String::new();
+        append_inventory_section(&mut msg, "Models", &[item]);
+        assert!(msg.contains(&"C".repeat(64)), "raw observed digest: {msg}");
+        assert!(
+            msg.contains(&format!("locked sha256:{}", "a".repeat(64))),
+            "locked digest: {msg}"
+        );
+        assert!(msg.contains("digest mismatch"), "mismatch label: {msg}");
+        assert!(msg.contains("drifted"), "evaluation: {msg}");
     }
 }

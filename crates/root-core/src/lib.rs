@@ -3696,11 +3696,14 @@ pub fn status_with_probe(
         "Drifted".to_string()
     };
 
-    let inventory_report = if rootfile.agents.is_empty() && rootfile.models.is_empty() {
+    let mut inventory_report = if rootfile.agents.is_empty() && rootfile.models.is_empty() {
         inventory::InventoryReport::default()
     } else {
         inventory::inspect_declarations(&rootfile, probe)
     };
+    if let Some(lock) = lock.as_ref() {
+        models::overlay_locked_digests(&mut inventory_report, lock);
+    }
 
     for item in inventory_report
         .agents
@@ -7251,12 +7254,22 @@ mod tests {
         assert!(missing
             .drift_details
             .iter()
-            .any(|issue| issue.category == "model-missing"));
+            .any(|issue| issue.category == "model-missing"
+                && issue.suggestion == "Run `root plan models` then `root models pull`."));
         assert!(!missing
             .drift_details
             .iter()
             .any(|issue| issue.suggestion.contains("root sync")
                 && (issue.category.starts_with("agent-") || issue.category.starts_with("model-"))));
+        let satisfied_json = serde_json::to_value(&satisfied).unwrap();
+        let model = &satisfied_json["inventory"]["models"][0];
+        assert_eq!(model["name"], "qwen3:8b");
+        assert_eq!(model["observed_digest"], "sha256:abc");
+        assert!(
+            model.get("locked_digest").is_none(),
+            "overlay fields must be omitted without a v3 lock entry: {model}"
+        );
+        assert!(model.get("digest_match").is_none());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -7346,6 +7359,141 @@ mod tests {
         assert!(report.healthy);
         assert!(probe.agent_calls.lock().unwrap().is_empty());
         assert!(probe.model_calls.lock().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn probe_with_raw_model_digest(digest: &str) -> inventory::MockInventoryProbe {
+        let mut probe = satisfied_probe();
+        probe.models.insert(
+            "qwen3:8b".into(),
+            inventory::ProbeResult {
+                presence: inventory::Presence::Present,
+                observed_version: None,
+                observed_digest: Some(digest.to_string()),
+                evidence_source: inventory::EvidenceSource::OllamaApiTags,
+                reason: None,
+            },
+        );
+        probe
+    }
+
+    #[test]
+    fn test_status_json_keeps_v025_fields_and_raw_observed_digest() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_json_v025_models");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        seed_declared_inventory();
+
+        let report = status_with_probe(&adapter, &satisfied_probe()).unwrap();
+        let json = serde_json::to_value(&report).unwrap();
+        assert!(json["success"].is_boolean());
+        assert!(json["healthy"].is_boolean());
+        assert!(json["state"].is_string());
+        assert!(json["rootfile_packages"].is_number());
+        assert!(json["lockfile_packages"].is_number());
+        assert!(json["profile_packages"].is_number());
+        assert!(json["machine_id"].is_string());
+        assert!(json["hostname"].is_string());
+        assert!(json["drift_details"].is_array());
+        assert!(json["inventory"].is_object());
+        assert!(json["inventory"]["agents"].is_array());
+        assert!(json["inventory"]["models"].is_array());
+
+        let model = &json["inventory"]["models"][0];
+        assert_eq!(model["name"], "qwen3:8b");
+        assert_eq!(model["kind"], "model");
+        assert_eq!(model["desired"], "ollama");
+        assert_eq!(model["observation"], "present");
+        assert_eq!(model["evaluation"], "satisfied");
+        assert_eq!(model["observed_digest"], "sha256:abc");
+        assert_eq!(model["evidence_source"], "ollama_api_tags");
+        assert!(model.get("locked_digest").is_none());
+        assert!(model.get("digest_match").is_none());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_overlays_canonical_digest_match_without_pull() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_digest_match");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        seed_declared_inventory();
+        write_v3_models_lock(&root_dir);
+
+        // Official tags often return uppercase hex without a sha256: prefix.
+        let raw = "A".repeat(64);
+        let probe = probe_with_raw_model_digest(&raw);
+        let report = status_with_probe(&adapter, &probe).unwrap();
+        let model = &report.inventory.models[0];
+        assert_eq!(model.observed_digest.as_deref(), Some(raw.as_str()));
+        assert_eq!(
+            model.locked_digest.as_deref(),
+            Some(canonical_model_digest().as_str())
+        );
+        assert_eq!(model.digest_match, Some(true));
+        assert_eq!(model.evaluation, inventory::EvaluationState::Satisfied);
+        assert!(report.healthy);
+        assert_eq!(report.state, "Healthy");
+        assert!(!report
+            .drift_details
+            .iter()
+            .any(|issue| issue.category == "model-digest-drift"));
+
+        let json = serde_json::to_value(&report).unwrap();
+        let model_json = &json["inventory"]["models"][0];
+        assert_eq!(model_json["observed_digest"], raw);
+        assert_eq!(model_json["locked_digest"], canonical_model_digest());
+        assert_eq!(model_json["digest_match"], true);
+        assert_eq!(
+            probe.model_calls.lock().unwrap().as_slice(),
+            [("qwen3:8b".to_string(), "ollama".to_string())]
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_status_digest_mismatch_is_model_digest_drift() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_digest_drift");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        seed_declared_inventory();
+        write_v3_models_lock(&root_dir);
+
+        let raw = "B".repeat(64);
+        let probe = probe_with_raw_model_digest(&raw);
+        let report = status_with_probe(&adapter, &probe).unwrap();
+        let model = &report.inventory.models[0];
+        assert_eq!(model.observed_digest.as_deref(), Some(raw.as_str()));
+        assert_eq!(
+            model.locked_digest.as_deref(),
+            Some(canonical_model_digest().as_str())
+        );
+        assert_eq!(model.digest_match, Some(false));
+        assert_eq!(model.evaluation, inventory::EvaluationState::Drifted);
+        assert!(!report.healthy);
+        assert_eq!(report.state, "Drifted");
+        let issue = report
+            .drift_details
+            .iter()
+            .find(|issue| issue.category == "model-digest-drift")
+            .expect("model-digest-drift");
+        assert_eq!(
+            issue.suggestion,
+            "The Ollama tag no longer matches the locked verification digest. Root cannot pull by digest. Re-pull will fetch the current tag, not the locked bits."
+        );
+        assert!(!probe.model_calls.lock().unwrap().is_empty());
+
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

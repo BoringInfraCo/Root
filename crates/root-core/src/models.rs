@@ -4,8 +4,9 @@
 
 use crate::get_or_create_rootfile;
 use crate::inventory::{
-    EvaluationState, Presence, REASON_ENDPOINT_UNREACHABLE, REASON_MALFORMED_OUTPUT,
-    REASON_NOT_FOUND, REASON_NOT_SUPPORTED, REASON_PROTOCOL_UNSUPPORTED, REASON_TIMED_OUT,
+    EvaluationState, InventoryItem, InventoryReport, Presence, REASON_ENDPOINT_UNREACHABLE,
+    REASON_MALFORMED_OUTPUT, REASON_NOT_FOUND, REASON_NOT_SUPPORTED, REASON_PROTOCOL_UNSUPPORTED,
+    REASON_TIMED_OUT,
 };
 use crate::ollama::{
     canonicalize_digest, digests_equal, is_remote_or_cloud, model_matches, resolve_model_tag,
@@ -13,7 +14,7 @@ use crate::ollama::{
     REASON_REMOTE_OR_CLOUD_UNSUPPORTED,
 };
 use anyhow::{Context, Result};
-use root_lockfile::{get_root_dir, LockedModel, Rootfile};
+use root_lockfile::{get_root_dir, LockedModel, RootLockV2, Rootfile};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -596,15 +597,68 @@ pub fn format_plan_models_human(report: &PlanModelsReport) -> String {
     out
 }
 
+
+/// Canonical lock digest plus whether the observed daemon digest matches it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DigestCompare {
+    pub locked_digest: String,
+    pub digest_match: bool,
+}
+
+pub fn compare_locked_digest(observed: Option<&str>, locked: &str) -> Option<DigestCompare> {
+    let locked_digest = canonicalize_digest(locked)?;
+    let digest_match = observed
+        .map(|value| digests_equal(value, &locked_digest))
+        .unwrap_or(false);
+    Some(DigestCompare {
+        locked_digest,
+        digest_match,
+    })
+}
+
+pub fn overlay_locked_digests(report: &mut InventoryReport, lock: &RootLockV2) {
+    for item in &mut report.models {
+        overlay_one(item, lock);
+    }
+}
+
+fn overlay_one(item: &mut InventoryItem, lock: &RootLockV2) {
+    let Some(entry) = locked_model_for(lock, &item.name, &item.desired) else {
+        return;
+    };
+    let Some(compare) =
+        compare_locked_digest(item.observed_digest.as_deref(), &entry.observed_digest)
+    else {
+        return;
+    };
+    item.locked_digest = Some(compare.locked_digest);
+    item.digest_match = Some(compare.digest_match);
+    if item.observation == Presence::Present && !compare.digest_match {
+        item.evaluation = EvaluationState::Drifted;
+    }
+}
+
+fn locked_model_for<'a>(
+    lock: &'a RootLockV2,
+    declared_name: &str,
+    runtime: &str,
+) -> Option<&'a LockedModel> {
+    lock.models
+        .get(&runtime.to_ascii_lowercase())
+        .and_then(|models| models.get(declared_name))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::inventory::{EvidenceSource, ResourceKind};
     use crate::ollama::{MockOllama, RuntimeProbe};
     use root_lockfile::ModelDeclaration;
     use std::sync::Mutex;
     use std::time::Duration;
 
     const HEX64: &str = "c6eb81c2c3a4b5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e";
+    const HEX64_UPPER: &str = "C6EB81C2C3A4B5D6E7F8091A2B3C4D5E6F708192A3B4C5D6E7F8091A2B3C4D5E";
     const HEX64_OTHER: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
     fn sha(hex: &str) -> String {
@@ -1234,5 +1288,170 @@ mod tests {
             original
         );
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn canonical(hex: &str) -> String {
+        format!("sha256:{hex}")
+    }
+
+    fn present_model(name: &str, observed: Option<&str>) -> InventoryItem {
+        InventoryItem {
+            name: name.to_string(),
+            kind: ResourceKind::Model,
+            desired: "ollama".into(),
+            observation: Presence::Present,
+            evaluation: EvaluationState::Satisfied,
+            observed_version: None,
+            observed_digest: observed.map(str::to_string),
+            evidence_source: EvidenceSource::OllamaApiTags,
+            reason: None,
+            locked_digest: None,
+            digest_match: None,
+        }
+    }
+
+    fn missing_model(name: &str) -> InventoryItem {
+        InventoryItem {
+            name: name.to_string(),
+            kind: ResourceKind::Model,
+            desired: "ollama".into(),
+            observation: Presence::Absent,
+            evaluation: EvaluationState::Missing,
+            observed_version: None,
+            observed_digest: None,
+            evidence_source: EvidenceSource::OllamaApiTags,
+            reason: Some(crate::inventory::REASON_NOT_FOUND.to_string()),
+            locked_digest: None,
+            digest_match: None,
+        }
+    }
+
+    fn lock_with(name: &str, digest: &str) -> RootLockV2 {
+        let mut inner = BTreeMap::new();
+        inner.insert(
+            name.to_string(),
+            LockedModel {
+                runtime: "ollama".into(),
+                requested_name: name.to_string(),
+                observed_digest: digest.to_string(),
+                locked_at: "2026-09-01T00:00:00Z".into(),
+                verified_at: "2026-09-01T00:00:01Z".into(),
+                verification_method: "inspect_tags_digest".into(),
+                addressability: "verification_record_only".into(),
+                ..Default::default()
+            },
+        );
+        let mut models = BTreeMap::new();
+        models.insert("ollama".into(), inner);
+        RootLockV2 {
+            version: 3,
+            models,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn compare_matches_official_tags_hex_without_prefix() {
+        let compare = compare_locked_digest(Some(HEX64_UPPER), &canonical(HEX64)).unwrap();
+        assert_eq!(compare.locked_digest, canonical(HEX64));
+        assert!(compare.digest_match);
+    }
+
+    #[test]
+    fn compare_does_not_use_naive_string_equality() {
+        assert_ne!(HEX64_UPPER, canonical(HEX64));
+        let compare = compare_locked_digest(Some(HEX64_UPPER), &canonical(HEX64)).unwrap();
+        assert!(compare.digest_match);
+    }
+
+    #[test]
+    fn compare_mismatch_and_missing_observed() {
+        let mismatch = compare_locked_digest(Some(HEX64_OTHER), &canonical(HEX64)).unwrap();
+        assert!(!mismatch.digest_match);
+        assert_eq!(mismatch.locked_digest, canonical(HEX64));
+
+        let missing = compare_locked_digest(None, &canonical(HEX64)).unwrap();
+        assert!(!missing.digest_match);
+
+        assert!(compare_locked_digest(Some(HEX64), "sha256-not-a-digest").is_none());
+    }
+
+    #[test]
+    fn overlay_omits_fields_without_lock_entry() {
+        let mut report = InventoryReport {
+            models: vec![present_model("qwen3:8b", Some(HEX64_UPPER))],
+            ..InventoryReport::default()
+        };
+        overlay_locked_digests(&mut report, &RootLockV2::default());
+        assert!(report.models[0].locked_digest.is_none());
+        assert!(report.models[0].digest_match.is_none());
+        assert_eq!(report.models[0].evaluation, EvaluationState::Satisfied);
+        assert_eq!(
+            report.models[0].observed_digest.as_deref(),
+            Some(HEX64_UPPER)
+        );
+    }
+
+    #[test]
+    fn overlay_keeps_raw_observed_digest_on_canonical_match() {
+        let mut report = InventoryReport {
+            models: vec![present_model("qwen3:8b", Some(HEX64_UPPER))],
+            ..InventoryReport::default()
+        };
+        overlay_locked_digests(&mut report, &lock_with("qwen3:8b", &canonical(HEX64)));
+        assert_eq!(
+            report.models[0].observed_digest.as_deref(),
+            Some(HEX64_UPPER)
+        );
+        assert_eq!(
+            report.models[0].locked_digest.as_deref(),
+            Some(canonical(HEX64).as_str())
+        );
+        assert_eq!(report.models[0].digest_match, Some(true));
+        assert_eq!(report.models[0].evaluation, EvaluationState::Satisfied);
+    }
+
+    #[test]
+    fn overlay_marks_present_mismatch_as_drifted() {
+        let mut report = InventoryReport {
+            models: vec![present_model("qwen3:8b", Some(HEX64_OTHER))],
+            ..InventoryReport::default()
+        };
+        overlay_locked_digests(&mut report, &lock_with("qwen3:8b", &canonical(HEX64)));
+        assert_eq!(
+            report.models[0].observed_digest.as_deref(),
+            Some(HEX64_OTHER)
+        );
+        assert_eq!(report.models[0].digest_match, Some(false));
+        assert_eq!(report.models[0].evaluation, EvaluationState::Drifted);
+        assert_eq!(report.models[0].observation, Presence::Present);
+    }
+
+    #[test]
+    fn overlay_does_not_turn_missing_into_drifted() {
+        let mut report = InventoryReport {
+            models: vec![missing_model("qwen3:8b")],
+            ..InventoryReport::default()
+        };
+        overlay_locked_digests(&mut report, &lock_with("qwen3:8b", &canonical(HEX64)));
+        assert_eq!(
+            report.models[0].locked_digest.as_deref(),
+            Some(canonical(HEX64).as_str())
+        );
+        assert_eq!(report.models[0].digest_match, Some(false));
+        assert_eq!(report.models[0].evaluation, EvaluationState::Missing);
+    }
+
+    #[test]
+    fn overlay_ignores_other_runtime_namespace() {
+        let mut report = InventoryReport {
+            models: vec![present_model("qwen3:8b", Some(HEX64_UPPER))],
+            ..InventoryReport::default()
+        };
+        report.models[0].desired = "lmstudio".into();
+        overlay_locked_digests(&mut report, &lock_with("qwen3:8b", &canonical(HEX64)));
+        assert!(report.models[0].locked_digest.is_none());
+        assert!(report.models[0].digest_match.is_none());
+        assert_eq!(report.models[0].evaluation, EvaluationState::Satisfied);
     }
 }
