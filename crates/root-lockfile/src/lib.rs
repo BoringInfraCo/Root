@@ -99,9 +99,7 @@ fn validate_rootfile_ident(label: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-/// Default emitted schema for package-only locks.
-/// Also the value `peek_lock_schema_version` returns when `version` is missing.
-/// `RootLock::to_v2()` emits this. Doctor/sync legacy checks stay `version < 2`.
+/// Package-only emit default and missing-`version` peek value. Not the supported-read ceiling.
 pub const ROOT_LOCK_SCHEMA_VERSION: u32 = 2;
 
 /// Highest `version` this binary may read or mutate.
@@ -132,6 +130,31 @@ pub fn peek_lock_schema_version(content: &str) -> Result<u32> {
 /// above `ROOT_LOCK_MAX_SUPPORTED_VERSION` must not be mutated or rewritten.
 pub fn validate_supported_lock_version(version: u32) -> Result<()> {
     validate_supported_lock_version_with_max(version, ROOT_LOCK_MAX_SUPPORTED_VERSION)
+}
+
+/// Read a lockfile as [`RootLockV2`], taking the v1 fallback only for schema < 2.
+///
+/// Version 2+ documents that fail to deserialize as v2 are rejected so fields
+/// such as `models` cannot be dropped by the v1 shape.
+pub fn read_compatible_lock_v2_from_str(content: &str) -> Result<RootLockV2> {
+    let version = peek_lock_schema_version(content)?;
+    match RootLockV2::read_from_str(content) {
+        Ok(lock) => Ok(lock),
+        Err(err) => {
+            if version < ROOT_LOCK_SCHEMA_VERSION {
+                RootLock::read_from_str(content).map(|lock| lock.to_v2())
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+/// File-backed form of [`read_compatible_lock_v2_from_str`].
+pub fn read_compatible_lock_v2(path: &Path) -> Result<RootLockV2> {
+    let content = fs::read_to_string(path)
+        .with_context(|| format!("Failed to read lockfile at {}", path.display()))?;
+    read_compatible_lock_v2_from_str(&content)
 }
 
 /// Same guard as [`validate_supported_lock_version`], with an explicit max.
@@ -831,6 +854,11 @@ pub fn validate_locked_models(lock: &RootLockV2) -> Result<()> {
     }
 
     for (runtime_ns, models) in &lock.models {
+        if runtime_ns != "ollama" {
+            anyhow::bail!(
+                "invalid locked model '{runtime_ns}': runtime namespace must be \"ollama\""
+            );
+        }
         reject_secret_string("model runtime namespace", runtime_ns)?;
         for (name, model) in models {
             let label = format!("{runtime_ns}/{name}");
@@ -1692,6 +1720,26 @@ mod tests {
     }
 
     #[test]
+    fn compatible_reader_rejects_unparseable_v3_models() {
+        let json = r#"{
+          "version": 3,
+          "platform": "aarch64-darwin",
+          "nixpkgs": {"rev": "abc", "source": "github:NixOS/nixpkgs"},
+          "packages": [],
+          "models": []
+        }"#;
+        assert!(read_compatible_lock_v2_from_str(json).is_err());
+        let v1 = r#"{
+          "version": 1,
+          "platform": "aarch64-darwin",
+          "nixpkgs": {"rev": "abc", "source": "github:NixOS/nixpkgs"},
+          "packages": []
+        }"#;
+        let lock = read_compatible_lock_v2_from_str(v1).unwrap();
+        assert!(lock.models.is_empty());
+    }
+
+    #[test]
     fn validate_locked_models_rejects_non_canonical_digests() {
         let cases = [
             format!("sha256-{}", "a".repeat(64)),
@@ -1736,6 +1784,20 @@ mod tests {
         };
         let err = validate_locked_models(&lock).unwrap_err().to_string();
         assert!(err.contains("runtime must be \"ollama\""));
+    }
+
+    #[test]
+    fn validate_locked_models_rejects_non_ollama_namespace() {
+        let mut models = sample_v3_models();
+        let inner = models.remove("ollama").unwrap();
+        models.insert("llama.cpp".into(), inner);
+        let lock = RootLockV2 {
+            version: 3,
+            models,
+            ..RootLockV2::default()
+        };
+        let err = validate_locked_models(&lock).unwrap_err().to_string();
+        assert!(err.contains("runtime namespace must be \"ollama\""));
     }
 
     #[test]

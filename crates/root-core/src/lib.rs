@@ -1100,8 +1100,7 @@ fn get_or_create_lock_v2() -> Result<RootLockV2> {
     let dir = get_root_dir()?;
     let path = dir.join("root.lock");
     if path.exists() {
-        let lock = RootLockV2::read_from_file(&path)
-            .or_else(|_| RootLock::read_from_file(&path).map(|lock| lock.to_v2()))?;
+        let lock = root_lockfile::read_compatible_lock_v2(&path)?;
         root_lockfile::validate_store_paths(&lock).context(format!(
             "Existing lockfile at {} failed validation",
             path.display()
@@ -3068,8 +3067,7 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
     refuse_unsupported_lock_at(&selected_lock_path)?;
     refuse_unsupported_active_lock()?;
     get_or_create_rootfile()?;
-    let target_lock = RootLockV2::read_from_file(&selected_lock_path)
-        .or_else(|_| RootLock::read_from_file(&selected_lock_path).map(|lock| lock.to_v2()))?;
+    let target_lock = root_lockfile::read_compatible_lock_v2(&selected_lock_path)?;
     if let Err(e) = restore_validate(adapter, &target_lock, &selected_lock_path) {
         let failure_phase = infer_restore_failure_phase(&e);
         let _ = events::record_event(
@@ -3204,8 +3202,7 @@ pub fn restore_dry_run(
     refuse_unsupported_lock_at(&selected_lock_path)?;
     refuse_unsupported_active_lock()?;
     get_or_create_rootfile()?;
-    let target_lock = RootLockV2::read_from_file(&selected_lock_path)
-        .or_else(|_| RootLock::read_from_file(&selected_lock_path).map(|lock| lock.to_v2()))?;
+    let target_lock = root_lockfile::read_compatible_lock_v2(&selected_lock_path)?;
 
     restore_validate(adapter, &target_lock, &selected_lock_path)?;
 
@@ -7517,6 +7514,39 @@ mod tests {
         assert!(
             err.contains("observed_digest must be canonical") || err.contains("models validation"),
             "unexpected error: {err}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(adapter.installed_packages.lock().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_unparseable_v3_models_do_not_fall_back_to_v1() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("unparseable_v3_models");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let json = r#"{
+  "version": 3,
+  "platform": "aarch64-darwin",
+  "nixpkgs": {
+    "rev": "0123456789abcdef0123456789abcdef01234567",
+    "source": "github:NixOS/nixpkgs"
+  },
+  "packages": [],
+  "models": []
+}"#;
+        let path = root_dir.join("root.lock");
+        std::fs::write(&path, json).unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let err = install(&adapter, "ripgrep").unwrap_err().to_string();
+        assert!(
+            err.contains("parse") || err.contains("models"),
+            "unparseable v3 models must fail closed, got: {err}"
         );
         assert_eq!(std::fs::read(&path).unwrap(), before);
         assert!(adapter.installed_packages.lock().unwrap().is_empty());

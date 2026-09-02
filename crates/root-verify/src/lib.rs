@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use root_lockfile::{get_root_dir, LockedPackageV2, RootLock, RootLockV2};
+use root_lockfile::{get_root_dir, LockedPackageV2, RootLockV2};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -283,8 +283,7 @@ pub fn verify_package(pkg_name: &str) -> Result<VerificationReport> {
 }
 
 fn read_lock_v2(path: &Path) -> Result<RootLockV2> {
-    RootLockV2::read_from_file(path)
-        .or_else(|_| RootLock::read_from_file(path).map(|lock| lock.to_v2()))
+    root_lockfile::read_compatible_lock_v2(path)
 }
 
 fn binaries_for_package(locked_pkg: &LockedPackageV2) -> Vec<String> {
@@ -343,7 +342,7 @@ fn run_binary(binary: &Path, args: &[&str]) -> Result<(i32, String, String)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use root_lockfile::{self, LockedPackage, NixpkgsConfig};
+    use root_lockfile::{self, LockedPackage, NixpkgsConfig, RootLock};
     use std::fs;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;

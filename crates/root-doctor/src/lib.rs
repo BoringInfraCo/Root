@@ -1,5 +1,5 @@
 use anyhow::Result;
-use root_lockfile::{get_root_dir, is_unknown_nixpkgs_rev, RootLock, RootLockV2, Rootfile};
+use root_lockfile::{get_root_dir, is_unknown_nixpkgs_rev, RootLockV2, Rootfile};
 use root_nix::NixAdapter;
 use serde::Serialize;
 use std::collections::BTreeSet;
@@ -555,8 +555,7 @@ fn find_on_path(binary: &str) -> Option<PathBuf> {
 }
 
 fn read_lock_v2(path: &Path) -> Result<RootLockV2> {
-    RootLockV2::read_from_file(path)
-        .or_else(|_| RootLock::read_from_file(path).map(|lock| lock.to_v2()))
+    root_lockfile::read_compatible_lock_v2(path)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -636,7 +635,7 @@ fn parse_profile_entry(value: &serde_json::Value) -> Option<ProfileJsonEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use root_lockfile::{self, LockedPackage, NixpkgsConfig};
+    use root_lockfile::{self, LockedPackage, NixpkgsConfig, RootLock};
     use root_nix::MockNixAdapter;
     use std::fs;
     use std::sync::Mutex;
