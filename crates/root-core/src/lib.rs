@@ -592,12 +592,12 @@ fn resolve_package(name: &str) -> Option<&'static PackageSpec> {
 ///
 /// Released on Drop (which removes the lock file).
 #[derive(Debug)]
-struct MutationGuard {
+pub(crate) struct MutationGuard {
     lock_path: PathBuf,
 }
 
 impl MutationGuard {
-    fn acquire() -> anyhow::Result<Self> {
+    pub(crate) fn acquire() -> anyhow::Result<Self> {
         let dir = root_lockfile::init_root_dir()?;
         let lock_path = dir.join("root.lockfile");
 
@@ -1111,7 +1111,7 @@ fn save_lock(lock: &RootLock) -> Result<()> {
     lock.write_to_file(&path)
 }
 
-fn get_or_create_lock_v2() -> Result<RootLockV2> {
+pub(crate) fn get_or_create_lock_v2() -> Result<RootLockV2> {
     let dir = get_root_dir()?;
     let path = dir.join("root.lock");
     if path.exists() {
@@ -1144,7 +1144,7 @@ fn refuse_unsupported_active_lock() -> Result<()> {
     refuse_unsupported_lock_at(&get_root_dir()?.join("root.lock"))
 }
 
-fn save_lock_v2(lock: &RootLockV2) -> Result<()> {
+pub(crate) fn save_lock_v2(lock: &RootLockV2) -> Result<()> {
     root_lockfile::validate_locked_models(lock)
         .context("Lockfile models failed validation before write")?;
     let path = get_root_dir()?.join("root.lock");

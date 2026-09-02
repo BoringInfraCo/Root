@@ -121,6 +121,11 @@ enum Commands {
     },
     /// Show machine status, package drift, and declared agent/model inspection
     Status,
+    /// Pull and verify declared Ollama models
+    Models {
+        #[command(subcommand)]
+        subcommand: ModelsSubcommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -132,6 +137,15 @@ enum PlanSubcommands {
     },
     /// Preview declared Ollama model actions (read-only)
     Models {
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ModelsSubcommands {
+    /// Pull missing declared models and write a v3 verification record
+    Pull {
         #[arg(value_name = "NAME")]
         name: Option<String>,
     },
@@ -268,6 +282,9 @@ fn json_error_output(e: &anyhow::Error) -> GenericOutput {
 }
 
 fn exit_code_for_error(e: &anyhow::Error) -> i32 {
+    if let Some(model_err) = e.downcast_ref::<root_core::models::ModelError>() {
+        return model_err.exit_code();
+    }
     if let Some(nix_err) = e.downcast_ref::<root_nix::NixError>() {
         return match nix_err {
             root_nix::NixError::NotInstalled => 7,
@@ -311,6 +328,9 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
 }
 
 fn format_user_error(e: &anyhow::Error) -> String {
+    if let Some(model_err) = e.downcast_ref::<root_core::models::ModelError>() {
+        return model_err.to_string();
+    }
     if let Some(nix_err) = e.downcast_ref::<root_nix::NixError>() {
         return format!("{}", nix_err);
     }
@@ -699,6 +719,9 @@ fn main() {
                         println!("    status: {:?}", event.status);
                         if let Some(ref pkg) = event.package {
                             println!("    package: {}", pkg);
+                        }
+                        if let Some(ref model) = event.model {
+                            println!("    model: {}", model);
                         }
                         if let Some(ref sid) = event.snapshot_id {
                             println!("    snapshot: {}", sid);
@@ -1114,6 +1137,32 @@ fn main() {
                 });
             }
         },
+        Commands::Models { subcommand } => match subcommand {
+            ModelsSubcommands::Pull { name } => {
+                match root_core::models::pull_models(name.as_deref()) {
+                    Ok(report) => {
+                        if cli.json {
+                            print_json(&report);
+                        } else {
+                            println!("{}", root_core::models::format_pull_models_human(&report));
+                        }
+                        let code = root_core::models::models_pull_exit_code(&report);
+                        if code != 0 {
+                            process::exit(code);
+                        }
+                    }
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                }
+            }
+        },
         Commands::Status => {
             let _ = handle_structured(cli.json, root_core::status(&adapter), |r| {
                 let mut msg = format!("Root Status — Machine: {}\n", r.machine_id);
@@ -1419,6 +1468,22 @@ mod tests {
         match status.command {
             Commands::Status => {}
             other => panic!("expected status, got {:?}", other),
+        }
+
+        let models_pull = Cli::try_parse_from(["root", "models", "pull"]).unwrap();
+        match models_pull.command {
+            Commands::Models {
+                subcommand: ModelsSubcommands::Pull { name },
+            } => assert_eq!(name, None),
+            other => panic!("expected models pull, got {:?}", other),
+        }
+
+        let models_pull_one = Cli::try_parse_from(["root", "models", "pull", "qwen3:8b"]).unwrap();
+        match models_pull_one.command {
+            Commands::Models {
+                subcommand: ModelsSubcommands::Pull { name },
+            } => assert_eq!(name.as_deref(), Some("qwen3:8b")),
+            other => panic!("expected models pull NAME, got {:?}", other),
         }
     }
 

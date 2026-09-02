@@ -124,6 +124,21 @@ impl Default for ApprovalPolicy {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
+pub struct ModelPolicy {
+    #[serde(default)]
+    pub pull: PolicyMode,
+}
+
+impl Default for ModelPolicy {
+    fn default() -> Self {
+        Self {
+            pull: PolicyMode::Allow,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
 pub struct RootPolicy {
     #[serde(default = "default_policy_version")]
     pub version: u32,
@@ -137,6 +152,8 @@ pub struct RootPolicy {
     pub resources: ResourcePolicy,
     #[serde(default)]
     pub approvals: ApprovalPolicy,
+    #[serde(default)]
+    pub models: ModelPolicy,
 }
 
 impl Default for RootPolicy {
@@ -148,6 +165,7 @@ impl Default for RootPolicy {
             sandboxes: SandboxPolicy::default(),
             resources: ResourcePolicy::default(),
             approvals: ApprovalPolicy::default(),
+            models: ModelPolicy::default(),
         }
     }
 }
@@ -167,6 +185,7 @@ pub enum PolicyAction {
     SandboxCreate,
     SandboxRun,
     SandboxDestroy,
+    ModelPull,
 }
 
 impl PolicyAction {
@@ -181,6 +200,7 @@ impl PolicyAction {
             Self::SandboxCreate => "sandbox-create",
             Self::SandboxRun => "sandbox-run",
             Self::SandboxDestroy => "sandbox-destroy",
+            Self::ModelPull => "model-pull",
         }
     }
 }
@@ -292,6 +312,7 @@ pub fn evaluate(
                 | PolicyAction::Restore
                 | PolicyAction::SandboxCreate
                 | PolicyAction::SandboxRun
+                | PolicyAction::ModelPull
         )
     {
         return PolicyDecision {
@@ -312,6 +333,7 @@ pub fn evaluate(
         PolicyAction::SandboxCreate => policy.sandboxes.create,
         PolicyAction::SandboxRun => policy.sandboxes.run,
         PolicyAction::SandboxDestroy => policy.sandboxes.destroy,
+        PolicyAction::ModelPull => policy.models.pull,
     };
     if mode == PolicyMode::Deny {
         return PolicyDecision {
@@ -319,6 +341,15 @@ pub fn evaluate(
             action: action.as_str().to_string(),
             subject: subject.map(ToString::to_string),
             reason: format!("{} actions are denied by policy", action.as_str()),
+        };
+    }
+
+    if action == PolicyAction::ModelPull {
+        return PolicyDecision {
+            allowed: true,
+            action: action.as_str().to_string(),
+            subject: subject.map(ToString::to_string),
+            reason: "allowed by active policy".to_string(),
         };
     }
 
@@ -404,5 +435,53 @@ mod tests {
         policy.sandboxes.create = PolicyMode::Deny;
         assert!(!evaluate(&policy, PolicyAction::SandboxCreate, Some("build")).allowed);
         assert!(evaluate(&policy, PolicyAction::SandboxRun, Some("build")).allowed);
+    }
+
+    #[test]
+    fn model_pull_defaults_allow() {
+        let decision = evaluate(
+            &RootPolicy::default(),
+            PolicyAction::ModelPull,
+            Some("qwen3:8b"),
+        );
+        assert!(decision.allowed);
+        assert_eq!(decision.action, "model-pull");
+    }
+
+    #[test]
+    fn policy_packages_allow_does_not_filter_models() {
+        let mut policy = RootPolicy::default();
+        policy.packages.allow.push("ripgrep".to_string());
+        assert!(evaluate(&policy, PolicyAction::ModelPull, Some("qwen3:8b")).allowed);
+        assert!(!evaluate(&policy, PolicyAction::Install, Some("qwen3:8b")).allowed);
+    }
+
+    #[test]
+    fn policy_packages_deny_does_not_block_model_pull() {
+        let mut policy = RootPolicy::default();
+        policy.packages.deny.push("qwen3:8b".to_string());
+        assert!(evaluate(&policy, PolicyAction::ModelPull, Some("qwen3:8b")).allowed);
+        assert!(!evaluate(&policy, PolicyAction::Install, Some("qwen3:8b")).allowed);
+    }
+
+    #[test]
+    fn policy_network_deny_blocks_model_pull() {
+        let mut policy = RootPolicy::default();
+        policy.resources.network = PolicyMode::Deny;
+        assert!(!evaluate(&policy, PolicyAction::ModelPull, Some("qwen3:8b")).allowed);
+    }
+
+    #[test]
+    fn policy_models_pull_deny_blocks_model_pull() {
+        let mut policy = RootPolicy::default();
+        policy.models.pull = PolicyMode::Deny;
+        assert!(!evaluate(&policy, PolicyAction::ModelPull, Some("qwen3:8b")).allowed);
+    }
+
+    #[test]
+    fn policy_missing_models_section_deserializes_allow() {
+        let policy: RootPolicy = toml::from_str("version = 1\n").unwrap();
+        assert_eq!(policy.models.pull, PolicyMode::Allow);
+        assert!(evaluate(&policy, PolicyAction::ModelPull, Some("qwen3:8b")).allowed);
     }
 }

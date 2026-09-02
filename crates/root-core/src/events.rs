@@ -20,6 +20,10 @@ pub enum RootEventType {
     Execution,
     Policy,
     Sandbox,
+    ModelPlan,
+    ModelPull,
+    ModelVerified,
+    ModelVerificationFailed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -65,6 +69,8 @@ pub struct RootEvent {
     pub removed_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub models_restored: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -184,6 +190,7 @@ pub fn create_event(
         installed_count: None,
         removed_count: None,
         kept_count: None,
+        model: None,
         models_restored: None,
         model_lock_entries_written: None,
         model_weights_deleted: None,

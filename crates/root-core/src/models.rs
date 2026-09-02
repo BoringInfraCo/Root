@@ -1,7 +1,9 @@
-//! Read-only plan for declared Ollama models.
+//! Plan and pull-and-verify for declared Ollama models.
 //!
-//! Never POSTs, never writes the lock, and never creates model-pull.json.
+//! Plan never POSTs, never writes the lock, and never creates model-pull.json.
+//! Pull acquires the exclusive marker only after Rootfile/policy gates.
 
+use crate::events::{self, RootEventStatus, RootEventType};
 use crate::get_or_create_rootfile;
 use crate::inventory::{
     EvaluationState, InventoryItem, InventoryReport, Presence, REASON_ENDPOINT_UNREACHABLE,
@@ -10,22 +12,35 @@ use crate::inventory::{
 };
 use crate::ollama::{
     canonicalize_digest, digests_equal, is_remote_or_cloud, model_matches, resolve_model_tag,
-    HttpOllama, InspectError, ListedModel, OllamaInspector, RuntimeProtocol,
-    REASON_REMOTE_OR_CLOUD_UNSUPPORTED,
+    HttpOllama, InspectError, ListedModel, OllamaInspector, OllamaRealizer, PullProgress,
+    RealizeError, RuntimeProtocol, REASON_REMOTE_OR_CLOUD_UNSUPPORTED,
 };
+use crate::policy::PolicyAction;
+use crate::{get_or_create_lock_v2, save_lock_v2, MutationGuard};
 use anyhow::{Context, Result};
 use root_lockfile::{get_root_dir, LockedModel, RootLockV2, Rootfile};
-use serde::Serialize;
+use root_snapshot::Snapshot;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 const OLLAMA_RUNTIME: &str = "ollama";
 const OLLAMA_ENDPOINT: &str = "127.0.0.1:11434";
 const PLAN_COMMAND: &str = "plan models";
+const PULL_COMMAND: &str = "models pull";
 const ADDRESSABILITY: &str = "verification_record_only";
 const REASON_NO_DECLARED_MODELS: &str = "no_declared_models";
 const REASON_DIGEST_MISMATCH: &str = "cannot_reproduce_locked_digest";
+const REASON_STOPPED: &str = "stopped_after_prior_failure";
 const DOWNLOAD_STATE: &str = "unknown_until_manifest";
 const DOWNLOAD_REASON: &str = "ollama_pull_does_not_expose_size_before_mutation";
+const VERIFY_METHOD_PULL: &str = "pull_tag_then_compare_tags_digest";
+const VERIFY_METHOD_INSPECT: &str = "inspect_tags_digest";
+const OLLAMA_ENDPOINT_URL: &str = "http://127.0.0.1:11434";
+const MARKER_FILE: &str = "model-pull.json";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -163,7 +178,125 @@ fn expected_download() -> ExpectedDownload {
 }
 
 fn unknown_model_error(name: &str) -> anyhow::Error {
-    anyhow::anyhow!("Unknown model '{name}' is not declared in Rootfile.")
+    ModelError::UnknownName(name.to_string()).into()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelError {
+    Unreachable(String),
+    Io(String),
+    PullInProgress { pid: u32 },
+    LockChanged,
+    UnknownName(String),
+    PolicyDenied(String),
+}
+
+impl ModelError {
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Unreachable(_)
+            | Self::Io(_)
+            | Self::PullInProgress { .. }
+            | Self::LockChanged => 1,
+            Self::UnknownName(_) => 2,
+            Self::PolicyDenied(_) => 9,
+        }
+    }
+}
+
+impl std::fmt::Display for ModelError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreachable(detail) => write!(
+                f,
+                "Ollama is unreachable at {OLLAMA_ENDPOINT}: {detail}. Start the Ollama daemon and retry."
+            ),
+            Self::Io(detail) => write!(f, "{detail}"),
+            Self::PullInProgress { pid } => {
+                write!(f, "A model pull is already in progress (PID {pid}).")
+            }
+            Self::LockChanged => write!(
+                f,
+                "root.lock changed during pull; weights retained; re-run plan"
+            ),
+            Self::UnknownName(name) => {
+                write!(f, "Unknown model '{name}' is not declared in Rootfile.")
+            }
+            Self::PolicyDenied(reason) => write!(f, "Policy denied: {reason}"),
+        }
+    }
+}
+
+impl std::error::Error for ModelError {}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PullVerb {
+    PulledAndVerified,
+    VerifiedAndLocked,
+    AlreadyVerified,
+    VerificationFailed,
+    PullFailed,
+    SkippedUnsupported,
+    NotAttempted,
+}
+
+impl PullVerb {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::PulledAndVerified => "pulled_and_verified",
+            Self::VerifiedAndLocked => "verified_and_locked",
+            Self::AlreadyVerified => "already_verified",
+            Self::VerificationFailed => "verification_failed",
+            Self::PullFailed => "pull_failed",
+            Self::SkippedUnsupported => "skipped_unsupported",
+            Self::NotAttempted => "not_attempted",
+        }
+    }
+
+    fn is_success(self) -> bool {
+        matches!(
+            self,
+            Self::PulledAndVerified | Self::VerifiedAndLocked | Self::AlreadyVerified
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModelsPullResult {
+    pub name: String,
+    pub verb: PullVerb,
+    pub requested_tag: String,
+    pub observed_digest: Option<String>,
+    pub locked_digest: Option<String>,
+    pub digest_match: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bytes_completed: Option<u64>,
+    pub lock_written: bool,
+    pub exit_code: i32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModelsPullReport {
+    pub success: bool,
+    pub command: &'static str,
+    pub models_restored: bool,
+    pub model_weights_deleted: bool,
+    pub lock_schema_version: u32,
+    pub results: Vec<ModelsPullResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ModelPullMarker {
+    name: String,
+    started_at: String,
+    pid: u32,
+}
+
+struct ModelPullGuard {
+    path: PathBuf,
 }
 
 fn load_lock_models() -> Result<BTreeMap<String, BTreeMap<String, LockedModel>>> {
@@ -648,12 +781,694 @@ fn locked_model_for<'a>(
         .and_then(|models| models.get(declared_name))
 }
 
+fn io_err(err: impl ToString) -> ModelError {
+    ModelError::Io(err.to_string())
+}
+
+fn process_is_alive(pid: u32) -> Result<bool, ModelError> {
+    let status = std::process::Command::new("kill")
+        .arg("-0")
+        .arg(pid.to_string())
+        .output()
+        .map_err(|err| io_err(format!("Cannot check process liveness: {err}")))?;
+    Ok(status.status.success())
+}
+
+fn marker_path() -> Result<PathBuf, ModelError> {
+    let dir = root_lockfile::init_root_dir().map_err(io_err)?;
+    Ok(dir.join(MARKER_FILE))
+}
+
+fn try_create_marker(path: &Path, content: &[u8]) -> std::io::Result<()> {
+    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    file.write_all(content)?;
+    file.sync_all()?;
+    Ok(())
+}
+
+fn read_marker_pid(path: &Path) -> Result<u32, ModelError> {
+    let content = fs::read_to_string(path).map_err(|_| {
+        io_err(format!(
+            "{} exists and could not be read.\nDelete {} and try again.",
+            MARKER_FILE,
+            path.display()
+        ))
+    })?;
+    let marker: ModelPullMarker = serde_json::from_str(&content).map_err(|_| {
+        io_err(format!(
+            "{} exists and could not be read.\nDelete {} and try again.",
+            MARKER_FILE,
+            path.display()
+        ))
+    })?;
+    Ok(marker.pid)
+}
+
+impl ModelPullGuard {
+    fn acquire(name: &str) -> Result<Self, ModelError> {
+        let path = marker_path()?;
+        let marker = ModelPullMarker {
+            name: name.to_string(),
+            started_at: chrono::Utc::now().to_rfc3339(),
+            pid: std::process::id(),
+        };
+        let content = serde_json::to_vec_pretty(&marker).map_err(io_err)?;
+        match try_create_marker(&path, &content) {
+            Ok(()) => Ok(Self { path }),
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                let pid = read_marker_pid(&path)?;
+                if process_is_alive(pid)? {
+                    return Err(ModelError::PullInProgress { pid });
+                }
+                let _ = fs::remove_file(&path);
+                try_create_marker(&path, &content).map_err(|retry| {
+                    io_err(format!(
+                        "Failed to acquire model pull marker after recovering stale marker: {retry}"
+                    ))
+                })?;
+                Ok(Self { path })
+            }
+            Err(err) => Err(io_err(format!(
+                "Failed to acquire model pull marker: {err}"
+            ))),
+        }
+    }
+}
+
+impl Drop for ModelPullGuard {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn lock_file_path() -> Result<PathBuf, ModelError> {
+    Ok(get_root_dir().map_err(io_err)?.join("root.lock"))
+}
+
+fn read_lock_bytes(path: &Path) -> Result<Vec<u8>, ModelError> {
+    if path.exists() {
+        fs::read(path).map_err(io_err)
+    } else {
+        Ok(Vec::new())
+    }
+}
+
+fn peek_lock_schema_version_or_default() -> u32 {
+    let Ok(path) = lock_file_path() else {
+        return root_lockfile::ROOT_LOCK_SCHEMA_VERSION;
+    };
+    if !path.exists() {
+        return root_lockfile::ROOT_LOCK_SCHEMA_VERSION;
+    }
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|content| root_lockfile::peek_lock_schema_version(&content).ok())
+        .unwrap_or(root_lockfile::ROOT_LOCK_SCHEMA_VERSION)
+}
+
+fn empty_pull_report() -> ModelsPullReport {
+    ModelsPullReport {
+        success: true,
+        command: PULL_COMMAND,
+        models_restored: false,
+        model_weights_deleted: false,
+        lock_schema_version: peek_lock_schema_version_or_default(),
+        results: Vec::new(),
+    }
+}
+
+fn enforce_model_pull_policy(subject: &str) -> Result<()> {
+    crate::enforce_policy(PolicyAction::ModelPull, Some(subject)).map_err(|err| {
+        let message = err.to_string();
+        if message.contains("Policy denied") {
+            anyhow::Error::new(ModelError::PolicyDenied(message))
+        } else {
+            err
+        }
+    })
+}
+
+fn skip_reason(model: &PlanModel) -> String {
+    model
+        .reason
+        .clone()
+        .unwrap_or_else(|| model.planned_action.as_str().to_string())
+}
+
+fn skipped_result(model: &PlanModel) -> ModelsPullResult {
+    ModelsPullResult {
+        name: model.name.clone(),
+        verb: PullVerb::SkippedUnsupported,
+        requested_tag: model.resolved_name.clone(),
+        observed_digest: model.current_digest.clone(),
+        locked_digest: model.locked_digest.clone(),
+        digest_match: model.digest_match,
+        bytes_completed: None,
+        lock_written: false,
+        exit_code: 2,
+        reason: Some(skip_reason(model)),
+    }
+}
+
+fn not_attempted_result(model: &PlanModel) -> ModelsPullResult {
+    ModelsPullResult {
+        name: model.name.clone(),
+        verb: PullVerb::NotAttempted,
+        requested_tag: model.resolved_name.clone(),
+        observed_digest: None,
+        locked_digest: model.locked_digest.clone(),
+        digest_match: None,
+        bytes_completed: None,
+        lock_written: false,
+        exit_code: 0,
+        reason: Some(REASON_STOPPED.to_string()),
+    }
+}
+
+fn already_verified_result(model: &PlanModel) -> ModelsPullResult {
+    ModelsPullResult {
+        name: model.name.clone(),
+        verb: PullVerb::AlreadyVerified,
+        requested_tag: model.resolved_name.clone(),
+        observed_digest: model
+            .current_digest
+            .as_deref()
+            .and_then(canonicalize_digest)
+            .or_else(|| model.current_digest.clone()),
+        locked_digest: model.locked_digest.clone(),
+        digest_match: Some(true),
+        bytes_completed: None,
+        lock_written: false,
+        exit_code: 0,
+        reason: None,
+    }
+}
+
+fn record_model_event(
+    event_type: RootEventType,
+    status: RootEventStatus,
+    model: &str,
+    snapshot_id: Option<String>,
+    message: Option<String>,
+    duration_ms: Option<u64>,
+) {
+    let mut event = events::create_event(
+        event_type,
+        status,
+        "root models pull",
+        None,
+        snapshot_id,
+        None,
+        message,
+    );
+    event.model = Some(model.to_string());
+    event.duration_ms = duration_ms;
+    let _ = events::append_event(&event);
+}
+
+fn write_verified_lock(
+    name: &str,
+    resolved_name: &str,
+    observed_digest: &str,
+    size_bytes: Option<u64>,
+    backend_version: Option<String>,
+    verification_method: &str,
+    expected_bytes: &mut Vec<u8>,
+) -> Result<String, ModelError> {
+    let _guard = MutationGuard::acquire().map_err(io_err)?;
+    let path = lock_file_path()?;
+    let current_bytes = read_lock_bytes(&path)?;
+    if current_bytes != *expected_bytes {
+        return Err(ModelError::LockChanged);
+    }
+
+    let mut lock = get_or_create_lock_v2().map_err(io_err)?;
+    let snapshot =
+        Snapshot::create_from_v2(&format!("before model verification record {name}"), &lock)
+            .map_err(io_err)?;
+    let now = chrono::Utc::now().to_rfc3339();
+    let existing = lock
+        .models
+        .get(OLLAMA_RUNTIME)
+        .and_then(|models| models.get(name))
+        .cloned();
+    let locked = LockedModel {
+        runtime: OLLAMA_RUNTIME.to_string(),
+        requested_name: resolved_name.to_string(),
+        observed_digest: observed_digest.to_string(),
+        size_bytes,
+        endpoint: Some(OLLAMA_ENDPOINT_URL.to_string()),
+        backend_version,
+        locked_at: existing
+            .as_ref()
+            .map(|model| model.locked_at.clone())
+            .unwrap_or_else(|| now.clone()),
+        verified_at: now.clone(),
+        verification_method: verification_method.to_string(),
+        addressability: ADDRESSABILITY.to_string(),
+    };
+    lock.models
+        .entry(OLLAMA_RUNTIME.to_string())
+        .or_default()
+        .insert(name.to_string(), locked);
+    lock.version = root_lockfile::emit_lock_version(&lock.models);
+    lock.updated_at = Some(now.clone());
+    if lock.created_at.is_none() {
+        lock.created_at = Some(now);
+    }
+    if lock.root_version.is_none() {
+        lock.root_version = Some(env!("CARGO_PKG_VERSION").to_string());
+    }
+    save_lock_v2(&lock).map_err(io_err)?;
+    *expected_bytes = read_lock_bytes(&path)?;
+    Ok(snapshot.id)
+}
+
+fn find_listed<'a>(name: &str, listed: &'a [ListedModel]) -> Option<&'a ListedModel> {
+    listed
+        .iter()
+        .find(|model| model_matches(name, &model.name, model.model.as_deref()))
+}
+
+fn verify_only_row(
+    model: &PlanModel,
+    backend_version: Option<String>,
+    expected_bytes: &mut Vec<u8>,
+) -> Result<ModelsPullResult, ModelError> {
+    let Some(canonical) = model
+        .current_digest
+        .as_deref()
+        .and_then(canonicalize_digest)
+    else {
+        return Ok(ModelsPullResult {
+            name: model.name.clone(),
+            verb: PullVerb::PullFailed,
+            requested_tag: model.resolved_name.clone(),
+            observed_digest: model.current_digest.clone(),
+            locked_digest: model.locked_digest.clone(),
+            digest_match: None,
+            bytes_completed: None,
+            lock_written: false,
+            exit_code: 1,
+            reason: Some(REASON_MALFORMED_OUTPUT.to_string()),
+        });
+    };
+    let snapshot_id = write_verified_lock(
+        &model.name,
+        &model.resolved_name,
+        &canonical,
+        None,
+        backend_version,
+        VERIFY_METHOD_INSPECT,
+        expected_bytes,
+    )?;
+    record_model_event(
+        RootEventType::ModelVerified,
+        RootEventStatus::Verified,
+        &model.name,
+        Some(snapshot_id),
+        Some("verified_and_locked; weights_retained=true".to_string()),
+        None,
+    );
+    Ok(ModelsPullResult {
+        name: model.name.clone(),
+        verb: PullVerb::VerifiedAndLocked,
+        requested_tag: model.resolved_name.clone(),
+        observed_digest: Some(canonical.clone()),
+        locked_digest: Some(canonical),
+        digest_match: Some(true),
+        bytes_completed: None,
+        lock_written: true,
+        exit_code: 0,
+        reason: None,
+    })
+}
+
+fn pull_failed_row(model: &PlanModel, err: RealizeError) -> ModelsPullResult {
+    let exit_code = match err {
+        RealizeError::NotFound => 3,
+        _ => 1,
+    };
+    record_model_event(
+        RootEventType::ModelPull,
+        RootEventStatus::Failed,
+        &model.name,
+        None,
+        Some(format!(
+            "pull_failed; reason={}; weights_retained=true",
+            err.reason()
+        )),
+        None,
+    );
+    ModelsPullResult {
+        name: model.name.clone(),
+        verb: PullVerb::PullFailed,
+        requested_tag: model.resolved_name.clone(),
+        observed_digest: None,
+        locked_digest: model.locked_digest.clone(),
+        digest_match: None,
+        bytes_completed: None,
+        lock_written: false,
+        exit_code,
+        reason: Some(err.reason().to_string()),
+    }
+}
+
+fn pull_tag_then_verify_row(
+    model: &PlanModel,
+    inspector: &impl OllamaInspector,
+    realizer: &impl OllamaRealizer,
+    backend_version: Option<String>,
+    expected_bytes: &mut Vec<u8>,
+    progress: &mut dyn FnMut(&str, PullProgress),
+) -> Result<(ModelsPullResult, bool), ModelError> {
+    let started = Instant::now();
+    let outcome = match realizer.pull_tag(&model.resolved_name, &mut |update| {
+        progress(&model.name, update);
+    }) {
+        Ok(outcome) => outcome,
+        Err(err) => return Ok((pull_failed_row(model, err), true)),
+    };
+    let duration_ms = started.elapsed().as_millis() as u64;
+    let listed = match inspector.list_models() {
+        Ok(listed) => listed,
+        Err(err) => {
+            return Ok((
+                pull_failed_row(
+                    model,
+                    match err {
+                        InspectError::EndpointUnreachable => RealizeError::EndpointUnreachable,
+                        InspectError::TimedOut => RealizeError::TimedOut,
+                        InspectError::Malformed => RealizeError::Malformed,
+                        InspectError::ProtocolUnsupported => RealizeError::ProtocolUnsupported,
+                    },
+                ),
+                true,
+            ));
+        }
+    };
+    let Some(found) = find_listed(&model.name, &listed) else {
+        return Ok((pull_failed_row(model, RealizeError::Failed), true));
+    };
+    if is_remote_or_cloud(&model.name, Some(found)) {
+        return Ok((
+            ModelsPullResult {
+                name: model.name.clone(),
+                verb: PullVerb::SkippedUnsupported,
+                requested_tag: model.resolved_name.clone(),
+                observed_digest: found.digest.clone(),
+                locked_digest: model.locked_digest.clone(),
+                digest_match: None,
+                bytes_completed: outcome.bytes_completed,
+                lock_written: false,
+                exit_code: 2,
+                reason: Some(REASON_REMOTE_OR_CLOUD_UNSUPPORTED.to_string()),
+            },
+            false,
+        ));
+    }
+    let Some(canonical) = found.digest.as_deref().and_then(canonicalize_digest) else {
+        return Ok((
+            ModelsPullResult {
+                name: model.name.clone(),
+                verb: PullVerb::PullFailed,
+                requested_tag: model.resolved_name.clone(),
+                observed_digest: found.digest.clone(),
+                locked_digest: model.locked_digest.clone(),
+                digest_match: None,
+                bytes_completed: outcome.bytes_completed,
+                lock_written: false,
+                exit_code: 1,
+                reason: Some(REASON_MALFORMED_OUTPUT.to_string()),
+            },
+            true,
+        ));
+    };
+    if let Some(locked) = model.locked_digest.as_deref() {
+        if !digests_equal(&canonical, locked) {
+            record_model_event(
+                RootEventType::ModelVerificationFailed,
+                RootEventStatus::Failed,
+                &model.name,
+                None,
+                Some("verification_failed; weights_retained=true".to_string()),
+                Some(duration_ms),
+            );
+            return Ok((
+                ModelsPullResult {
+                    name: model.name.clone(),
+                    verb: PullVerb::VerificationFailed,
+                    requested_tag: model.resolved_name.clone(),
+                    observed_digest: Some(canonical),
+                    locked_digest: model.locked_digest.clone(),
+                    digest_match: Some(false),
+                    bytes_completed: outcome.bytes_completed,
+                    lock_written: false,
+                    exit_code: 4,
+                    reason: Some(REASON_DIGEST_MISMATCH.to_string()),
+                },
+                true,
+            ));
+        }
+    }
+    let snapshot_id = write_verified_lock(
+        &model.name,
+        &model.resolved_name,
+        &canonical,
+        found.size,
+        backend_version,
+        VERIFY_METHOD_PULL,
+        expected_bytes,
+    )?;
+    record_model_event(
+        RootEventType::ModelPull,
+        RootEventStatus::Completed,
+        &model.name,
+        Some(snapshot_id.clone()),
+        Some("pulled_and_verified; weights_retained=true".to_string()),
+        Some(duration_ms),
+    );
+    record_model_event(
+        RootEventType::ModelVerified,
+        RootEventStatus::Verified,
+        &model.name,
+        Some(snapshot_id),
+        Some("pulled_and_verified; weights_retained=true".to_string()),
+        Some(duration_ms),
+    );
+    Ok((
+        ModelsPullResult {
+            name: model.name.clone(),
+            verb: PullVerb::PulledAndVerified,
+            requested_tag: model.resolved_name.clone(),
+            observed_digest: Some(canonical.clone()),
+            locked_digest: Some(canonical),
+            digest_match: Some(true),
+            bytes_completed: outcome.bytes_completed,
+            lock_written: true,
+            exit_code: 0,
+            reason: None,
+        },
+        false,
+    ))
+}
+
+fn finish_report(results: Vec<ModelsPullResult>) -> ModelsPullReport {
+    let success = results.iter().all(|row| row.verb.is_success());
+    ModelsPullReport {
+        success,
+        command: PULL_COMMAND,
+        models_restored: false,
+        model_weights_deleted: false,
+        lock_schema_version: peek_lock_schema_version_or_default(),
+        results,
+    }
+}
+
+fn write_progress(name: &str, progress: &PullProgress) {
+    match (progress.completed, progress.total) {
+        (Some(completed), Some(total)) => {
+            eprintln!("{}: {} ({completed}/{total})", name, progress.status);
+        }
+        _ => eprintln!("{}: {}", name, progress.status),
+    }
+}
+
+/// Pull-and-verify declared Ollama models using the loopback daemon.
+pub fn pull_models(name: Option<&str>) -> Result<ModelsPullReport> {
+    let ollama = HttpOllama::default();
+    pull_models_with_backend(name, &ollama, &ollama, &mut |model, progress| {
+        write_progress(model, &progress);
+    })
+}
+
+pub fn pull_models_with_backend(
+    name: Option<&str>,
+    inspector: &impl OllamaInspector,
+    realizer: &impl OllamaRealizer,
+    progress: &mut dyn FnMut(&str, PullProgress),
+) -> Result<ModelsPullReport> {
+    let rootfile = get_or_create_rootfile()?;
+    if let Some(requested) = name {
+        if !rootfile.models.contains_key(requested) {
+            return Err(ModelError::UnknownName(requested.to_string()).into());
+        }
+    }
+    if name.is_none() && rootfile.models.is_empty() {
+        return Ok(empty_pull_report());
+    }
+
+    let policy_subject = name.unwrap_or("*");
+    enforce_model_pull_policy(policy_subject)?;
+
+    let marker_name = name.unwrap_or("*");
+    let _marker = ModelPullGuard::acquire(marker_name)?;
+
+    let lock_models = load_lock_models()?;
+    let plan = plan_models_from(name, &rootfile, &lock_models, inspector)?;
+    let _ = events::record_event(
+        RootEventType::ModelPlan,
+        RootEventStatus::Planned,
+        "root models pull",
+        None,
+        None,
+        None,
+        Some(format!("planned {} model(s)", plan.models.len())),
+    );
+
+    if plan
+        .models
+        .iter()
+        .any(|model| model.planned_action == PlannedAction::RuntimeUnavailable)
+    {
+        return Err(ModelError::Unreachable(
+            plan.runtime
+                .reason
+                .clone()
+                .unwrap_or_else(|| REASON_ENDPOINT_UNREACHABLE.to_string()),
+        )
+        .into());
+    }
+
+    let lock_path = lock_file_path()?;
+    let mut expected_bytes = read_lock_bytes(&lock_path)?;
+    let mut results = Vec::with_capacity(plan.models.len());
+    let mut hard_stop = false;
+    for model in &plan.models {
+        if hard_stop {
+            results.push(not_attempted_result(model));
+            continue;
+        }
+        match model.planned_action {
+            PlannedAction::AlreadyVerified => {
+                results.push(already_verified_result(model));
+            }
+            PlannedAction::VerifyOnly => {
+                let row =
+                    verify_only_row(model, plan.runtime.version.clone(), &mut expected_bytes)?;
+                if row.verb == PullVerb::PullFailed {
+                    hard_stop = true;
+                }
+                results.push(row);
+            }
+            PlannedAction::PullTagThenVerify => {
+                let (row, stop) = pull_tag_then_verify_row(
+                    model,
+                    inspector,
+                    realizer,
+                    plan.runtime.version.clone(),
+                    &mut expected_bytes,
+                    progress,
+                )?;
+                hard_stop = stop;
+                results.push(row);
+            }
+            PlannedAction::CannotReproduceLockedDigest
+            | PlannedAction::UnsupportedRuntime
+            | PlannedAction::RemoteOrCloudUnsupported
+            | PlannedAction::ProtocolUnsupported => {
+                results.push(skipped_result(model));
+            }
+            PlannedAction::RuntimeUnavailable => {
+                return Err(ModelError::Unreachable(
+                    model
+                        .reason
+                        .clone()
+                        .unwrap_or_else(|| REASON_ENDPOINT_UNREACHABLE.to_string()),
+                )
+                .into());
+            }
+        }
+    }
+
+    Ok(finish_report(results))
+}
+
+pub fn models_pull_exit_code(report: &ModelsPullReport) -> i32 {
+    report
+        .results
+        .iter()
+        .map(|row| row.exit_code)
+        .max()
+        .unwrap_or(0)
+}
+
+pub fn format_pull_models_human(report: &ModelsPullReport) -> String {
+    if report.results.is_empty() {
+        return "No declared Ollama models.".to_string();
+    }
+    let mut out = String::new();
+    for row in &report.results {
+        let line = match row.verb {
+            PullVerb::PulledAndVerified => {
+                format!(
+                    "{}: pulled and verified {}.",
+                    row.name,
+                    row.observed_digest.as_deref().unwrap_or("digest")
+                )
+            }
+            PullVerb::VerifiedAndLocked => {
+                format!(
+                    "{}: verified local digest and wrote lock; not pulled.",
+                    row.name
+                )
+            }
+            PullVerb::AlreadyVerified => {
+                format!("{}: already verified; lock unchanged.", row.name)
+            }
+            PullVerb::VerificationFailed => format!(
+                "{}: verification failed; locked digest not reproduced; weights retained.",
+                row.name
+            ),
+            PullVerb::PullFailed => format!(
+                "{}: pull failed; no lock entry; partial weights retained.",
+                row.name
+            ),
+            PullVerb::SkippedUnsupported => format!(
+                "{}: skipped ({}).",
+                row.name,
+                row.reason.as_deref().unwrap_or("unsupported")
+            ),
+            PullVerb::NotAttempted => format!(
+                "{}: not attempted ({}).",
+                row.name,
+                row.reason.as_deref().unwrap_or(REASON_STOPPED)
+            ),
+        };
+        out.push_str(&line);
+        out.push('\n');
+    }
+    out.pop();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::inventory::{EvidenceSource, ResourceKind};
-    use crate::ollama::{MockOllama, RuntimeProbe};
-    use root_lockfile::ModelDeclaration;
+    use crate::ollama::{MockOllama, OllamaRealizer, PullProgress, RuntimeProbe};
+    use root_lockfile::{ModelDeclaration, RootLockV2};
+    use std::path::Path;
     use std::sync::Mutex;
     use std::time::Duration;
 
@@ -744,6 +1559,52 @@ mod tests {
         fn list_models(&self) -> Result<Vec<ListedModel>, InspectError> {
             *self.list_calls.lock().unwrap() += 1;
             self.inner.list_models()
+        }
+    }
+
+    struct CountingPull {
+        inner: MockOllama,
+        inspect_calls: Mutex<u32>,
+        pull_calls: Mutex<u32>,
+    }
+
+    impl CountingPull {
+        fn new(inner: MockOllama) -> Self {
+            Self {
+                inner,
+                inspect_calls: Mutex::new(0),
+                pull_calls: Mutex::new(0),
+            }
+        }
+
+        fn inspect_count(&self) -> u32 {
+            *self.inspect_calls.lock().unwrap()
+        }
+
+        fn pull_count(&self) -> u32 {
+            *self.pull_calls.lock().unwrap()
+        }
+    }
+
+    impl OllamaInspector for CountingPull {
+        fn inspect_runtime(&self) -> crate::ollama::RuntimeProbe {
+            *self.inspect_calls.lock().unwrap() += 1;
+            self.inner.inspect_runtime()
+        }
+
+        fn list_models(&self) -> Result<Vec<ListedModel>, InspectError> {
+            self.inner.list_models()
+        }
+    }
+
+    impl OllamaRealizer for CountingPull {
+        fn pull_tag(
+            &self,
+            name: &str,
+            progress: &mut dyn FnMut(PullProgress),
+        ) -> Result<crate::ollama::PullOutcome, crate::ollama::RealizeError> {
+            *self.pull_calls.lock().unwrap() += 1;
+            self.inner.pull_tag(name, progress)
         }
     }
 
@@ -1389,6 +2250,304 @@ mod tests {
         assert_eq!(
             report.models[0].observed_digest.as_deref(),
             Some(HEX64_UPPER)
+
+    fn with_isolated<R>(name: &str, entries: &[(&str, &str)], f: impl FnOnce(&Path) -> R) -> R {
+        let _guard = crate::TEST_MUTEX.lock().unwrap();
+        let tmp = isolated_root(name);
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::env::set_var("ROOT_DIR", &tmp);
+        root_lockfile::init_root_dir().unwrap();
+        if !entries.is_empty() {
+            rootfile_with(entries)
+                .write_to_file(&tmp.join("Rootfile"))
+                .unwrap();
+        }
+        let result = f(&tmp);
+        let _ = std::fs::remove_dir_all(&tmp);
+        result
+    }
+
+    fn pull_now(backend: &impl OllamaBackend) -> ModelsPullReport {
+        pull_models_with_backend(None, backend, backend, &mut |_, _| {}).unwrap()
+    }
+
+    fn pull_named(name: &str, backend: &impl OllamaBackend) -> Result<ModelsPullReport> {
+        pull_models_with_backend(Some(name), backend, backend, &mut |_, _| {})
+    }
+
+    trait OllamaBackend: OllamaInspector + OllamaRealizer {}
+    impl<T: OllamaInspector + OllamaRealizer> OllamaBackend for T {}
+
+    fn write_v3_lock(dir: &Path, models: BTreeMap<String, BTreeMap<String, LockedModel>>) {
+        let lock = RootLockV2 {
+            version: root_lockfile::emit_lock_version(&models),
+            platform: "aarch64-darwin".into(),
+            models,
+            ..Default::default()
+        };
+        lock.write_to_file(&dir.join("root.lock")).unwrap();
+    }
+
+    fn read_lock(dir: &Path) -> RootLockV2 {
+        RootLockV2::read_from_file(&dir.join("root.lock")).unwrap()
+    }
+
+    fn snapshot_reasons(dir: &Path) -> Vec<String> {
+        let snaps = dir.join("snapshots");
+        if !snaps.exists() {
+            return Vec::new();
+        }
+        let mut reasons = Vec::new();
+        for entry in std::fs::read_dir(snaps).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                continue;
+            }
+            let value: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            if let Some(reason) = value.get("reason").and_then(|v| v.as_str()) {
+                reasons.push(reason.to_string());
+            }
+        }
+        reasons.sort();
+        reasons
+    }
+
+    fn write_live_marker(dir: &Path, pid: u32) {
+        std::fs::write(
+            dir.join("model-pull.json"),
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "name": "*",
+                "started_at": "2026-09-01T00:00:00Z",
+                "pid": pid
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn write_policy(dir: &Path, body: &str) {
+        std::fs::write(dir.join("policy.toml"), body).unwrap();
+    }
+
+    #[test]
+    fn empty_models_pull_is_success_without_marker_or_http() {
+        with_isolated("empty_pull", &[], |tmp| {
+            let backend = CountingPull::new(MockOllama::default());
+            let report = pull_now(&backend);
+            assert_eq!(backend.inspect_count(), 0);
+            assert_eq!(backend.pull_count(), 0);
+            assert!(report.success);
+            assert_eq!(report.command, "models pull");
+            assert!(!report.models_restored);
+            assert!(!report.model_weights_deleted);
+            assert!(report.results.is_empty());
+            assert_eq!(models_pull_exit_code(&report), 0);
+            assert!(!tmp.join("model-pull.json").exists());
+            let encoded = serde_json::to_value(&report).unwrap();
+            assert_eq!(encoded["models_restored"], false);
+            assert_eq!(encoded["model_weights_deleted"], false);
+        });
+    }
+
+    #[test]
+    fn unknown_name_pull_exits_2_without_marker_or_http() {
+        with_isolated("unknown_pull", &[("qwen3:8b", "ollama")], |tmp| {
+            let backend = CountingPull::new(MockOllama::default());
+            let err = pull_named("nope", &backend).unwrap_err();
+            let model_err = err.downcast_ref::<ModelError>().unwrap();
+            assert_eq!(model_err.exit_code(), 2);
+            assert_eq!(backend.inspect_count(), 0);
+            assert_eq!(backend.pull_count(), 0);
+            assert!(!tmp.join("model-pull.json").exists());
+            assert!(!tmp.join("root.lock").exists());
+        });
+    }
+
+    #[test]
+    fn tags_present_digest_verify_only_writes_v3_without_post() {
+        with_isolated("verify_only", &[("qwen3:8b", "ollama")], |tmp| {
+            let digest = sha(HEX64);
+            let backend = CountingPull::new(
+                MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&digest))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(backend.pull_count(), 0);
+            assert_eq!(report.results.len(), 1);
+            assert_eq!(report.results[0].verb, PullVerb::VerifiedAndLocked);
+            assert!(report.results[0].lock_written);
+            assert_eq!(report.results[0].exit_code, 0);
+            assert!(report.success);
+            assert_eq!(models_pull_exit_code(&report), 0);
+            let lock = read_lock(tmp);
+            assert_eq!(lock.version, 3);
+            let model = &lock.models["ollama"]["qwen3:8b"];
+            assert_eq!(model.observed_digest, digest);
+            assert_eq!(model.verification_method, VERIFY_METHOD_INSPECT);
+            assert_eq!(model.addressability, ADDRESSABILITY);
+            assert_eq!(
+                snapshot_reasons(tmp),
+                vec!["before model verification record qwen3:8b".to_string()]
+            );
+            let human = format_pull_models_human(&report);
+            assert!(human.contains("verified local digest and wrote lock; not pulled."));
+            assert!(!human.contains("restored"));
+            assert!(!tmp.join("model-pull.json").exists());
+        });
+    }
+
+    #[test]
+    fn already_verified_does_not_write_lock_or_snapshot() {
+        with_isolated("already_verified", &[("qwen3:8b", "ollama")], |tmp| {
+            let digest = sha(HEX64);
+            write_v3_lock(tmp, locked("qwen3:8b", &digest));
+            let before = std::fs::read(tmp.join("root.lock")).unwrap();
+            let backend = CountingPull::new(
+                MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&digest))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(backend.pull_count(), 0);
+            assert_eq!(report.results[0].verb, PullVerb::AlreadyVerified);
+            assert!(!report.results[0].lock_written);
+            assert!(report.success);
+            assert_eq!(models_pull_exit_code(&report), 0);
+            assert_eq!(std::fs::read(tmp.join("root.lock")).unwrap(), before);
+            assert!(snapshot_reasons(tmp).is_empty());
+            let human = format_pull_models_human(&report);
+            assert!(human.contains("already verified; lock unchanged."));
+        });
+    }
+
+    #[test]
+    fn cannot_reproduce_skips_without_post() {
+        with_isolated("cannot_repro", &[("qwen3:8b", "ollama")], |tmp| {
+            write_v3_lock(tmp, locked("qwen3:8b", &sha(HEX64_OTHER)));
+            let before = std::fs::read(tmp.join("root.lock")).unwrap();
+            let backend = CountingPull::new(
+                MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&sha(HEX64)))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(backend.pull_count(), 0);
+            assert!(!report.success);
+            assert_eq!(report.results[0].verb, PullVerb::SkippedUnsupported);
+            assert_eq!(report.results[0].exit_code, 2);
+            assert_eq!(
+                report.results[0].reason.as_deref(),
+                Some(REASON_DIGEST_MISMATCH)
+            );
+            assert_eq!(models_pull_exit_code(&report), 2);
+            assert_eq!(std::fs::read(tmp.join("root.lock")).unwrap(), before);
+        });
+    }
+
+    #[test]
+    fn pull_absent_writes_v3_after_verify() {
+        with_isolated("pull_absent", &[("qwen3:8b", "ollama")], |tmp| {
+            let digest = sha(HEX64);
+            let backend = CountingPull::new(MockOllama::default().with_models_after_pull(vec![
+                ListedModel {
+                    name: "qwen3:8b".into(),
+                    model: None,
+                    digest: Some(digest.clone()),
+                    size: Some(42),
+                    remote_host: None,
+                    remote_model: None,
+                },
+            ]));
+            let report = pull_now(&backend);
+            assert_eq!(backend.pull_count(), 1);
+            assert!(report.success);
+            assert_eq!(report.results[0].verb, PullVerb::PulledAndVerified);
+            assert!(report.results[0].lock_written);
+            assert_eq!(
+                report.results[0].observed_digest.as_deref(),
+                Some(digest.as_str())
+            );
+            assert_eq!(report.lock_schema_version, 3);
+            let lock = read_lock(tmp);
+            assert_eq!(lock.version, 3);
+            let model = &lock.models["ollama"]["qwen3:8b"];
+            assert_eq!(model.verification_method, VERIFY_METHOD_PULL);
+            assert_eq!(model.size_bytes, Some(42));
+            assert_eq!(model.requested_name, "qwen3:8b");
+            assert_eq!(
+                snapshot_reasons(tmp),
+                vec!["before model verification record qwen3:8b".to_string()]
+            );
+            assert!(!tmp.join("model-pull.json").exists());
+        });
+    }
+
+    #[test]
+    fn pull_404_exits_3_without_lock_write() {
+        with_isolated("pull_404", &[("qwen3:8b", "ollama")], |tmp| {
+            let backend = CountingPull::new(MockOllama::default().with_pull_status(404));
+            let report = pull_now(&backend);
+            assert_eq!(backend.pull_count(), 1);
+            assert!(!report.success);
+            assert_eq!(report.results[0].verb, PullVerb::PullFailed);
+            assert_eq!(report.results[0].exit_code, 3);
+            assert_eq!(models_pull_exit_code(&report), 3);
+            assert!(!tmp.join("root.lock").exists());
+            assert!(!report.model_weights_deleted);
+        });
+    }
+
+    #[test]
+    fn pull_then_mismatch_exits_4_lock_unchanged() {
+        with_isolated("pull_mismatch", &[("qwen3:8b", "ollama")], |tmp| {
+            write_v3_lock(tmp, locked("qwen3:8b", &sha(HEX64)));
+            let before = std::fs::read(tmp.join("root.lock")).unwrap();
+            let backend = CountingPull::new(
+                MockOllama::default()
+                    .with_models_after_pull(vec![listed("qwen3:8b", Some(&sha(HEX64_OTHER)))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(backend.pull_count(), 1);
+            assert_eq!(report.results[0].verb, PullVerb::VerificationFailed);
+            assert_eq!(report.results[0].exit_code, 4);
+            assert_eq!(models_pull_exit_code(&report), 4);
+            assert!(!report.results[0].lock_written);
+            assert!(!report.model_weights_deleted);
+            assert_eq!(std::fs::read(tmp.join("root.lock")).unwrap(), before);
+            assert!(snapshot_reasons(tmp).is_empty());
+        });
+    }
+
+    #[test]
+    fn mixed_skip_and_pull_commits_second() {
+        with_isolated(
+            "mixed_skip_pull",
+            &[("alpha:8b", "ollama"), ("beta:8b", "ollama")],
+            |tmp| {
+                write_v3_lock(tmp, locked("alpha:8b", &sha(HEX64_OTHER)));
+                let digest = sha(HEX64);
+                let backend = CountingPull::new(
+                    MockOllama::default()
+                        .with_models(vec![listed("alpha:8b", Some(&sha(HEX64)))])
+                        .with_models_after_pull(vec![
+                            listed("alpha:8b", Some(&sha(HEX64))),
+                            listed("beta:8b", Some(&digest)),
+                        ]),
+                );
+                let report = pull_now(&backend);
+                assert_eq!(backend.pull_count(), 1);
+                assert_eq!(report.results.len(), 2);
+                assert_eq!(report.results[0].name, "alpha:8b");
+                assert_eq!(report.results[0].verb, PullVerb::SkippedUnsupported);
+                assert_eq!(report.results[0].exit_code, 2);
+                assert_eq!(report.results[1].name, "beta:8b");
+                assert_eq!(report.results[1].verb, PullVerb::PulledAndVerified);
+                assert!(!report.success);
+                assert_eq!(models_pull_exit_code(&report), 2);
+                let lock = read_lock(tmp);
+                assert!(lock.models["ollama"].contains_key("beta:8b"));
+                assert_eq!(
+                    lock.models["ollama"]["alpha:8b"].observed_digest,
+                    sha(HEX64_OTHER)
+                );
+            },
         );
     }
 
@@ -1453,5 +2612,252 @@ mod tests {
         assert!(report.models[0].locked_digest.is_none());
         assert!(report.models[0].digest_match.is_none());
         assert_eq!(report.models[0].evaluation, EvaluationState::Satisfied);
+
+    fn mixed_404_stops_remaining() {
+        with_isolated(
+            "mixed_404",
+            &[("alpha:8b", "ollama"), ("beta:8b", "ollama")],
+            |tmp| {
+                let backend = CountingPull::new(MockOllama::default().with_pull_status(404));
+                let report = pull_now(&backend);
+                assert_eq!(backend.pull_count(), 1);
+                assert_eq!(report.results[0].verb, PullVerb::PullFailed);
+                assert_eq!(report.results[0].exit_code, 3);
+                assert_eq!(report.results[1].verb, PullVerb::NotAttempted);
+                assert_eq!(report.results[1].exit_code, 0);
+                assert_eq!(report.results[1].reason.as_deref(), Some(REASON_STOPPED));
+                assert_eq!(models_pull_exit_code(&report), 3);
+                assert!(!tmp.join("root.lock").exists());
+            },
+        );
+    }
+
+    #[test]
+    fn declared_cloud_suffix_pull_skips_http() {
+        with_isolated(
+            "cloud_pull",
+            &[("gpt-oss:120b-cloud", "ollama"), ("foo:cloud", "ollama")],
+            |tmp| {
+                let backend = CountingPull::new(MockOllama::default());
+                let report = pull_now(&backend);
+                assert_eq!(backend.inspect_count(), 0);
+                assert_eq!(backend.pull_count(), 0);
+                assert_eq!(report.results.len(), 2);
+                for row in &report.results {
+                    assert_eq!(row.verb, PullVerb::SkippedUnsupported);
+                    assert_eq!(row.exit_code, 2);
+                }
+                assert_eq!(models_pull_exit_code(&report), 2);
+                assert!(!tmp.join("root.lock").exists());
+            },
+        );
+    }
+
+    #[test]
+    fn unsupported_runtime_skips_without_http() {
+        with_isolated("lmstudio", &[("qwen3:8b", "lmstudio")], |tmp| {
+            let backend = CountingPull::new(MockOllama::default());
+            let report = pull_now(&backend);
+            assert_eq!(backend.inspect_count(), 0);
+            assert_eq!(backend.pull_count(), 0);
+            assert_eq!(report.results[0].verb, PullVerb::SkippedUnsupported);
+            assert_eq!(models_pull_exit_code(&report), 2);
+            assert!(!tmp.join("root.lock").exists());
+        });
+    }
+
+    #[test]
+    fn unreachable_pull_exits_1_not_7() {
+        with_isolated("unreachable", &[("qwen3:8b", "ollama")], |tmp| {
+            let backend = CountingPull::new(MockOllama::default().with_runtime(RuntimeProbe {
+                version: None,
+                protocol: RuntimeProtocol::Unreachable,
+            }));
+            let err =
+                pull_models_with_backend(None, &backend, &backend, &mut |_, _| {}).unwrap_err();
+            let model_err = err.downcast_ref::<ModelError>().unwrap();
+            assert_eq!(model_err.exit_code(), 1);
+            assert!(!err.to_string().contains("Nix"));
+            assert_eq!(backend.pull_count(), 0);
+            assert!(!tmp.join("root.lock").exists());
+            assert!(!tmp.join("model-pull.json").exists());
+        });
+    }
+
+    #[test]
+    fn http_port_zero_pull_exits_1_not_7() {
+        with_isolated("port_zero", &[("qwen3:8b", "ollama")], |_tmp| {
+            let inspector = crate::ollama::HttpOllama::for_tests(
+                "127.0.0.1",
+                0,
+                Duration::from_millis(50),
+                Duration::from_millis(50),
+            );
+            let err =
+                pull_models_with_backend(None, &inspector, &inspector, &mut |_, _| {}).unwrap_err();
+            let model_err = err.downcast_ref::<ModelError>().unwrap();
+            assert_eq!(model_err.exit_code(), 1);
+        });
+    }
+
+    #[test]
+    fn policy_models_pull_deny_exits_9_without_marker() {
+        with_isolated("policy_deny", &[("qwen3:8b", "ollama")], |tmp| {
+            write_policy(tmp, "version = 1\n[models]\npull = \"deny\"\n");
+            let backend = CountingPull::new(MockOllama::default());
+            let err =
+                pull_models_with_backend(None, &backend, &backend, &mut |_, _| {}).unwrap_err();
+            let model_err = err.downcast_ref::<ModelError>().unwrap();
+            assert_eq!(model_err.exit_code(), 9);
+            assert_eq!(backend.inspect_count(), 0);
+            assert_eq!(backend.pull_count(), 0);
+            assert!(!tmp.join("model-pull.json").exists());
+        });
+    }
+
+    #[test]
+    fn policy_network_deny_blocks_pull_without_marker() {
+        with_isolated("policy_net", &[("qwen3:8b", "ollama")], |tmp| {
+            write_policy(tmp, "version = 1\n[resources]\nnetwork = \"deny\"\n");
+            let backend = CountingPull::new(MockOllama::default());
+            let err =
+                pull_models_with_backend(None, &backend, &backend, &mut |_, _| {}).unwrap_err();
+            assert_eq!(err.downcast_ref::<ModelError>().unwrap().exit_code(), 9);
+            assert_eq!(backend.pull_count(), 0);
+            assert!(!tmp.join("model-pull.json").exists());
+        });
+    }
+
+    #[test]
+    fn policy_packages_deny_does_not_block_pull() {
+        with_isolated("policy_pkg_deny", &[("qwen3:8b", "ollama")], |tmp| {
+            write_policy(
+                tmp,
+                "version = 1\n[packages]\ndeny = [\"qwen3:8b\"]\nallow = [\"ripgrep\"]\n",
+            );
+            let digest = sha(HEX64);
+            let backend = CountingPull::new(
+                MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&digest))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(report.results[0].verb, PullVerb::VerifiedAndLocked);
+            assert_eq!(models_pull_exit_code(&report), 0);
+        });
+    }
+
+    #[test]
+    fn policy_missing_models_section_allows_pull() {
+        with_isolated("policy_old", &[("qwen3:8b", "ollama")], |tmp| {
+            write_policy(tmp, "version = 1\n[packages]\ninstall = \"allow\"\n");
+            let digest = sha(HEX64);
+            let backend = CountingPull::new(
+                MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&digest))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(report.results[0].verb, PullVerb::VerifiedAndLocked);
+        });
+    }
+
+    #[test]
+    fn marker_live_pid_exits_1_and_does_not_replace() {
+        with_isolated("marker_live", &[("qwen3:8b", "ollama")], |tmp| {
+            let original = serde_json::json!({
+                "name": "held",
+                "started_at": "2026-09-01T00:00:00Z",
+                "pid": std::process::id()
+            });
+            std::fs::write(
+                tmp.join("model-pull.json"),
+                serde_json::to_vec_pretty(&original).unwrap(),
+            )
+            .unwrap();
+            let backend = CountingPull::new(MockOllama::default());
+            let err =
+                pull_models_with_backend(None, &backend, &backend, &mut |_, _| {}).unwrap_err();
+            let model_err = err.downcast_ref::<ModelError>().unwrap();
+            assert_eq!(model_err.exit_code(), 1);
+            assert!(matches!(model_err, ModelError::PullInProgress { .. }));
+            assert_eq!(backend.inspect_count(), 0);
+            assert_eq!(backend.pull_count(), 0);
+            let kept: serde_json::Value = serde_json::from_str(
+                &std::fs::read_to_string(tmp.join("model-pull.json")).unwrap(),
+            )
+            .unwrap();
+            assert_eq!(kept["name"], "held");
+        });
+    }
+
+    #[test]
+    fn marker_stale_pid_recovers_and_clears() {
+        with_isolated("marker_stale", &[("qwen3:8b", "ollama")], |tmp| {
+            write_live_marker(tmp, u32::MAX);
+            let digest = sha(HEX64);
+            let backend = CountingPull::new(
+                MockOllama::default().with_models(vec![listed("qwen3:8b", Some(&digest))]),
+            );
+            let report = pull_now(&backend);
+            assert_eq!(report.results[0].verb, PullVerb::VerifiedAndLocked);
+            assert!(!tmp.join("model-pull.json").exists());
+        });
+    }
+
+    #[test]
+    fn untagged_name_posts_latest() {
+        with_isolated("untagged", &[("qwen3", "ollama")], |_tmp| {
+            let digest = sha(HEX64);
+            let backend = MockOllama::default()
+                .with_models_after_pull(vec![listed("qwen3:latest", Some(&digest))]);
+            let report = pull_now(&backend);
+            assert_eq!(report.results[0].verb, PullVerb::PulledAndVerified);
+            let body = backend.captured_pull_body().unwrap();
+            let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(parsed["model"], "qwen3:latest");
+            assert!(parsed.get("insecure").is_none());
+        });
+    }
+
+    #[test]
+    fn quote_in_name_pull_escapes_json_body() {
+        with_isolated("quote_name", &[("qwen\"3", "ollama")], |_tmp| {
+            let digest = sha(HEX64);
+            let backend = MockOllama::default()
+                .with_models_after_pull(vec![listed("qwen\"3:latest", Some(&digest))]);
+            let report = pull_now(&backend);
+            assert_eq!(report.results[0].verb, PullVerb::PulledAndVerified);
+            let body = backend.captured_pull_body().unwrap();
+            assert!(!body.contains("insecure"));
+            let parsed: serde_json::Value = serde_json::from_str(&body).unwrap();
+            assert_eq!(parsed["model"], "qwen\"3:latest");
+        });
+    }
+
+    #[test]
+    fn honesty_flags_always_serialized_false() {
+        with_isolated("honesty", &[("qwen3:8b", "ollama")], |_tmp| {
+            let backend = MockOllama::default().with_pull_status(404);
+            let report = pull_now(&backend);
+            let encoded = serde_json::to_string(&report).unwrap();
+            assert!(
+                encoded.contains("\"models_restored\":false")
+                    || encoded.contains("\"models_restored\": false")
+            );
+            assert!(
+                encoded.contains("\"model_weights_deleted\":false")
+                    || encoded.contains("\"model_weights_deleted\": false")
+            );
+            assert!(!encoded.contains("\"verb\":\"restored\""));
+        });
+    }
+
+    #[test]
+    fn product_code_has_no_delete_api() {
+        let needle = format!("/api/{}", "delete");
+        let src = include_str!("models.rs");
+        let prod = src.split("#[cfg(test)]").next().unwrap();
+        assert!(!prod.contains(&needle));
+        let ollama = include_str!("ollama.rs");
+        let ollama_prod = ollama.split("#[cfg(test)]").next().unwrap();
+        assert!(!ollama_prod.contains(&needle));
+        assert!(!ollama_prod.contains("fn delete"));
     }
 }
