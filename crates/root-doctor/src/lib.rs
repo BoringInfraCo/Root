@@ -885,6 +885,47 @@ mod tests {
     }
 
     #[test]
+    fn test_diagnostics_does_not_warn_on_v2() {
+        let (_temp_home, _guard) = setup_test_home("test_diagnostics_v2_not_legacy");
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let profile_bin = root_dir.join("profiles").join("default").join("bin");
+        fs::create_dir_all(&profile_bin).unwrap();
+        std::env::set_var("PATH", &profile_bin);
+
+        let adapter = MockNixAdapter::new(true);
+        adapter.install("poppler").unwrap();
+        let store_path = first_mock_store_path(&adapter);
+
+        let mut rf = Rootfile::default();
+        rf.packages
+            .insert("poppler".to_string(), "24.08.0".to_string());
+        rf.write_to_file(&root_dir.join("Rootfile")).unwrap();
+
+        let lock = RootLock {
+            version: root_lockfile::ROOT_LOCK_SCHEMA_VERSION,
+            platform: "aarch64-darwin".into(),
+            nixpkgs: NixpkgsConfig {
+                rev: "0123456789abcdef0123456789abcdef01234567".into(),
+                source: "github:NixOS/nixpkgs".into(),
+            },
+            packages: vec![LockedPackage {
+                name: "poppler".to_string(),
+                requested: "poppler".to_string(),
+                version: "24.08.0".to_string(),
+                attribute: "poppler".to_string(),
+                store_path,
+                binaries: vec![],
+            }],
+        };
+        lock.write_to_file(&root_dir.join("root.lock")).unwrap();
+
+        let report = run_diagnostics(&adapter).unwrap();
+        assert!(!report.issues.iter().any(|issue| {
+            issue.category == "Config" && issue.description.contains("legacy schema version")
+        }));
+    }
+
+    #[test]
     fn test_probe_all_available() {
         let (_temp_home, _guard) = setup_test_home("test_probe_all_available");
         let mut adapter = MockNixAdapter::new(true);

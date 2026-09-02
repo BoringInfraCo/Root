@@ -99,8 +99,14 @@ fn validate_rootfile_ident(label: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
-/// Current root.lock schema version emitted by Root v0.1.2+.
+/// Default emitted schema for package-only locks.
+/// Also the value `peek_lock_schema_version` returns when `version` is missing.
+/// `RootLock::to_v2()` emits this. Doctor/sync legacy checks stay `version < 2`.
 pub const ROOT_LOCK_SCHEMA_VERSION: u32 = 2;
+
+/// Highest `version` this binary may read or mutate.
+/// v3 = namespaced `models` object map. v4+ is refused.
+pub const ROOT_LOCK_MAX_SUPPORTED_VERSION: u32 = 3;
 
 /// Read the lock schema version without interpreting package fields.
 ///
@@ -123,15 +129,30 @@ pub fn peek_lock_schema_version(content: &str) -> Result<u32> {
 /// Reject lockfiles written by a newer Root than this binary understands.
 ///
 /// Versions below the current schema remain readable (v1 fallback). Versions
-/// above it must not be mutated or rewritten as v2.
+/// above `ROOT_LOCK_MAX_SUPPORTED_VERSION` must not be mutated or rewritten.
 pub fn validate_supported_lock_version(version: u32) -> Result<()> {
-    if version > ROOT_LOCK_SCHEMA_VERSION {
+    validate_supported_lock_version_with_max(version, ROOT_LOCK_MAX_SUPPORTED_VERSION)
+}
+
+/// Same guard as [`validate_supported_lock_version`], with an explicit max.
+pub fn validate_supported_lock_version_with_max(version: u32, max_supported: u32) -> Result<()> {
+    if version > max_supported {
         anyhow::bail!(
-            "root.lock schema version {version} is newer than this Root supports ({ROOT_LOCK_SCHEMA_VERSION}). \
+            "root.lock schema version {version} is newer than this Root supports ({max_supported}). \
              Upgrade Root to use this lockfile."
         );
     }
     Ok(())
+}
+
+/// Schema version to emit for a lock with this `models` map.
+/// Package-only locks stay at 2; a non-empty models map requires 3.
+pub fn emit_lock_version(models: &BTreeMap<String, BTreeMap<String, LockedModel>>) -> u32 {
+    if models.is_empty() {
+        ROOT_LOCK_SCHEMA_VERSION
+    } else {
+        3
+    }
 }
 
 /// The legacy root.lock JSON format.
@@ -185,6 +206,8 @@ pub struct RootLockV2 {
     pub profile: LockProfile,
     #[serde(default)]
     pub packages: Vec<LockedPackageV2>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub models: BTreeMap<String, BTreeMap<String, LockedModel>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
@@ -261,6 +284,27 @@ pub struct LockedPackageV2 {
     pub meta: BTreeMap<String, serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content_hash: Option<String>,
+}
+
+/// A locked local model under a runtime namespace (`models.<runtime>.<name>`).
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
+pub struct LockedModel {
+    pub runtime: String,
+    pub requested_name: String,
+    /// Canonical `sha256:<64 lowercase hex>`.
+    pub observed_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backend_version: Option<String>,
+    pub locked_at: String,
+    pub verified_at: String,
+    /// `pull_tag_then_compare_tags_digest` | `inspect_tags_digest`
+    pub verification_method: String,
+    /// `verification_record_only`
+    pub addressability: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Default)]
@@ -393,6 +437,7 @@ impl RootLock {
                 .cloned()
                 .map(LockedPackageV2::from)
                 .collect(),
+            models: BTreeMap::new(),
         }
     }
 }
@@ -775,6 +820,131 @@ pub fn validate_store_paths(lock: &RootLockV2) -> Result<()> {
     Ok(())
 }
 
+/// Validate namespaced `models` entries on a lock.
+///
+/// Empty maps are accepted. When entries are present, each digest must already
+/// be canonical `sha256:<64 lowercase hex>`, `runtime` must be `ollama`,
+/// credential-looking strings are rejected, and any `endpoint` must be loopback.
+pub fn validate_locked_models(lock: &RootLockV2) -> Result<()> {
+    if lock.models.is_empty() {
+        return Ok(());
+    }
+
+    for (runtime_ns, models) in &lock.models {
+        reject_secret_string("model runtime namespace", runtime_ns)?;
+        for (name, model) in models {
+            let label = format!("{runtime_ns}/{name}");
+            reject_secret_string(&format!("locked model '{label}' name"), name)?;
+            validate_one_locked_model(&label, model)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_one_locked_model(label: &str, model: &LockedModel) -> Result<()> {
+    if model.runtime != "ollama" {
+        anyhow::bail!("invalid locked model '{label}': runtime must be \"ollama\"");
+    }
+    reject_secret_string(&format!("locked model '{label}' runtime"), &model.runtime)?;
+    reject_secret_string(
+        &format!("locked model '{label}' requested_name"),
+        &model.requested_name,
+    )?;
+    reject_secret_string(
+        &format!("locked model '{label}' observed_digest"),
+        &model.observed_digest,
+    )?;
+    if let Some(endpoint) = &model.endpoint {
+        reject_secret_string(&format!("locked model '{label}' endpoint"), endpoint)?;
+        if !endpoint_is_loopback(endpoint) {
+            anyhow::bail!(
+                "invalid locked model '{label}': endpoint must be loopback (127.0.0.1 or ::1)"
+            );
+        }
+    }
+    if let Some(backend_version) = &model.backend_version {
+        reject_secret_string(
+            &format!("locked model '{label}' backend_version"),
+            backend_version,
+        )?;
+    }
+    reject_secret_string(
+        &format!("locked model '{label}' verification_method"),
+        &model.verification_method,
+    )?;
+    reject_secret_string(
+        &format!("locked model '{label}' addressability"),
+        &model.addressability,
+    )?;
+    if !is_canonical_sha256_digest(&model.observed_digest) {
+        anyhow::bail!(
+            "invalid locked model '{label}': observed_digest must be canonical sha256:<64 lowercase hex>"
+        );
+    }
+    Ok(())
+}
+
+fn is_canonical_sha256_digest(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn looks_secret(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.contains("canary")
+        || lower.contains("token")
+        || lower.contains("secret")
+        || lower.contains("bearer")
+        || lower.contains("api_key")
+}
+
+fn reject_secret_string(label: &str, value: &str) -> Result<()> {
+    if looks_secret(value) {
+        anyhow::bail!("{label} contains a credential-looking string");
+    }
+    Ok(())
+}
+
+fn endpoint_is_loopback(endpoint: &str) -> bool {
+    matches!(
+        endpoint_host(endpoint).as_deref(),
+        Some("127.0.0.1") | Some("::1")
+    )
+}
+
+fn endpoint_host(endpoint: &str) -> Option<String> {
+    let trimmed = endpoint.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let without_scheme = trimmed
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(trimmed);
+    let authority = without_scheme.split('/').next().unwrap_or("");
+    if authority.is_empty() {
+        return None;
+    }
+    if let Some(rest) = authority.strip_prefix('[') {
+        return rest
+            .split(']')
+            .next()
+            .filter(|h| !h.is_empty())
+            .map(str::to_string);
+    }
+    if authority == "::1" {
+        return Some("::1".to_string());
+    }
+    if let Some((host, port)) = authority.rsplit_once(':') {
+        if !host.is_empty() && !host.contains(':') && port.chars().all(|c| c.is_ascii_digit()) {
+            return Some(host.to_string());
+        }
+    }
+    Some(authority.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
@@ -1008,6 +1178,7 @@ mod tests {
         let v2 = lock.to_v2();
 
         assert_eq!(v2.version, ROOT_LOCK_SCHEMA_VERSION);
+        assert!(v2.models.is_empty());
         assert_eq!(v2.platform, "x86_64-linux");
         assert_eq!(v2.profile, LockProfile::default());
         assert_eq!(v2.nixpkgs.rev, "0123456789abcdef0123456789abcdef01234567");
@@ -1061,6 +1232,7 @@ mod tests {
             nixpkgs: NixpkgsConfigV2::default(),
             profile: LockProfile::default(),
             packages: vec![],
+            models: BTreeMap::new(),
         };
         lock.write_to_file(&path).unwrap();
         let read_back = RootLockV2::read_from_file(&path).unwrap();
@@ -1390,18 +1562,232 @@ mod tests {
             peek_lock_schema_version(r#"{"version":3,"platform":"aarch64-darwin"}"#).unwrap(),
             3
         );
+        assert_eq!(
+            peek_lock_schema_version(r#"{"version":4,"platform":"aarch64-darwin"}"#).unwrap(),
+            4
+        );
         validate_supported_lock_version(1).unwrap();
         validate_supported_lock_version(2).unwrap();
-        let err = validate_supported_lock_version(3).unwrap_err();
-        assert!(err.to_string().contains("newer than this Root supports"));
+        validate_supported_lock_version(3).unwrap();
+        let err = validate_supported_lock_version(4).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("newer than this Root supports (3)"));
         assert!(err.to_string().contains("Upgrade Root"));
     }
 
     #[test]
+    fn max_2_validator_still_rejects_3() {
+        let err = validate_supported_lock_version_with_max(3, 2).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("newer than this Root supports (2)"));
+        validate_supported_lock_version_with_max(2, 2).unwrap();
+    }
+
+    #[test]
     fn future_lock_version_still_deserializes_but_is_rejected_by_guard() {
-        let json = r#"{"version":3,"platform":"aarch64-darwin","packages":[],"models":[]}"#;
+        let json = r#"{"version":4,"platform":"aarch64-darwin","packages":[]}"#;
         let parsed = RootLockV2::read_from_str(json).unwrap();
-        assert_eq!(parsed.version, 3);
+        assert_eq!(parsed.version, 4);
         assert!(validate_supported_lock_version(parsed.version).is_err());
+    }
+
+    fn canonical_digest() -> String {
+        format!("sha256:{}", "a".repeat(64))
+    }
+
+    fn sample_locked_model() -> LockedModel {
+        LockedModel {
+            runtime: "ollama".into(),
+            requested_name: "qwen3:8b".into(),
+            observed_digest: canonical_digest(),
+            size_bytes: Some(42),
+            endpoint: Some("http://127.0.0.1:11434".into()),
+            backend_version: Some("0.11.0".into()),
+            locked_at: "2026-09-01T00:00:00Z".into(),
+            verified_at: "2026-09-01T00:00:01Z".into(),
+            verification_method: "inspect_tags_digest".into(),
+            addressability: "verification_record_only".into(),
+        }
+    }
+
+    fn sample_v3_models() -> BTreeMap<String, BTreeMap<String, LockedModel>> {
+        let mut inner = BTreeMap::new();
+        inner.insert("qwen3:8b".into(), sample_locked_model());
+        let mut models = BTreeMap::new();
+        models.insert("ollama".into(), inner);
+        models
+    }
+
+    #[test]
+    fn emit_lock_version_stays_2_when_models_empty() {
+        assert_eq!(
+            emit_lock_version(&BTreeMap::new()),
+            ROOT_LOCK_SCHEMA_VERSION
+        );
+    }
+
+    #[test]
+    fn emit_lock_version_is_3_when_models_present() {
+        assert_eq!(emit_lock_version(&sample_v3_models()), 3);
+    }
+
+    #[test]
+    fn parse_rootlock_v3_models_object_map() {
+        let digest = canonical_digest();
+        let json = format!(
+            r#"{{
+              "version": 3,
+              "platform": "aarch64-darwin",
+              "packages": [],
+              "models": {{
+                "ollama": {{
+                  "qwen3:8b": {{
+                    "runtime": "ollama",
+                    "requested_name": "qwen3:8b",
+                    "observed_digest": "{digest}",
+                    "size_bytes": 42,
+                    "endpoint": "http://127.0.0.1:11434",
+                    "backend_version": "0.11.0",
+                    "locked_at": "2026-09-01T00:00:00Z",
+                    "verified_at": "2026-09-01T00:00:01Z",
+                    "verification_method": "inspect_tags_digest",
+                    "addressability": "verification_record_only"
+                  }}
+                }}
+              }}
+            }}"#
+        );
+        let lock = RootLockV2::read_from_str(&json).unwrap();
+        assert_eq!(lock.version, 3);
+        validate_supported_lock_version(lock.version).unwrap();
+        validate_locked_models(&lock).unwrap();
+        let model = &lock.models["ollama"]["qwen3:8b"];
+        assert_eq!(model.runtime, "ollama");
+        assert_eq!(model.observed_digest, digest);
+        assert_eq!(model.endpoint.as_deref(), Some("http://127.0.0.1:11434"));
+
+        let serialized = serde_json::to_value(&lock).unwrap();
+        assert!(serialized["models"].is_object());
+        assert!(!serialized["models"].is_array());
+    }
+
+    #[test]
+    fn empty_models_are_omitted_from_serialized_lock() {
+        let lock = RootLockV2 {
+            version: 2,
+            platform: "aarch64-darwin".into(),
+            ..RootLockV2::default()
+        };
+        let serialized = serde_json::to_value(&lock).unwrap();
+        assert!(serialized.get("models").is_none());
+        assert!(validate_locked_models(&lock).is_ok());
+    }
+
+    #[test]
+    fn v3_models_array_does_not_deserialize_as_object_map() {
+        let json = r#"{"version":3,"platform":"aarch64-darwin","packages":[],"models":[]}"#;
+        assert!(RootLockV2::read_from_str(json).is_err());
+    }
+
+    #[test]
+    fn validate_locked_models_rejects_non_canonical_digests() {
+        let cases = [
+            format!("sha256-{}", "a".repeat(64)),
+            "a".repeat(64),
+            format!("sha256:{}", "A".repeat(64)),
+            format!("sha256:{}", "a".repeat(63)),
+        ];
+        for digest in cases {
+            let mut models = sample_v3_models();
+            models
+                .get_mut("ollama")
+                .unwrap()
+                .get_mut("qwen3:8b")
+                .unwrap()
+                .observed_digest = digest.clone();
+            let lock = RootLockV2 {
+                version: 3,
+                models,
+                ..RootLockV2::default()
+            };
+            let err = validate_locked_models(&lock).unwrap_err().to_string();
+            assert!(
+                err.contains("observed_digest must be canonical"),
+                "digest {digest} should be rejected, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_locked_models_rejects_non_ollama_runtime() {
+        let mut models = sample_v3_models();
+        models
+            .get_mut("ollama")
+            .unwrap()
+            .get_mut("qwen3:8b")
+            .unwrap()
+            .runtime = "llama.cpp".into();
+        let lock = RootLockV2 {
+            version: 3,
+            models,
+            ..RootLockV2::default()
+        };
+        let err = validate_locked_models(&lock).unwrap_err().to_string();
+        assert!(err.contains("runtime must be \"ollama\""));
+    }
+
+    #[test]
+    fn validate_locked_models_rejects_non_loopback_endpoint() {
+        let mut models = sample_v3_models();
+        models
+            .get_mut("ollama")
+            .unwrap()
+            .get_mut("qwen3:8b")
+            .unwrap()
+            .endpoint = Some("http://192.168.1.10:11434".into());
+        let lock = RootLockV2 {
+            version: 3,
+            models,
+            ..RootLockV2::default()
+        };
+        let err = validate_locked_models(&lock).unwrap_err().to_string();
+        assert!(err.contains("endpoint must be loopback"));
+    }
+
+    #[test]
+    fn validate_locked_models_accepts_ipv6_loopback() {
+        let mut models = sample_v3_models();
+        models
+            .get_mut("ollama")
+            .unwrap()
+            .get_mut("qwen3:8b")
+            .unwrap()
+            .endpoint = Some("http://[::1]:11434".into());
+        let lock = RootLockV2 {
+            version: 3,
+            models,
+            ..RootLockV2::default()
+        };
+        validate_locked_models(&lock).unwrap();
+    }
+
+    #[test]
+    fn validate_locked_models_rejects_credential_looking_strings() {
+        let mut models = sample_v3_models();
+        models
+            .get_mut("ollama")
+            .unwrap()
+            .get_mut("qwen3:8b")
+            .unwrap()
+            .requested_name = "secret-model".into();
+        let lock = RootLockV2 {
+            version: 3,
+            models,
+            ..RootLockV2::default()
+        };
+        let err = validate_locked_models(&lock).unwrap_err().to_string();
+        assert!(err.contains("credential-looking string"));
     }
 }

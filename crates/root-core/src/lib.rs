@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use root_lockfile::LockedPackage;
 use root_lockfile::{
     get_root_dir, LockedPackageOutput, LockedPackageV2, NixRuntime, NixpkgsConfig, NixpkgsConfigV2,
-    RootLock, RootLockV2, Rootfile, ROOT_LOCK_SCHEMA_VERSION,
+    RootLock, RootLockV2, Rootfile, ROOT_LOCK_MAX_SUPPORTED_VERSION, ROOT_LOCK_SCHEMA_VERSION,
 };
 use root_nix::NixAdapter;
 use root_sandbox::SandboxProvider;
@@ -1106,6 +1106,10 @@ fn get_or_create_lock_v2() -> Result<RootLockV2> {
             "Existing lockfile at {} failed validation",
             path.display()
         ))?;
+        root_lockfile::validate_locked_models(&lock).context(format!(
+            "Existing lockfile at {} failed models validation",
+            path.display()
+        ))?;
         Ok(lock)
     } else {
         Ok(get_or_create_lock()?.to_v2())
@@ -1127,6 +1131,8 @@ fn refuse_unsupported_active_lock() -> Result<()> {
 }
 
 fn save_lock_v2(lock: &RootLockV2) -> Result<()> {
+    root_lockfile::validate_locked_models(lock)
+        .context("Lockfile models failed validation before write")?;
     let path = get_root_dir()?.join("root.lock");
     lock.write_to_file(&path)
 }
@@ -1268,8 +1274,9 @@ fn build_v2_lock(
 ) -> Result<RootLockV2> {
     let now = chrono::Utc::now().to_rfc3339();
     let platform = current.platform.clone();
+    let models = current.models.clone();
     Ok(RootLockV2 {
-        version: ROOT_LOCK_SCHEMA_VERSION,
+        version: root_lockfile::emit_lock_version(&models),
         root_version: Some(env!("CARGO_PKG_VERSION").to_string()),
         created_at: current.created_at.clone().or(Some(now.clone())),
         updated_at: Some(now),
@@ -1295,6 +1302,7 @@ fn build_v2_lock(
         },
         profile: current.profile.clone(),
         packages,
+        models,
     })
 }
 
@@ -1617,6 +1625,8 @@ pub fn install(adapter: &impl NixAdapter, pkg: &str) -> Result<InstallReport> {
     let v2_lock = build_v2_lock(&lock, &flake, v2_packages)?;
     root_lockfile::validate_store_paths(&v2_lock)
         .context("Newly created lockfile failed validation after install")?;
+    root_lockfile::validate_locked_models(&v2_lock)
+        .context("Newly created lockfile failed models validation after install")?;
     save_lock_v2(&v2_lock)?;
 
     let _ = events::record_event(
@@ -1806,6 +1816,8 @@ pub fn update(adapter: &impl NixAdapter, pkg: Option<&str>) -> Result<UpdateRepo
     let new_lock = build_v2_lock(&current_lock, &flake, v2_packages)?;
     root_lockfile::validate_store_paths(&new_lock)
         .context("Newly created lockfile failed validation after update")?;
+    root_lockfile::validate_locked_models(&new_lock)
+        .context("Newly created lockfile failed models validation after update")?;
 
     let mut next_rootfile = rootfile;
     for package in &resolved_packages {
@@ -1889,6 +1901,7 @@ pub fn remove(adapter: &impl NixAdapter, pkg: &str) -> Result<RemoveReport> {
 
     lock.packages.retain(|p| p.name != pkg);
     lock.updated_at = Some(chrono::Utc::now().to_rfc3339());
+    lock.version = root_lockfile::emit_lock_version(&lock.models);
     save_lock_v2(&lock)?;
 
     let _ = events::record_event(
@@ -1936,6 +1949,10 @@ pub fn rollback_last(adapter: &impl NixAdapter) -> Result<RollbackReport> {
     let target_lock = last_snap.restored_lock();
     root_lockfile::validate_store_paths(&target_lock).context(format!(
         "Snapshot '{}' lock failed validation before rollback",
+        last_snap.id
+    ))?;
+    root_lockfile::validate_locked_models(&target_lock).context(format!(
+        "Snapshot '{}' lock failed models validation before rollback",
         last_snap.id
     ))?;
 
@@ -2255,6 +2272,8 @@ pub fn lock(adapter: &impl NixAdapter) -> Result<LockReport> {
     let new_lock = build_v2_lock(&current_v2_lock, &flake, v2_packages)?;
     root_lockfile::validate_store_paths(&new_lock)
         .context("Newly created lockfile failed validation after lock")?;
+    root_lockfile::validate_locked_models(&new_lock)
+        .context("Newly created lockfile failed models validation after lock")?;
     save_lock_v2(&new_lock)?;
 
     Ok(LockReport {
@@ -2776,6 +2795,8 @@ pub fn sync(adapter: &impl NixAdapter) -> Result<SyncReport> {
 
     let lock = get_or_create_lock_v2()?;
     root_lockfile::validate_store_paths(&lock).context("Lockfile failed validation before sync")?;
+    root_lockfile::validate_locked_models(&lock)
+        .context("Lockfile failed models validation before sync")?;
     let report = reconcile_profile_to_lock(
         adapter,
         &lock,
@@ -2891,6 +2912,8 @@ fn attempt_rollback_to_snapshot(adapter: &impl NixAdapter, snapshot: &Snapshot) 
     let restored = snapshot.restored_lock();
     root_lockfile::validate_store_paths(&restored)
         .context("Rollback validation failed: snapshot lockfile is invalid")?;
+    root_lockfile::validate_locked_models(&restored)
+        .context("Rollback validation failed: snapshot lockfile models are invalid")?;
 
     let profile_entries = profile_packages_or_empty(adapter)?;
     let locked_names: std::collections::BTreeSet<&str> = restored
@@ -2937,6 +2960,13 @@ fn restore_validate(
     root_lockfile::validate_store_paths(target_lock).map_err(|e| {
         anyhow::anyhow!(
             "Restore validation failed: lockfile at {} contains invalid store paths. {}",
+            lock_path.display(),
+            e
+        )
+    })?;
+    root_lockfile::validate_locked_models(target_lock).map_err(|e| {
+        anyhow::anyhow!(
+            "Restore validation failed: lockfile at {} contains invalid models. {}",
             lock_path.display(),
             e
         )
@@ -3491,7 +3521,7 @@ pub fn status_with_probe(
         let content = std::fs::read_to_string(&lock_path)
             .with_context(|| format!("Failed to read lockfile at {}", lock_path.display()))?;
         let version = root_lockfile::peek_lock_schema_version(&content)?;
-        if version > ROOT_LOCK_SCHEMA_VERSION {
+        if version > ROOT_LOCK_MAX_SUPPORTED_VERSION {
             lock_unsupported = true;
             unsupported_lock_version = Some(version);
             None
@@ -3511,7 +3541,7 @@ pub fn status_with_probe(
         drift_details.push(DriftIssue {
             category: "incompatible-lock-schema".to_string(),
             description: format!(
-                "root.lock schema version {} is newer than this Root supports ({ROOT_LOCK_SCHEMA_VERSION}). Upgrade Root to use this lockfile.",
+                "root.lock schema version {} is newer than this Root supports ({ROOT_LOCK_MAX_SUPPORTED_VERSION}). Upgrade Root to use this lockfile.",
                 unsupported_lock_version.unwrap_or(0)
             ),
             suggestion: "Install a newer Root release before running mutating commands against this lockfile.".to_string(),
@@ -4095,6 +4125,17 @@ mod tests {
                 && event.command == "root sync"
                 && event.snapshot_id.as_deref() == Some(report.snapshot_id.as_str())
         }));
+
+        let snaps = list_snapshots().unwrap();
+        let snap = snaps
+            .iter()
+            .find(|snapshot| snapshot.id == report.snapshot_id)
+            .unwrap();
+        assert_eq!(snap.lock.version, ROOT_LOCK_SCHEMA_VERSION);
+        assert!(
+            snap.lock.packages.iter().any(|p| p.drv_path.is_some()),
+            "sync on v2 must keep v2 snapshot metadata (legacy path would drop drv_path)"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -6908,7 +6949,7 @@ mod tests {
 
     fn write_future_lock(root_dir: &std::path::Path) -> String {
         let json = r#"{
-  "version": 3,
+  "version": 4,
   "platform": "aarch64-darwin",
   "packages": [],
   "models": [{"name": "must-not-be-copied"}]
@@ -7144,7 +7185,7 @@ mod tests {
         assert_eq!(report.state, "NeedsAttention");
         assert!(report.drift_details.iter().any(|issue| {
             issue.category == "incompatible-lock-schema"
-                && issue.description.contains("schema version 3")
+                && issue.description.contains("schema version 4")
         }));
         assert_eq!(
             std::fs::read_to_string(root_dir.join("root.lock")).unwrap(),
@@ -7322,10 +7363,190 @@ mod tests {
         install(&adapter, "ripgrep").unwrap();
         let lock = get_or_create_lock_v2().unwrap();
         assert_eq!(lock.version, ROOT_LOCK_SCHEMA_VERSION);
+        root_lockfile::validate_supported_lock_version_with_max(lock.version, 2).unwrap();
         let raw = std::fs::read_to_string(get_root_dir().unwrap().join("root.lock")).unwrap();
         assert!(!raw.contains("\"agents\""));
         assert!(!raw.contains("codex"));
         assert!(!raw.contains("qwen3:8b"));
+        assert!(!raw.contains("\"models\""));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    fn canonical_model_digest() -> String {
+        format!("sha256:{}", "a".repeat(64))
+    }
+
+    fn write_v3_models_lock(root_dir: &std::path::Path) {
+        let digest = canonical_model_digest();
+        let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
+        let json = format!(
+            r#"{{
+  "version": 3,
+  "platform": "{platform}",
+  "packages": [],
+  "models": {{
+    "ollama": {{
+      "qwen3:8b": {{
+        "runtime": "ollama",
+        "requested_name": "qwen3:8b",
+        "observed_digest": "{digest}",
+        "size_bytes": 42,
+        "endpoint": "http://127.0.0.1:11434",
+        "backend_version": "0.11.0",
+        "locked_at": "2026-09-01T00:00:00Z",
+        "verified_at": "2026-09-01T00:00:01Z",
+        "verification_method": "inspect_tags_digest",
+        "addressability": "verification_record_only"
+      }}
+    }}
+  }}
+}}"#
+        );
+        std::fs::write(root_dir.join("root.lock"), json).unwrap();
+    }
+
+    fn assert_v3_models_preserved() {
+        let lock = get_or_create_lock_v2().unwrap();
+        assert_eq!(lock.version, 3);
+        let model = lock
+            .models
+            .get("ollama")
+            .and_then(|models| models.get("qwen3:8b"))
+            .expect("v3 models object map must survive package lock writes");
+        assert_eq!(model.runtime, "ollama");
+        assert_eq!(model.requested_name, "qwen3:8b");
+        assert_eq!(model.observed_digest, canonical_model_digest());
+        assert_eq!(model.endpoint.as_deref(), Some("http://127.0.0.1:11434"));
+        let raw = std::fs::read_to_string(get_root_dir().unwrap().join("root.lock")).unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert!(
+            value["models"].is_object(),
+            "v3 models must serialize as an object map, got: {raw}"
+        );
+        assert!(!value["models"].is_array());
+    }
+
+    #[test]
+    fn test_lock_models_survive_package_rewrites() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("lock_models_preserve");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        write_v3_models_lock(&root_dir);
+        install(&adapter, "ripgrep").unwrap();
+        assert_v3_models_preserved();
+
+        update(&adapter, Some("ripgrep")).unwrap();
+        assert_v3_models_preserved();
+
+        lock(&adapter).unwrap();
+        assert_v3_models_preserved();
+
+        sync(&adapter).unwrap();
+        assert_v3_models_preserved();
+
+        remove(&adapter, "ripgrep").unwrap();
+        assert_v3_models_preserved();
+        let lock = get_or_create_lock_v2().unwrap();
+        assert!(lock.packages.is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_lock_models_survive_restore_and_rollback() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("lock_models_restore");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        write_v3_models_lock(&root_dir);
+        install(&adapter, "ripgrep").unwrap();
+        assert_v3_models_preserved();
+        let shared = root_dir.join("shared.lock");
+        std::fs::copy(root_dir.join("root.lock"), &shared).unwrap();
+
+        restore(&adapter, Some(&shared)).unwrap();
+        assert_v3_models_preserved();
+
+        rollback_last(&adapter).unwrap();
+        assert_v3_models_preserved();
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_invalid_locked_models_do_not_rewrite() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("invalid_lock_models");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let json = format!(
+            r#"{{
+  "version": 3,
+  "platform": "aarch64-darwin",
+  "packages": [],
+  "models": {{
+    "ollama": {{
+      "qwen3:8b": {{
+        "runtime": "ollama",
+        "requested_name": "qwen3:8b",
+        "observed_digest": "sha256-{}",
+        "locked_at": "2026-09-01T00:00:00Z",
+        "verified_at": "2026-09-01T00:00:01Z",
+        "verification_method": "inspect_tags_digest",
+        "addressability": "verification_record_only"
+      }}
+    }}
+  }}
+}}"#,
+            "a".repeat(64)
+        );
+        let path = root_dir.join("root.lock");
+        std::fs::write(&path, &json).unwrap();
+        let before = std::fs::read(&path).unwrap();
+
+        let err = install(&adapter, "ripgrep").unwrap_err().to_string();
+        assert!(
+            err.contains("observed_digest must be canonical") || err.contains("models validation"),
+            "unexpected error: {err}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert!(adapter.installed_packages.lock().unwrap().is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_v3_lock_is_accepted_by_status() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("status_v3_models");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        write_v3_models_lock(&root_dir);
+        let original = std::fs::read_to_string(root_dir.join("root.lock")).unwrap();
+        let adapter = MockNixAdapter::new(true);
+        let report = status(&adapter).unwrap();
+        assert!(
+            !report
+                .drift_details
+                .iter()
+                .any(|issue| issue.category == "incompatible-lock-schema"),
+            "v3 models object map must not be treated as a future lock"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root_dir.join("root.lock")).unwrap(),
+            original
+        );
+
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
