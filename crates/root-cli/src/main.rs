@@ -130,6 +130,11 @@ enum PlanSubcommands {
         #[arg(value_name = "PACKAGE")]
         pkg: String,
     },
+    /// Preview declared Ollama model actions (read-only)
+    Models {
+        #[arg(value_name = "NAME")]
+        name: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -287,6 +292,7 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
         || msg.contains("Root does not support")
         || msg.contains("Choose either a task/workflow")
         || msg.contains("Provide a Rootfile task")
+        || msg.contains("is not declared in Rootfile")
     {
         2
     } else if msg.contains("Drift") || msg.contains("drift") {
@@ -562,6 +568,13 @@ fn main() {
                         process::exit(3);
                     }
                 }
+            }
+            PlanSubcommands::Models { name } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_core::models::plan_models(name.as_deref()),
+                    root_core::models::format_plan_models_human,
+                );
             }
         },
         Commands::Install { pkg } => {

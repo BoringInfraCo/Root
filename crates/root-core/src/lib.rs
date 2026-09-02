@@ -681,8 +681,12 @@ pub mod brew;
 pub mod events;
 pub mod execution;
 pub mod inventory;
+pub mod models;
 pub mod ollama;
 pub mod policy;
+
+#[cfg(test)]
+pub(crate) static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 pub use execution::{run, RunReport, RunRequest};
 
@@ -3753,10 +3757,6 @@ mod tests {
     use root_nix::MockNixAdapter;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
-    use std::sync::Mutex;
-
-    /// Serializes tests that mutate process-global env vars (ROOT_DIR).
-    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     fn test_tmp_dir(name: &str) -> std::path::PathBuf {
         use std::sync::atomic::{AtomicU64, Ordering};
