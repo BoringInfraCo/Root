@@ -736,6 +736,9 @@ fn main() {
             if last {
                 let _ = handle_structured(cli.json, root_core::rollback_last(&adapter), |r| {
                     let mut msg = format!("Rolled back to {}.", r.from_snapshot);
+                    if r.models_restored.is_some() {
+                        msg.push_str("\nModels were not restored. Ollama weights were retained.");
+                    }
                     if !r.packages_removed.is_empty() {
                         msg.push_str(&format!("\nRemoved: {}", r.packages_removed.join(", ")));
                     }
@@ -999,6 +1002,9 @@ fn main() {
                         {
                             msg.push_str("\nNo changes needed.");
                         }
+                        if r.models_restored.is_some() {
+                            msg.push_str("\nModels will not be pulled, restored, or deleted. Ollama weights will be left unchanged.");
+                        }
                         msg
                     },
                 );
@@ -1008,6 +1014,9 @@ fn main() {
                     root_core::restore(&adapter, lock.as_deref()),
                     |r| {
                         let mut msg = format!("Restored Root profile from {}.", r.lock_path);
+                        if r.models_restored.is_some() {
+                            msg.push_str("\nModels were not restored. Any model lock entries were copied from the lockfile; Ollama weights were left unchanged.");
+                        }
                         if !r.installed.is_empty() {
                             msg.push_str(&format!("\nInstalled: {}.", r.installed.join(", ")));
                         }

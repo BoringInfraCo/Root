@@ -299,4 +299,57 @@ mod tests {
             err_msg
         );
     }
+
+    #[test]
+    fn test_snapshot_package_count_ignores_models() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        use root_lockfile::LockedModel;
+        use std::collections::BTreeMap;
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let tmp = std::env::temp_dir().join(format!(
+            "root_test_snap_models_{}_{}",
+            std::process::id(),
+            n
+        ));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let _ = root_lockfile::init_root_dir();
+
+        let mut lock = RootLockV2 {
+            version: 3,
+            platform: "test".into(),
+            ..RootLockV2::default()
+        };
+        let mut ollama = BTreeMap::new();
+        ollama.insert(
+            "qwen3:8b".into(),
+            LockedModel {
+                runtime: "ollama".into(),
+                requested_name: "qwen3:8b".into(),
+                observed_digest: format!("sha256:{}", "a".repeat(64)),
+                locked_at: "2026-09-01T00:00:00Z".into(),
+                verified_at: "2026-09-01T00:00:01Z".into(),
+                verification_method: "inspect_tags_digest".into(),
+                addressability: "verification_record_only".into(),
+                ..Default::default()
+            },
+        );
+        lock.models.insert("ollama".into(), ollama);
+        lock.version = root_lockfile::emit_lock_version(&lock.models);
+
+        let snap = Snapshot::create_from_v2("models copy", &lock).unwrap();
+        assert_eq!(snap.package_count, lock.packages.len());
+        assert_eq!(snap.package_count, 0);
+        assert_eq!(snap.schema_version, 3);
+        assert!(snap
+            .lock
+            .models
+            .get("ollama")
+            .and_then(|models| models.get("qwen3:8b"))
+            .is_some());
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 }

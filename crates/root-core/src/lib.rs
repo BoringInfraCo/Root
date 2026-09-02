@@ -770,6 +770,16 @@ pub struct RollbackReport {
     pub from_snapshot: String,
     pub packages_removed: Vec<String>,
     pub packages_restored: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models_restored: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_lock_entries_written: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_deleted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_retained: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_note: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -1139,6 +1149,71 @@ fn save_lock_v2(lock: &RootLockV2) -> Result<()> {
         .context("Lockfile models failed validation before write")?;
     let path = get_root_dir()?.join("root.lock");
     lock.write_to_file(&path)
+}
+
+const MODEL_LOCK_COPY_NOTE: &str =
+    "Package operation only. Ollama weights were not pulled or deleted.";
+
+/// Count namespaced `LockedModel` inner keys. Namespaces themselves are not counted.
+fn count_locked_model_entries(lock: &RootLockV2) -> usize {
+    lock.models.values().map(BTreeMap::len).sum()
+}
+
+#[derive(Debug, Clone, Default)]
+struct ModelHonesty {
+    models_restored: Option<bool>,
+    model_lock_entries_written: Option<usize>,
+    model_weights_deleted: Option<bool>,
+    model_weights_retained: Option<bool>,
+    model_note: Option<String>,
+}
+
+impl ModelHonesty {
+    /// Emit honesty fields when the current or target lock has a non-empty models map.
+    /// `model_lock_entries_written` is the inner-key copy count from `target`.
+    fn for_locks(current: Option<&RootLockV2>, target: &RootLockV2) -> Self {
+        let current_has = current.map(|lock| !lock.models.is_empty()).unwrap_or(false);
+        if !current_has && target.models.is_empty() {
+            return Self::default();
+        }
+        Self {
+            models_restored: Some(false),
+            model_lock_entries_written: Some(count_locked_model_entries(target)),
+            model_weights_deleted: Some(false),
+            model_weights_retained: Some(true),
+            model_note: Some(MODEL_LOCK_COPY_NOTE.to_string()),
+        }
+    }
+
+    fn apply_to_event(&self, event: &mut events::RootEvent) {
+        event.models_restored = self.models_restored;
+        event.model_lock_entries_written = self.model_lock_entries_written;
+        event.model_weights_deleted = self.model_weights_deleted;
+        event.model_weights_retained = self.model_weights_retained;
+        event.model_note = self.model_note.clone();
+    }
+
+    fn append_to_message(&self, mut message: String) -> String {
+        if let Some(note) = &self.model_note {
+            if !message.ends_with('.') && !message.ends_with(' ') {
+                message.push('.');
+            }
+            if !message.ends_with(' ') {
+                message.push(' ');
+            }
+            message.push_str(note);
+        }
+        message
+    }
+
+    fn record(&self, mut event: events::RootEvent) -> Result<events::RootEvent> {
+        if let Some(message) = event.message.take() {
+            event.message = Some(self.append_to_message(message));
+        }
+        self.apply_to_event(&mut event);
+        events::append_event(&event)?;
+        Ok(event)
+    }
 }
 
 fn locked_package_changed(current: &LockedPackageV2, target: &LockedPackageV2) -> bool {
@@ -2104,8 +2179,10 @@ pub fn rollback_last(adapter: &impl NixAdapter) -> Result<RollbackReport> {
     save_rootfile(&rootfile)?;
     save_lock_v2(&target_lock)?;
 
+    let honesty = ModelHonesty::for_locks(Some(&current_lock), &target_lock);
+
     // Step 5: Record rollback event
-    let _ = events::record_event(
+    let _ = honesty.record(events::create_event(
         events::RootEventType::Rollback,
         events::RootEventStatus::Completed,
         "root rollback --last",
@@ -2117,13 +2194,18 @@ pub fn rollback_last(adapter: &impl NixAdapter) -> Result<RollbackReport> {
             packages_to_remove.join(", "),
             packages_to_install.join(", ")
         )),
-    )?;
+    ))?;
 
     Ok(RollbackReport {
         success: true,
         from_snapshot: last_snap.id.clone(),
         packages_removed: packages_to_remove,
         packages_restored: packages_to_install,
+        models_restored: honesty.models_restored,
+        model_lock_entries_written: honesty.model_lock_entries_written,
+        model_weights_deleted: honesty.model_weights_deleted,
+        model_weights_retained: honesty.model_weights_retained,
+        model_note: honesty.model_note,
     })
 }
 
@@ -2295,6 +2377,16 @@ pub struct SyncReport {
     pub removed: Vec<String>,
     pub unchanged: Vec<String>,
     pub snapshot_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models_restored: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_lock_entries_written: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_deleted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_retained: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_note: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2348,6 +2440,16 @@ pub struct RestorePlanReport {
     pub will_keep: Vec<String>,
     pub will_update: Vec<String>,
     pub total_packages: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models_restored: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_lock_entries_written: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_deleted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_retained: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_note: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2379,6 +2481,16 @@ pub struct RestoreReport {
     pub removed: Vec<String>,
     pub unchanged: Vec<String>,
     pub snapshot_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models_restored: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_lock_entries_written: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_deleted: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_weights_retained: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_note: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -2393,6 +2505,7 @@ struct ProfileReconcileReport {
     removed: Vec<String>,
     unchanged: Vec<String>,
     snapshot_id: String,
+    honesty: ModelHonesty,
 }
 
 #[derive(Debug, Serialize)]
@@ -2613,6 +2726,7 @@ fn reconcile_profile_to_lock(
     event_type: events::RootEventType,
 ) -> Result<ProfileReconcileReport> {
     let current_lock = get_or_create_lock_v2()?;
+    let honesty = ModelHonesty::for_locks(Some(&current_lock), target_lock);
     let snapshot = Snapshot::create_from_v2(snapshot_reason, &current_lock)?;
     let snapshot_id = snapshot.id.clone();
 
@@ -2753,7 +2867,7 @@ fn reconcile_profile_to_lock(
     save_lock_v2(target_lock)?;
     write_rootfile_from_v2_lock(target_lock)?;
 
-    let _ = events::record_event(
+    let _ = honesty.record(events::create_event(
         event_type,
         events::RootEventStatus::Completed,
         command,
@@ -2766,13 +2880,14 @@ fn reconcile_profile_to_lock(
             removed.join(", "),
             unchanged.join(", ")
         )),
-    )?;
+    ))?;
 
     Ok(ProfileReconcileReport {
         installed,
         removed,
         unchanged,
         snapshot_id,
+        honesty,
     })
 }
 
@@ -2815,6 +2930,11 @@ pub fn sync(adapter: &impl NixAdapter) -> Result<SyncReport> {
         removed: report.removed,
         unchanged: report.unchanged,
         snapshot_id: report.snapshot_id,
+        models_restored: report.honesty.models_restored,
+        model_lock_entries_written: report.honesty.model_lock_entries_written,
+        model_weights_deleted: report.honesty.model_weights_deleted,
+        model_weights_retained: report.honesty.model_weights_retained,
+        model_note: report.honesty.model_note,
     })
 }
 
@@ -2881,6 +3001,11 @@ fn sync_legacy_lock(adapter: &impl NixAdapter) -> Result<SyncReport> {
         removed: to_remove,
         unchanged,
         snapshot_id,
+        models_restored: None,
+        model_lock_entries_written: None,
+        model_weights_deleted: None,
+        model_weights_retained: None,
+        model_note: None,
     })
 }
 
@@ -3127,6 +3252,11 @@ pub fn restore(adapter: &impl NixAdapter, lock_path: Option<&Path>) -> Result<Re
             removed: report.removed,
             unchanged: report.unchanged,
             snapshot_id: report.snapshot_id,
+            models_restored: report.honesty.models_restored,
+            model_lock_entries_written: report.honesty.model_lock_entries_written,
+            model_weights_deleted: report.honesty.model_weights_deleted,
+            model_weights_retained: report.honesty.model_weights_retained,
+            model_note: report.honesty.model_note,
         }),
         Err(e) => {
             let failure_phase = infer_restore_failure_phase(&e);
@@ -3242,7 +3372,10 @@ pub fn restore_dry_run(
         }
     }
 
-    let _ = events::record_event(
+    let current_lock = get_or_create_lock_v2().ok();
+    let honesty = ModelHonesty::for_locks(current_lock.as_ref(), &target_lock);
+
+    let _ = honesty.record(events::create_event(
         events::RootEventType::RestorePlanned,
         events::RootEventStatus::Planned,
         "root restore --dry-run",
@@ -3256,7 +3389,7 @@ pub fn restore_dry_run(
             will_keep.len(),
             will_update.len()
         )),
-    );
+    ));
 
     Ok(RestorePlanReport {
         lock_path: selected_lock_path.to_string_lossy().to_string(),
@@ -3265,6 +3398,11 @@ pub fn restore_dry_run(
         will_keep,
         will_update,
         total_packages: target_lock.packages.len(),
+        models_restored: honesty.models_restored,
+        model_lock_entries_written: honesty.model_lock_entries_written,
+        model_weights_deleted: honesty.model_weights_deleted,
+        model_weights_retained: honesty.model_weights_retained,
+        model_note: honesty.model_note,
     })
 }
 
@@ -4175,6 +4313,7 @@ mod tests {
         );
         assert!(report.installed.contains(&"ripgrep".to_string()));
         assert!(report.removed.contains(&"fd".to_string()));
+        assert_honesty_omitted(&serde_json::to_value(&report).unwrap());
 
         let active_lock = RootLockV2::read_from_file(&root_dir.join("root.lock")).unwrap();
         assert!(active_lock.packages.iter().any(|p| p.name == "ripgrep"));
@@ -7522,10 +7661,25 @@ mod tests {
         format!("sha256:{}", "a".repeat(64))
     }
 
-    fn write_v3_models_lock(root_dir: &std::path::Path) {
+    fn sample_locked_model() -> root_lockfile::LockedModel {
+        root_lockfile::LockedModel {
+            runtime: "ollama".into(),
+            requested_name: "qwen3:8b".into(),
+            observed_digest: canonical_model_digest(),
+            size_bytes: Some(42),
+            endpoint: Some("http://127.0.0.1:11434".into()),
+            backend_version: Some("0.11.0".into()),
+            locked_at: "2026-09-01T00:00:00Z".into(),
+            verified_at: "2026-09-01T00:00:01Z".into(),
+            verification_method: "inspect_tags_digest".into(),
+            addressability: "verification_record_only".into(),
+        }
+    }
+
+    fn v3_models_lock_json() -> String {
         let digest = canonical_model_digest();
         let platform = root_lockfile::detect_platform().unwrap_or_else(|_| "aarch64-darwin".into());
-        let json = format!(
+        format!(
             r#"{{
   "version": 3,
   "platform": "{platform}",
@@ -7547,8 +7701,48 @@ mod tests {
     }}
   }}
 }}"#
+        )
+    }
+
+    fn write_v3_models_lock(root_dir: &std::path::Path) {
+        std::fs::write(root_dir.join("root.lock"), v3_models_lock_json()).unwrap();
+    }
+
+    fn write_v3_models_lock_to(path: &std::path::Path) {
+        std::fs::write(path, v3_models_lock_json()).unwrap();
+    }
+
+    fn assert_honesty_json(value: &serde_json::Value, entries_written: u64) {
+        let obj = value.as_object().expect("report JSON object");
+        assert!(
+            obj.contains_key("models_restored"),
+            "honesty block must serialize models_restored even when false: {value}"
         );
-        std::fs::write(root_dir.join("root.lock"), json).unwrap();
+        assert_eq!(value["models_restored"], false);
+        assert_eq!(value["model_lock_entries_written"], entries_written);
+        assert_eq!(value["model_weights_deleted"], false);
+        assert_eq!(value["model_weights_retained"], true);
+        assert_eq!(value["model_note"], MODEL_LOCK_COPY_NOTE);
+        let raw = value.to_string();
+        assert!(!raw.contains("Ollama-compatible"));
+        assert!(!raw.contains("deterministic model restore"));
+        assert!(!raw.contains("packages and models"));
+    }
+
+    fn assert_honesty_omitted(value: &serde_json::Value) {
+        let obj = value.as_object().expect("report JSON object");
+        for key in [
+            "models_restored",
+            "model_lock_entries_written",
+            "model_weights_deleted",
+            "model_weights_retained",
+            "model_note",
+        ] {
+            assert!(
+                !obj.contains_key(key),
+                "package-only report must omit {key}, got {value}"
+            );
+        }
     }
 
     fn assert_v3_models_preserved() {
@@ -7617,11 +7811,19 @@ mod tests {
         let shared = root_dir.join("shared.lock");
         std::fs::copy(root_dir.join("root.lock"), &shared).unwrap();
 
-        restore(&adapter, Some(&shared)).unwrap();
+        let restore_report = restore(&adapter, Some(&shared)).unwrap();
         assert_v3_models_preserved();
+        assert_eq!(restore_report.models_restored, Some(false));
+        assert_eq!(restore_report.model_lock_entries_written, Some(1));
+        assert_eq!(restore_report.model_weights_deleted, Some(false));
+        assert_eq!(restore_report.model_weights_retained, Some(true));
+        assert_honesty_json(&serde_json::to_value(&restore_report).unwrap(), 1);
 
-        rollback_last(&adapter).unwrap();
+        let rollback_report = rollback_last(&adapter).unwrap();
         assert_v3_models_preserved();
+        assert_eq!(rollback_report.models_restored, Some(false));
+        assert_eq!(rollback_report.model_lock_entries_written, Some(1));
+        assert_honesty_json(&serde_json::to_value(&rollback_report).unwrap(), 1);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -7725,6 +7927,156 @@ mod tests {
             std::fs::read_to_string(root_dir.join("root.lock")).unwrap(),
             original
         );
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_count_locked_model_entries_counts_inner_keys() {
+        let mut lock = RootLockV2::default();
+        assert_eq!(count_locked_model_entries(&lock), 0);
+        let mut inner = BTreeMap::new();
+        inner.insert("qwen3:8b".into(), sample_locked_model());
+        let mut second = sample_locked_model();
+        second.requested_name = "llama3:8b".into();
+        inner.insert("llama3:8b".into(), second);
+        lock.models.insert("ollama".into(), inner);
+        assert_eq!(count_locked_model_entries(&lock), 2);
+        assert_eq!(lock.models.len(), 1);
+    }
+
+    #[test]
+    fn test_restore_v3_model_lock_copies_entries_without_claiming_restore() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_v3_model_honesty");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        let shared = root_dir.join("shared.lock");
+        write_v3_models_lock_to(&shared);
+
+        let report = restore(&adapter, Some(&shared)).unwrap();
+        assert!(report.success);
+        assert_eq!(report.models_restored, Some(false));
+        assert_eq!(report.model_lock_entries_written, Some(1));
+        assert_eq!(report.model_weights_deleted, Some(false));
+        assert_eq!(report.model_weights_retained, Some(true));
+        assert_eq!(report.model_note.as_deref(), Some(MODEL_LOCK_COPY_NOTE));
+        assert_honesty_json(&serde_json::to_value(&report).unwrap(), 1);
+
+        let active = get_or_create_lock_v2().unwrap();
+        assert_eq!(
+            active
+                .models
+                .get("ollama")
+                .and_then(|models| models.get("qwen3:8b"))
+                .map(|model| model.requested_name.as_str()),
+            Some("qwen3:8b")
+        );
+
+        let snaps = list_snapshots().unwrap();
+        assert!(snaps
+            .iter()
+            .all(|snap| snap.package_count == snap.lock.packages.len()));
+
+        let hist = history().unwrap();
+        let restore_event = hist
+            .events
+            .iter()
+            .find(|event| {
+                event.event_type == events::RootEventType::Restore
+                    && event.status == events::RootEventStatus::Completed
+            })
+            .expect("completed restore event");
+        assert_eq!(restore_event.models_restored, Some(false));
+        assert_eq!(restore_event.model_lock_entries_written, Some(1));
+        assert_eq!(restore_event.model_weights_deleted, Some(false));
+        assert!(restore_event
+            .message
+            .as_deref()
+            .unwrap_or("")
+            .contains(MODEL_LOCK_COPY_NOTE));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_restore_dry_run_v3_model_lock_honesty() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("restore_dry_run_v3_honesty");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        let shared = root_dir.join("shared.lock");
+        write_v3_models_lock_to(&shared);
+        let pre_lock = std::fs::read(root_dir.join("root.lock")).ok();
+
+        let plan = restore_dry_run(&adapter, Some(&shared)).unwrap();
+        assert_eq!(plan.total_packages, 0);
+        assert_eq!(plan.models_restored, Some(false));
+        assert_eq!(plan.model_lock_entries_written, Some(1));
+        assert_eq!(plan.model_weights_deleted, Some(false));
+        assert_eq!(plan.model_weights_retained, Some(true));
+        assert_honesty_json(&serde_json::to_value(&plan).unwrap(), 1);
+        assert_eq!(std::fs::read(root_dir.join("root.lock")).ok(), pre_lock);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_sync_v3_model_lock_honesty() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("sync_v3_honesty");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let root_dir = root_lockfile::init_root_dir().unwrap();
+        let adapter = MockNixAdapter::new(true);
+
+        write_v3_models_lock(&root_dir);
+        let report = sync(&adapter).unwrap();
+        assert!(report.success);
+        assert_eq!(report.models_restored, Some(false));
+        assert_eq!(report.model_lock_entries_written, Some(1));
+        assert_eq!(report.model_weights_deleted, Some(false));
+        assert_eq!(report.model_weights_retained, Some(true));
+        assert_honesty_json(&serde_json::to_value(&report).unwrap(), 1);
+        assert_v3_models_preserved();
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_rollback_dropping_models_reports_zero_entries_written() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        let tmp = test_tmp_dir("rollback_drop_models");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::env::set_var("ROOT_DIR", &tmp);
+        let _ = root_lockfile::init_root_dir();
+        let adapter = MockNixAdapter::new(true);
+
+        install(&adapter, "ripgrep").unwrap();
+        install(&adapter, "fd").unwrap();
+
+        let mut current = get_or_create_lock_v2().unwrap();
+        let mut inner = BTreeMap::new();
+        inner.insert("qwen3:8b".into(), sample_locked_model());
+        current.models.insert("ollama".into(), inner);
+        current.version = 3;
+        save_lock_v2(&current).unwrap();
+
+        let report = rollback_last(&adapter).unwrap();
+        assert_eq!(report.models_restored, Some(false));
+        assert_eq!(report.model_lock_entries_written, Some(0));
+        assert_eq!(report.model_weights_deleted, Some(false));
+        assert_eq!(report.model_weights_retained, Some(true));
+        assert_honesty_json(&serde_json::to_value(&report).unwrap(), 0);
+
+        let restored = get_or_create_lock_v2().unwrap();
+        assert!(restored.models.is_empty());
 
         let _ = std::fs::remove_dir_all(&tmp);
     }

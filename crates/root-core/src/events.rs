@@ -65,6 +65,16 @@ pub struct RootEvent {
     pub removed_count: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kept_count: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub models_restored: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_lock_entries_written: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_weights_deleted: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_weights_retained: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_note: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -174,6 +184,11 @@ pub fn create_event(
         installed_count: None,
         removed_count: None,
         kept_count: None,
+        models_restored: None,
+        model_lock_entries_written: None,
+        model_weights_deleted: None,
+        model_weights_retained: None,
+        model_note: None,
     }
 }
 
