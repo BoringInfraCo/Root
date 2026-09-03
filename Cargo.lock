@@ -468,11 +468,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "root-agent-bundle"
+version = "0.3.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "hex",
+ "root-lockfile",
+ "serde",
+ "serde_json",
+ "sha2",
+ "toml",
+ "toml_edit",
+]
+
+[[package]]
 name = "root-cli"
 version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
+ "root-agent-bundle",
  "root-core",
  "root-doctor",
  "root-nix",

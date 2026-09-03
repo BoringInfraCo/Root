@@ -16,4 +16,5 @@ root-core = { path = "../root-core" }
 root-doctor = { path = "../root-doctor" }
 root-nix = { path = "../root-nix" }
 root-sandbox = { path = "../root-sandbox" }
+root-agent-bundle = { path = "../root-agent-bundle" }
 anyhow = "1.0"

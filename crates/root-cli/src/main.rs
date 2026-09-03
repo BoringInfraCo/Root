@@ -126,6 +126,12 @@ enum Commands {
         #[command(subcommand)]
         subcommand: ModelsSubcommands,
     },
+    /// Transfer Codex working configuration between machines (explicit bundles only)
+    #[command(name = "agent-bundle")]
+    AgentBundle {
+        #[command(subcommand)]
+        subcommand: AgentBundleSubcommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -148,6 +154,96 @@ enum ModelsSubcommands {
     Pull {
         #[arg(value_name = "NAME")]
         name: Option<String>,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum AgentBundleSubcommands {
+    /// Read-only inspection of the local Codex configuration (no writes)
+    Inspect {
+        /// Agent id (S1 supports `codex` only)
+        #[arg(long, default_value = "codex")]
+        agent: String,
+    },
+    /// Export a versioned bundle directory (manifest.json + blobs/)
+    Export {
+        /// Agent id (S1 supports `codex` only)
+        #[arg(long, default_value = "codex")]
+        agent: String,
+        /// Output bundle directory (must not exist)
+        #[arg(long, value_name = "DIR")]
+        out: PathBuf,
+        /// Shared skill to include (repeatable)
+        #[arg(long, value_name = "SKILL")]
+        skill: Vec<String>,
+        /// MCP server id to include as a disabled declaration (repeatable)
+        #[arg(long, value_name = "ID")]
+        include_mcp: Vec<String>,
+        /// Skill or MCP id whose executable content may be included (repeatable)
+        #[arg(long, value_name = "ID")]
+        include_executable: Vec<String>,
+        /// Omit timestamp for deterministic bundles
+        #[arg(long)]
+        no_timestamp: bool,
+    },
+    /// Show apply plan with target preconditions and plan hash (read-only)
+    Plan {
+        /// Bundle directory
+        #[arg(long, value_name = "DIR")]
+        bundle: PathBuf,
+    },
+    /// Apply a bundle (requires --apply, --plan-hash, and per-item --approve hashes)
+    Apply {
+        /// Bundle directory
+        #[arg(long, value_name = "DIR")]
+        bundle: PathBuf,
+        /// Confirm mutation (plan is default-safe; this flag is required to write)
+        #[arg(long)]
+        apply: bool,
+        /// Plan hash from a current `plan` output
+        #[arg(long, value_name = "HASH")]
+        plan_hash: String,
+        /// Exact sha256 approval per executable item (repeatable; no global approval)
+        #[arg(long, value_name = "SHA256")]
+        approve: Vec<String>,
+    },
+    /// Post-apply verification (read-only, secret-safe)
+    Verify {
+        /// Agent id (S1 supports `codex` only)
+        #[arg(long, default_value = "codex")]
+        agent: String,
+    },
+    /// Roll back the most recent agent-bundle snapshot
+    Rollback {
+        #[arg(long)]
+        last: bool,
+    },
+    /// Preview enabling an MCP server (read-only enable plan + descriptor hash)
+    EnablePlan {
+        /// MCP server id
+        #[arg(long, value_name = "ID")]
+        server: String,
+    },
+    /// Enable a previously applied (disabled) MCP server (protected mutation)
+    Enable {
+        /// MCP server id
+        #[arg(long, value_name = "ID")]
+        server: String,
+        /// Plan hash from a current `enable-plan` output
+        #[arg(long, value_name = "HASH")]
+        plan_hash: String,
+        /// Exact descriptor sha256 approval (no global approval)
+        #[arg(long, value_name = "SHA256")]
+        approve: Vec<String>,
+    },
+    /// Delete agent snapshots (requires --yes)
+    Purge {
+        /// Snapshot id (default: all)
+        #[arg(long, value_name = "ID")]
+        id: Option<String>,
+        /// Explicit confirmation (required)
+        #[arg(long)]
+        yes: bool,
     },
 }
 
@@ -304,7 +400,7 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
     let msg = format!("{:?}", e);
     if msg.contains("Policy denied") {
         9
-    } else if msg.contains("Rollback") || msg.contains("rollback") {
+    } else if msg.contains("Rollback failed") {
         6
     } else if msg.contains("verification")
         || msg.contains("Verification")
@@ -315,6 +411,7 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
     } else if msg.contains("unsupported import source")
         || msg.contains("Only 'brew' is supported")
         || msg.contains("Root does not support")
+        || msg.contains("unsupported bundle adapter")
         || msg.contains("Choose either a task/workflow")
         || msg.contains("Provide a Rootfile task")
         || msg.contains("is not declared in Rootfile")
@@ -1163,6 +1260,306 @@ fn main() {
                         process::exit(code);
                     }
                 }
+            }
+        },
+        Commands::AgentBundle { subcommand } => match subcommand {
+            AgentBundleSubcommands::Inspect { agent } => {
+                if agent != "codex" {
+                    let error = anyhow::anyhow!(
+                        "unsupported bundle adapter '{}'. S1 supports 'codex' only (no cross-agent translation)",
+                        agent
+                    );
+                    let _ =
+                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
+                    unreachable!();
+                }
+                let _ = handle_structured(cli.json, root_agent_bundle::codex::inspect(), |r| {
+                    format!(
+                            "Codex present: {}\nVersion: {}\nSupported: {}\nHome: {}\nConfig: {}\nAGENTS.md: {}\nSkills: {}\nMCP servers: {}",
+                            r.present,
+                            r.version.as_deref().unwrap_or("(absent)"),
+                            r.version_supported,
+                            r.codex_home,
+                            r.config_present,
+                            r.agents_md_present,
+                            if r.skills.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.skills.join(", ")
+                            },
+                            if r.mcp_servers.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.mcp_servers.join(", ")
+                            },
+                        )
+                });
+            }
+            AgentBundleSubcommands::Export {
+                agent,
+                out,
+                skill,
+                include_mcp,
+                include_executable,
+                no_timestamp,
+            } => {
+                if agent != "codex" {
+                    let error = anyhow::anyhow!(
+                        "unsupported bundle adapter '{}'. S1 supports 'codex' only (no cross-agent translation)",
+                        agent
+                    );
+                    let _ =
+                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
+                    unreachable!();
+                }
+                let opts = root_agent_bundle::export::ExportOptions {
+                    skills: skill,
+                    include_mcp,
+                    include_executable,
+                    no_timestamp,
+                };
+                let _ = handle_structured(
+                    cli.json,
+                    root_agent_bundle::export::export_codex(&out, &opts),
+                    |m| {
+                        format!(
+                            "Exported {} bundle v{} (agent {}).\nFiles: {}\nMCP disabled entries: {}\nNeeds env: {}\nNeeds approval: {}\n\n{}",
+                            m.adapter,
+                            m.bundle_version,
+                            m.source_agent_version,
+                            m.files.len(),
+                            m.mcp.len(),
+                            if m.needs_env.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                m.needs_env.join(", ")
+                            },
+                            m.needs_approval.len(),
+                            m.disclosure,
+                        )
+                    },
+                );
+            }
+            AgentBundleSubcommands::Plan { bundle } => {
+                let res: anyhow::Result<root_agent_bundle::plan::PlanReport> = (|| {
+                    let manifest = root_agent_bundle::manifest::load_bundle(&bundle)?;
+                    root_agent_bundle::plan::compute_plan(&bundle, &manifest)
+                })();
+                let _ = handle_structured(cli.json, res, |r| {
+                    let mut msg = String::from("AgentBundle plan (dry-run, no writes)\n");
+                    msg.push_str(&format!("\nPlan hash: {}\n", r.plan_hash));
+                    if !r.will_create.is_empty() {
+                        msg.push_str(&format!(
+                            "\nWill create:\n  {}\n",
+                            r.will_create.join("\n  ")
+                        ));
+                    }
+                    if !r.will_update.is_empty() {
+                        msg.push_str(&format!(
+                            "\nWill update:\n  {}\n",
+                            r.will_update.join("\n  ")
+                        ));
+                    }
+                    if !r.settings_changes.is_empty() {
+                        msg.push_str("\nconfig.toml settings changes:\n");
+                        for c in &r.settings_changes {
+                            msg.push_str(&format!(
+                                "  {}: {} -> {}\n",
+                                c.key,
+                                c.old.as_deref().unwrap_or("(absent)"),
+                                c.new
+                            ));
+                        }
+                    }
+                    if !r.mcp_to_add.is_empty() {
+                        msg.push_str("\nMCP declarations to add (disabled):\n");
+                        for m in &r.mcp_to_add {
+                            msg.push_str(&format!(
+                                "  {} [{}] command={:?} args={:?} {}\n",
+                                m.id,
+                                m.transport,
+                                m.command,
+                                m.args,
+                                if m.exists {
+                                    "(exists: will update)"
+                                } else {
+                                    ""
+                                },
+                            ));
+                        }
+                    }
+                    if r.will_create.is_empty()
+                        && r.will_update.is_empty()
+                        && r.settings_changes.is_empty()
+                        && r.mcp_to_add.is_empty()
+                    {
+                        msg.push_str("\nNo changes needed.\n");
+                    }
+                    if !r.needs_env.is_empty() {
+                        msg.push_str(&format!(
+                            "\nNeeds env on target: {}\n",
+                            r.needs_env.join(", ")
+                        ));
+                    }
+                    if !r.needs_approval.is_empty() {
+                        msg.push_str(
+                            "\nNeeds hash-bound approval (--approve <sha256> per item):\n",
+                        );
+                        for a in &r.needs_approval {
+                            msg.push_str(&format!("  {} {}\n", a.sha256, a.target));
+                        }
+                    }
+                    if !r.held.is_empty() {
+                        msg.push_str("\nHeld (not exported):\n");
+                        for h in &r.held {
+                            msg.push_str(&format!("  {} ({})\n", h.source, h.reason));
+                        }
+                    }
+                    msg.push_str(&format!(
+                        "\n{}\n",
+                        root_agent_bundle::manifest::SECRET_DISCLOSURE
+                    ));
+                    msg
+                });
+            }
+            AgentBundleSubcommands::Apply {
+                bundle,
+                apply,
+                plan_hash,
+                approve,
+            } => {
+                if !apply {
+                    if cli.json {
+                        print_json(&GenericOutput {
+                            success: false,
+                            message: "Plan only: no writes performed. Re-run with --apply --plan-hash <hash> to mutate.".into(),
+                            raw_stderr: None,
+                        });
+                    } else {
+                        eprintln!("Plan only: no writes performed. Re-run with --apply --plan-hash <hash> to mutate.");
+                    }
+                    process::exit(2);
+                }
+                let _ = handle_structured(
+                    cli.json,
+                    root_agent_bundle::apply::apply_bundle(&bundle, &plan_hash, &approve),
+                    |r| {
+                        format!(
+                            "Applied bundle (op {}).\nSnapshot: {}\nApplied: {}\nMCP imported (disabled): {}",
+                            r.op_id,
+                            r.snapshot_id,
+                            if r.applied.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.applied.join(", ")
+                            },
+                            if r.mcp_imported.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.mcp_imported.join(", ")
+                            },
+                        )
+                    },
+                );
+            }
+            AgentBundleSubcommands::Verify { agent } => {
+                if agent != "codex" {
+                    let error = anyhow::anyhow!(
+                        "unsupported bundle adapter '{}'. S1 supports 'codex' only (no cross-agent translation)",
+                        agent
+                    );
+                    let _ =
+                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
+                    unreachable!();
+                }
+                let res: anyhow::Result<root_agent_bundle::verify::VerifyReport> =
+                    root_agent_bundle::verify::verify_codex();
+                if let Some(report) = handle_structured(cli.json, res, |r| {
+                    let mut msg = String::from("Codex verification\n");
+                    for c in &r.checks {
+                        msg.push_str(&format!(
+                            "  {} {}: {}\n",
+                            if c.passed { "✓" } else { "✗" },
+                            c.name,
+                            c.detail
+                        ));
+                    }
+                    msg
+                }) {
+                    if !report.success {
+                        process::exit(4);
+                    }
+                }
+            }
+            AgentBundleSubcommands::Rollback { last } => {
+                if !last {
+                    if cli.json {
+                        print_json(&GenericOutput {
+                            success: false,
+                            message:
+                                "Currently only `root agent-bundle rollback --last` is supported"
+                                    .into(),
+                            raw_stderr: None,
+                        });
+                    } else {
+                        eprintln!(
+                            "Error: Currently only `root agent-bundle rollback --last` is supported"
+                        );
+                    }
+                    process::exit(2);
+                }
+                let _ =
+                    handle_structured(cli.json, root_agent_bundle::apply::rollback_last(), |r| {
+                        format!("Rolled back snapshot {}.", r.snapshot_id)
+                    });
+            }
+            AgentBundleSubcommands::EnablePlan { server } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_agent_bundle::codex::enable_plan(&server),
+                    |r| {
+                        format!(
+                            "Enable plan for MCP server '{}'\nPlan hash: {}\nDescriptor sha256: {}\nNeeds env: {}",
+                            r.server,
+                            r.plan_hash,
+                            r.descriptor_hash,
+                            if r.needs_env.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.needs_env.join(", ")
+                            },
+                        )
+                    },
+                );
+            }
+            AgentBundleSubcommands::Enable {
+                server,
+                plan_hash,
+                approve,
+            } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_agent_bundle::apply::enable_server(&server, &plan_hash, &approve),
+                    |r| {
+                        format!(
+                            "Enabled MCP server '{}'. Snapshot: {}.",
+                            server, r.snapshot_id
+                        )
+                    },
+                );
+            }
+            AgentBundleSubcommands::Purge { id, yes } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_agent_bundle::apply::purge_snapshots(id.as_deref(), yes),
+                    |deleted| {
+                        if deleted.is_empty() {
+                            "No agent snapshots deleted.".to_string()
+                        } else {
+                            format!("Deleted snapshots: {}.", deleted.join(", "))
+                        }
+                    },
+                );
             }
         },
         Commands::Status => {

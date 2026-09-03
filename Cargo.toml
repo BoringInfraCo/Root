@@ -8,6 +8,7 @@ members = [
     "crates/root-doctor",
     "crates/root-verify",
     "crates/root-agent",
+    "crates/root-agent-bundle",
     "crates/root-sandbox"
 ]
 resolver = "2"
