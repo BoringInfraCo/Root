@@ -1,4 +1,4 @@
-# Root v0.2.5
+# Root v0.3.0
 
 > A curated package manager for developer CLI tools, backed by Nix.
 
@@ -7,6 +7,36 @@ undo it — without needing to learn Nix.
 
 [![CI](https://github.com/sgr0691/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/sgr0691/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+## What v0.3.0 Changed
+
+v0.3.0 is the **Pull-and-Verify** release. v0.2.6 was skipped.
+
+- **`root plan models`** — Preview declared Ollama models. Plan never POSTs,
+  never writes `root.lock`, and never creates `model-pull.json`.
+- **`root models pull`** — Pull missing declared models by tag, compare the
+  digest from `GET /api/tags`, and write a v3 verification record. JSON always
+  reports `models_restored: false`. Weights are never deleted.
+- **Lock schema v3** — Namespaced `models.<runtime>.<name>` object map.
+  Package-only locks still emit schema 2. A non-empty models map emits 3.
+  Schema 4+ is refused. The record's `addressability` is
+  `verification_record_only`.
+- **Status digest overlay** — `root status` compares the observed Ollama digest
+  against the locked canonical `sha256:` digest. A mismatch is
+  `model-digest-drift`. Root cannot pull by digest; a re-pull fetches the
+  current tag, not the locked bits.
+- **Restore and rollback honesty** — Package restore, dry-run, and rollback
+  copy model lock entries when present. They do not pull or delete Ollama
+  weights.
+- **Rootfile is still tag + runtime only** — `[models."name"]` accepts
+  `runtime = "ollama"` only. No digest field. No endpoint field.
+- **Local Ollama only** — Root talks to `127.0.0.1:11434` with
+  `GET /api/version`, `GET /api/tags`, and `POST /api/pull` (tag only). Other
+  runtimes evaluate as unsupported.
+
+The v3 models map is a verification record, not a bit-for-bit pin of weights.
+`root restore` and `root rollback` remain package/Nix operations that may copy
+that record. They do not pull models.
 
 ## What v0.2.5 Changed
 
@@ -218,6 +248,7 @@ All commands support `--json` for structured output (useful for scripting).
 | `root catalog` | Browse the curated package catalog |
 | `root search rg` | Search package names, aliases, categories, and metadata |
 | `root plan install ripgrep` | Preview what an install would do (no changes made) |
+| `root plan models [name]` | Preview declared Ollama model actions (no mutation) |
 | `root install ripgrep` | Install a package via Nix with deterministic lock |
 | `root list` | List installed packages |
 | `root remove <package>` | Remove an installed package |
@@ -233,7 +264,8 @@ All commands support `--json` for structured output (useful for scripting).
 | `root sandbox run <id> -- <command...>` | Execute a command in a running sandbox |
 | `root sandbox list` | List all Root-managed sandboxes |
 | `root sandbox destroy <id>` | Destroy a Root-managed sandbox |
-| `root status` | Show machine identity, package drift, and declared agent/model inspection |
+| `root models pull [name]` | Pull missing declared models by tag and write a v3 verification record |
+| `root status` | Show machine identity, package drift, declared agent/model inspection, and locked digest overlay |
 | `root doctor` | Check that Root and Nix are ready |
 | `root history` | Show snapshot summaries and event ledger |
 | `root verify ripgrep` | Verify installed package binaries are functional |
@@ -410,10 +442,12 @@ snapshots     = true
 verify_installs = true
 ```
 
-`[agents]` and `[models]` are inspected by `root status` only. Root does not
-install those agents, pull those models, or record them in `root.lock`. Agent
-values other than `"*"` are rejected in v0.2.5. A Rootfile that uses these
-tables must be rewritten only by Root v0.2.5+.
+`[agents]` are inspected by `root status` only. Root does not install those
+agents. Agent values other than `"*"` are rejected. `[models]` accept
+`runtime = "ollama"` only — no digest and no endpoint. `root status` inspects
+them; `root plan models` previews; `root models pull` pulls the tag and writes
+a v3 verification record in `root.lock`. A Rootfile that uses these tables must
+be rewritten only by Root v0.2.5+. Model lock records require Root v0.3.0+.
 
 ### Sections
 
@@ -421,8 +455,8 @@ tables must be rewritten only by Root v0.2.5+.
 |---------|----------|-------------|
 | `[packages]` | No | Package name → version mappings (e.g., `ripgrep = "latest"`) |
 | `[tasks]` | No | Task name → shell command mappings (e.g., `build = "cargo build"`) |
-| `[agents]` | No | Agent name → `"*"` (presence-only). Inspected by `root status`; not realized |
-| `[models]` | No | Model name → `{ runtime = "ollama" }`. Inspected by `root status`; not realized |
+| `[agents]` | No | Agent name → `"*"` (presence-only). Inspected by `root status`; not installed |
+| `[models]` | No | Model name → `{ runtime = "ollama" }` only. No digest or endpoint. Inspected by `root status`; pulled by tag with `root models pull` |
 | `[settings]` | No | Global settings (`snapshots`, `verify_installs` — both default to `true`) |
 
 Use `root list` to show installed packages, `root remove <package>` to uninstall,
@@ -433,7 +467,7 @@ and `root run <task-name>` to execute a task in the Root-managed environment.
 | Concept | Description |
 |---------|-------------|
 | **Rootfile** | TOML file at `~/.root/Rootfile` — your intent (packages, tasks, and optional agent/model declarations) |
-| **root.lock** | JSON file at `~/.root/root.lock` — the deterministic lock with pinned Nix metadata |
+| **root.lock** | JSON file at `~/.root/root.lock` — pinned Nix package metadata (schema v2) plus optional v3 model verification records |
 | **Snapshot** | JSON file at `~/.root/snapshots/` — a pre-mutation copy of the lock state for rollback |
 | **Event ledger** | JSONL file at `~/.root/events.jsonl` — an append-only audit trail of every operation |
 | **Mutation lock** | File at `~/.root/root.lockfile` — a process-level mutex preventing concurrent mutations |
@@ -449,7 +483,7 @@ contain the full deterministic lock state. The event ledger at
 `~/.root/events.jsonl` records every operation. Verification checks binaries
 from the Root-managed profile, not from PATH.
 
-## Limitations (v0.2.5)
+## Limitations (v0.3.0)
 
 - **Curated catalog only.** Root supports a curated catalog only — 42 packages
   across eleven categories. Arbitrary `root install <anything>` is not yet
@@ -465,16 +499,25 @@ from the Root-managed profile, not from PATH.
   when a disposable Docker container boundary is required.
 - **Rollback applies only to Root-managed packages.** Root cannot undo
   changes made by Homebrew, manual installs, or other tools.
-- **Agents and models are inspected, not realized.** `root status` can report
-  presence for declared Codex/Claude/OpenCode/Pi installs and Ollama models.
-  Root does not install agents, pull or delete models, migrate credentials, or
-  pin them in `root.lock`. `root sync` / `root restore` / `root rollback` do
-  not change agents or models.
+- **Agents are inspected, not installed.** `root status` can report presence
+  for declared Codex, Claude Code, OpenCode, and Pi installs. Root does not
+  install agents or migrate credentials.
+- **Models are pull-and-verify, not a bit-for-bit pin.** `root models pull`
+  pulls a declared tag and writes a v3 verification record. The lock does not
+  make weights digest-addressable. `root restore` / `root rollback` / `root sync`
+  copy model lock entries when present; they do not pull or delete Ollama
+  weights. There is no `--relock`.
+- **Root cannot pull by digest.** A `model-digest-drift` finding means the
+  current tag no longer matches the locked digest. Re-pull fetches the current
+  tag, not the locked bits. Live Ollama `@sha256` pull is not a Root product
+  path.
 - **Mixed-version Rootfile edits.** A Rootfile that contains `[agents]` or
   `[models]` must be rewritten only by Root v0.2.5+. v0.2.4 parses those
-  tables and then drops them on any mutating rewrite.
-- **Ollama inspection is local and protocol-specific.** v0.2.5 queries
-  `http://127.0.0.1:11434/api/version` and `/api/tags` only. Other runtimes
+  tables and then drops them on any mutating rewrite. v3 model lock records
+  require Root v0.3.0+.
+- **Ollama is local and protocol-specific.** Root queries
+  `http://127.0.0.1:11434/api/version` and `/api/tags`, and pulls with
+  `POST /api/pull` by tag. Rootfile has no endpoint field. Other runtimes
   evaluate as `unsupported`. An endpoint that answers but lacks that contract
   evaluates as `unsupported` with `protocol_unsupported`.
 - **Nix must be installed.** Root manages a Nix profile but does not
@@ -487,16 +530,18 @@ from the Root-managed profile, not from PATH.
   may be in an inconsistent state. Run `root rollback --last` to attempt manual
   recovery.
 - **Offline not supported.** Every install and update requires network access
-  to resolve Nix flakes.
+  to resolve Nix flakes. Model pull requires a reachable local Ollama daemon.
 - **No concurrent operations.** Root uses a file-based mutation lock that
-  prevents multiple simultaneous operations.
+  prevents multiple simultaneous operations. Model pull also takes an exclusive
+  `model-pull.json` marker.
 - **macOS is the primary platform.** macOS (Apple Silicon and Intel) is fully
   tested. Linux (aarch64 and x86_64) is supported by the codebase but not
-  officially tested. Windows is not available.
+  officially tested. The Ollama pull-and-verify backend was not smoke-tested
+  on Linux in v0.3.0. Windows is not available.
 
 ## Experimental Commands
 
-The CLI includes additional commands that are **not part of the v0.2.5 public
+The CLI includes additional commands that are **not part of the v0.3.0 public
 surface**. They may change, break, or be removed without notice:
 
 | Command | Status |
@@ -508,8 +553,7 @@ production use.
 
 ## Roadmap
 
-- **v0.2.x** — Harden the Phase 1–6 package, runtime, policy, sandbox, sync, and restore surface
-- **v0.3** — Local model management with an Ollama-compatible adapter
+- **v0.3.x** — Harden pull-and-verify for local Ollama tags and v3 verification records
 - **Later** — AI-native manifests, residency policies, and explainable routing
 
 See [Docs](Docs/) for the full plan.

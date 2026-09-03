@@ -5,6 +5,38 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-02
+
+v0.2.6 was skipped.
+
+### Added
+
+- **Pull-and-verify for declared Ollama models.** `root plan models` previews tag actions without POSTing, writing `root.lock`, or creating `model-pull.json`. `root models pull` POSTs `/api/pull` by tag, compares the digest from `GET /api/tags`, and writes a v3 verification record. JSON always reports `models_restored: false`. Weights are never deleted.
+- **Lock schema v3.** Namespaced `models.<runtime>.<name>` object map. Package-only locks still emit schema 2. A non-empty models map emits 3. Schema 4+ is refused. `addressability` is `verification_record_only`.
+- **Status digest overlay.** `root status` compares the observed Ollama digest against the locked canonical `sha256:` digest. A present model whose digest does not match evaluates as drifted (`model-digest-drift`). Root cannot pull by digest; a re-pull fetches the current tag, not the locked bits.
+- **Restore and rollback honesty.** Package restore, dry-run, and rollback copy model lock entries when present. They do not pull or delete Ollama weights. JSON reports `models_restored: false`, `model_weights_deleted: false`, and `model_weights_retained: true`.
+- **Ollama loopback realizer.** Inspect uses `GET /api/version` and `GET /api/tags`. Pull uses `POST /api/pull` NDJSON against `127.0.0.1:11434` only.
+
+### Changed
+
+- README product language is pull-and-verify. The lock is a verification record, not a bit-for-bit model pin.
+- Rootfile `[models]` remain `runtime = "ollama"` only — no digest and no endpoint fields.
+- Package lock writes preserve an existing v3 models map.
+
+### Notes
+
+- Live Ollama `@sha256` pull is a backend probe fact, not a Root command, flag, or Rootfile field. See `Docs/Release/V0_3_OLLAMA_SMOKE_TEST.md`.
+- The Ollama backend was not smoke-tested on Linux in this release.
+
+### Tests Added
+
+- Lock v3 namespaced models round-trip, emit-default 2, max-supported 3, loopback endpoint validation.
+- Ollama inspector/realizer mock HTTP fixtures (tag pull, digest canonicalize, remote/cloud skip).
+- `root plan models` preview contract and unsupported operations.
+- `root models pull` verify-then-lock, marker/policy gates, honesty flags.
+- Status `overlay_locked_digests` mismatch → `model-digest-drift`.
+- Restore/rollback/sync honesty flags and weight retention.
+
 ## [0.2.5] - 2026-09-01
 
 ### Added

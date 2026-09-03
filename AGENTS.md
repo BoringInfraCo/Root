@@ -56,6 +56,8 @@ Before tagging, verify all of these match the **new** version (X.Y.Z):
 | `README.md` | Title `# Root vX.Y.Z` | correct |
 | `README.md` | `## Limitations (vX.Y.Z)` | correct |
 | `README.md` | `not part of the vX.Y.Z public surface` | correct |
+| `crates/root-lockfile` | `ROOT_LOCK_SCHEMA_VERSION` (package-only emit) | `2` |
+| `crates/root-lockfile` | `ROOT_LOCK_MAX_SUPPORTED_VERSION` (v3 models map) | `3` |
 | `Docs/Release/` smoke test docs | Title version references | up to date (check previous version smoke tests) |
 | Git tag | `git tag` output | `vX.Y.Z` exists after push |
 
@@ -96,9 +98,10 @@ Every command supports `--json` flag for structured output. Exit codes:
 
 ## Config
 
-- `~/.root/Rootfile` — user TOML (package → version mappings)
-- `~/.root/root.lock` — auto-generated JSON lockfile
+- `~/.root/Rootfile` — user TOML (package → version mappings; optional `[agents]` / `[models]` with `runtime = "ollama"` only)
+- `~/.root/root.lock` — auto-generated JSON lockfile (schema v2 package-only; v3 when `models` is present; max supported 3)
 - `~/.root/snapshots/` — JSON snapshot files
+- `~/.root/model-pull.json` — exclusive in-progress model-pull marker (v0.3+)
 
 ## Design docs
 
