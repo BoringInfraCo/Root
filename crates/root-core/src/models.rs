@@ -730,7 +730,6 @@ pub fn format_plan_models_human(report: &PlanModelsReport) -> String {
     out
 }
 
-
 /// Canonical lock digest plus whether the observed daemon digest matches it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DigestCompare {
