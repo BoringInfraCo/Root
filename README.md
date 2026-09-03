@@ -414,8 +414,10 @@ v0.1.3 is the **Curated Package Catalog** release:
 ## Rootfile (`~/.root/Rootfile`)
 
 The Rootfile is a TOML file at `~/.root/Rootfile` that declares which packages
-and tasks Root manages, plus optional agent and model presence declarations.
-It is created automatically when you install your first package.
+and tasks Root manages, plus optional `[agents]` (presence-only) and `[models]`
+(tag + `runtime = "ollama"`) tables. `root models pull` can lock a declared
+model as a v3 verification record. It is created automatically when you install
+your first package.
 
 ```toml
 [packages]

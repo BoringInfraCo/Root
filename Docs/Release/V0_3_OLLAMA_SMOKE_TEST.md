@@ -36,6 +36,9 @@ target/debug/root --version
 - Internet access (Ollama tag pull).
 - No existing `~/.root` directory (or back it up before these tests).
 - `root` binary built from the v0.3.0 tree.
+- **Nix with `nix-command` and `flakes`** — required for [Section 5](#5-restore--rollback-honesty-nix-gated)
+  only. `root restore` runs pre-mutation validation and fails if Nix is
+  missing. Sections 1–4 and 6 do not need Nix.
 
 Rootfile `[models]` accept `runtime = "ollama"` only. Do not add `digest` or
 `endpoint`. There is no `--relock` flag.
@@ -115,11 +118,20 @@ root plan models --json
 
 **Expected:**
 - `"command": "plan models"`
-- `"would_mutate": false`
-- `"would_write_lock": false` on each model row
 - `"addressability": "verification_record_only"`
 - `unsupported_operations` includes `digest_addressable_restore` and
   `pull_by_digest`
+- Per-row flags follow `planned_action` (they describe what *pull* would do;
+  **running plan still does not POST, write `root.lock`, or create
+  `model-pull.json`**):
+  - `pull_tag_then_verify` (tag missing): `"would_mutate": true`,
+    `"would_write_lock": true`. Report `"would_mutate": true`.
+  - `verify_only` (tag present, no lock): `"would_mutate": false`,
+    `"would_write_lock": true`. Report `"would_mutate": false`.
+  - `already_verified` (tag present, lock digest matches): both false.
+    Report `"would_mutate": false`.
+- `~/.root/root.lock` and `~/.root/model-pull.json` are still absent (or
+  unchanged).
 - Exit code 0.
 
 ```bash
@@ -171,22 +183,21 @@ root models pull --json
 - `"models_restored": false`.
 - Exit code 0.
 
-Empty Rootfile:
+Empty Rootfile (isolated `ROOT_DIR` so this does not touch `~/.root`):
 
 ```bash
-# In a throwaway ROOT_DIR so this does not wipe the live test state:
-ROOT_DIR=$(mktemp -d)
-root models pull --json
+empty_root=$(mktemp -d)
+ROOT_DIR="$empty_root" root models pull --json
 echo exit:$?
-rm -rf "$ROOT_DIR"
-unset ROOT_DIR
+test ! -e "$empty_root/root.lock"
+test ! -e "$empty_root/model-pull.json"
+rm -rf "$empty_root"
 ```
 
 **Expected:**
-- Human: `No declared Ollama models.` (without `--json`) or JSON
-  `"results": []` with `"models_restored": false`.
+- JSON `"results": []` with `"models_restored": false`.
 - Exit code 0.
-- No lock. No marker.
+- No lock or marker under `$empty_root`. `~/.root/root.lock` is unchanged.
 
 ---
 
@@ -209,10 +220,19 @@ root status --json
 
 ---
 
-## 5. Restore / Rollback Honesty
+## 5. Restore / Rollback Honesty (Nix-gated)
+
+Skip this section if Nix is missing. `root restore` and `root restore --dry-run`
+run pre-mutation validation and fail without Nix (`nix-command` / `flakes`).
 
 These commands copy model lock entries. They do not pull or delete Ollama
 weights.
+
+Do **not** run `root rollback --last` immediately after the first
+`root models pull`. That pull snapshots the lock *before* inserting the v3
+models map; rolling that snapshot back drops the verification record (schema 2,
+empty `models`). Weights stay. Prefer a *post-v3* snapshot — the one
+`root restore --lock` takes of the current v3 lock — before any rollback.
 
 ```bash
 root restore --dry-run --json
@@ -235,15 +255,18 @@ root restore --lock /tmp/root-v3.lock --json
 - `"models_restored": false`
 - `model_lock_entries_written` is the inner-key copy count (1 for `qwen3:8b`).
 - Ollama weights on disk / `GET /api/tags` are unchanged by restore.
+- A post-v3 snapshot now exists (pre-restore copy of the v3 lock).
 - Exit code 0.
 
 ```bash
 root rollback --last --json
 ```
 
-**Expected (when a snapshot exists):**
+**Expected (post-v3 snapshot from restore --lock only):**
 - `"models_restored": false`
 - Weights retained.
+- v3 models map is still present (rollback returned to the pre-restore v3
+  snapshot, not the empty pre-pull lock).
 - Exit code 0.
 
 ---

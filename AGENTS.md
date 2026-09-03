@@ -98,7 +98,7 @@ Every command supports `--json` flag for structured output. Exit codes:
 
 ## Config
 
-- `~/.root/Rootfile` — user TOML (package → version mappings; optional `[agents]` / `[models]` with `runtime = "ollama"` only)
+- `~/.root/Rootfile` — user TOML (package → version mappings; optional `[agents]` presence-only; optional `[models]` with `runtime = "ollama"` only — no digest, no endpoint)
 - `~/.root/root.lock` — auto-generated JSON lockfile (schema v2 package-only; v3 when `models` is present; max supported 3)
 - `~/.root/snapshots/` — JSON snapshot files
 - `~/.root/model-pull.json` — exclusive in-progress model-pull marker (v0.3+)
