@@ -2257,6 +2257,8 @@ mod tests {
         assert_eq!(
             report.models[0].observed_digest.as_deref(),
             Some(HEX64_UPPER)
+        );
+    }
 
     fn with_isolated<R>(name: &str, entries: &[(&str, &str)], f: impl FnOnce(&Path) -> R) -> R {
         let _guard = crate::TEST_MUTEX.lock().unwrap();
@@ -2619,7 +2621,9 @@ mod tests {
         assert!(report.models[0].locked_digest.is_none());
         assert!(report.models[0].digest_match.is_none());
         assert_eq!(report.models[0].evaluation, EvaluationState::Satisfied);
+    }
 
+    #[test]
     fn mixed_404_stops_remaining() {
         with_isolated(
             "mixed_404",
