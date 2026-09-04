@@ -1,4 +1,4 @@
-# Root v0.3.0
+# Root v0.4.0
 
 > A curated package manager for developer CLI tools, backed by Nix.
 
@@ -7,6 +7,33 @@ undo it — without needing to learn Nix.
 
 [![CI](https://github.com/sgr0691/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/sgr0691/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+## What v0.4.0 Changed
+
+v0.4.0 is the **Portable Agent-Bundle** release.
+
+- **`root agent-bundle`** — Explicit transfer of Codex or OpenCode working
+  configuration between machines (`manifest.json` + content-addressed
+  `blobs/`). This is **not** `root restore`, **not** Rootfile, and **not**
+  `root.lock` integration. Lock schema is unchanged (package-only emit 2;
+  max supported 3).
+- **Codex S1** — exact version gate **0.150.1**. Never relaxed.
+- **OpenCode S2** — exact version gate **1.18.27**. Never relaxed. JSONC
+  comments and trailing commas are stripped before parse.
+- **Lifecycle** — `inspect` (read-only), `export`, `plan` (plan hash, no
+  writes), `apply` (`--apply` + `--plan-hash` + per-item `--approve`),
+  `verify`, `enable-plan`, `enable`, `rollback --last` (byte-identical),
+  `purge --yes`.
+- **MCP is disabled until enable.** Export and apply write
+  `enabled = false`. Enable needs namespaced provenance (`codex:id` /
+  `opencode:id`), a current plan hash, per-item `--approve`, and env-var
+  *presence*. Dummy tokens must never persist in config, journal, snapshots,
+  or the bundle.
+- **No credential or session transfer.** Known secret locations are
+  excluded. Selected prompt/skill files are copied verbatim and may contain
+  unrecognized secrets — review the bundle before transfer.
+- **Hardening** — FIFO / symlink / non-regular blobs are rejected. Rollback
+  restores the pre-mutation regular-file tree or refuses on drift.
 
 ## What v0.3.0 Changed
 
@@ -265,6 +292,15 @@ All commands support `--json` for structured output (useful for scripting).
 | `root sandbox list` | List all Root-managed sandboxes |
 | `root sandbox destroy <id>` | Destroy a Root-managed sandbox |
 | `root models pull [name]` | Pull missing declared models by tag and write a v3 verification record |
+| `root agent-bundle inspect --agent <codex or opencode>` | Read-only inspect of local Codex or OpenCode working config |
+| `root agent-bundle export --agent <id> --out <dir>` | Export a versioned bundle (`manifest.json` + `blobs/`) |
+| `root agent-bundle plan --bundle <dir>` | Preview apply (plan hash; no writes) |
+| `root agent-bundle apply --bundle <dir> --apply --plan-hash <h> --approve <sha>` | Apply a reviewed bundle (MCP imported disabled) |
+| `root agent-bundle verify --agent <id>` | Post-apply verification (read-only, secret-safe) |
+| `root agent-bundle enable-plan --agent <id> --server <id>` | Preview enabling an imported MCP server |
+| `root agent-bundle enable --agent <id> --server <id> --plan-hash <h> --approve <sha>` | Enable an imported MCP server (env must be present) |
+| `root agent-bundle rollback --last` | Byte-identical rollback of the last agent-bundle snapshot |
+| `root agent-bundle purge --yes` | Delete agent-bundle snapshots (requires `--yes`) |
 | `root status` | Show machine identity, package drift, declared agent/model inspection, and locked digest overlay |
 | `root doctor` | Check that Root and Nix are ready |
 | `root history` | Show snapshot summaries and event ledger |
@@ -445,7 +481,9 @@ verify_installs = true
 ```
 
 `[agents]` are inspected by `root status` only. Root does not install those
-agents. Agent values other than `"*"` are rejected. `[models]` accept
+agents. Agent values other than `"*"` are rejected. `root agent-bundle` is a
+separate explicit transfer command (v0.4.0); it does not read Rootfile
+`[agents]` and does not write `root.lock`. `[models]` accept
 `runtime = "ollama"` only — no digest and no endpoint. `root status` inspects
 them; `root plan models` previews; `root models pull` pulls the tag and writes
 a v3 verification record in `root.lock`. A Rootfile that uses these tables must
@@ -474,6 +512,7 @@ and `root run <task-name>` to execute a task in the Root-managed environment.
 | **Event ledger** | JSONL file at `~/.root/events.jsonl` — an append-only audit trail of every operation |
 | **Mutation lock** | File at `~/.root/root.lockfile` — a process-level mutex preventing concurrent mutations |
 | **Profile** | Nix profile at `~/.root/profiles/default` — an isolated Nix profile for Root-managed binaries |
+| **agent-bundle** | Explicit Codex/OpenCode working-config transfer (`root agent-bundle`). Not `root restore`, not Rootfile, not `root.lock`. |
 
 ### How It Works
 
@@ -485,7 +524,7 @@ contain the full deterministic lock state. The event ledger at
 `~/.root/events.jsonl` records every operation. Verification checks binaries
 from the Root-managed profile, not from PATH.
 
-## Limitations (v0.3.0)
+## Limitations (v0.4.0)
 
 - **Curated catalog only.** Root supports a curated catalog only — 42 packages
   across eleven categories. Arbitrary `root install <anything>` is not yet
@@ -504,6 +543,19 @@ from the Root-managed profile, not from PATH.
 - **Agents are inspected, not installed.** `root status` can report presence
   for declared Codex, Claude Code, OpenCode, and Pi installs. Root does not
   install agents or migrate credentials.
+- **`root agent-bundle` is explicit transfer only.** It is not `root restore`
+  and does not read Rootfile `[agents]` or write `root.lock`. Same-agent only
+  (Codex → Codex, OpenCode → OpenCode); no cross-agent translation.
+- **MCP stays disabled until enable.** Apply imports MCP declarations with
+  `enabled = false`. Enable requires namespaced provenance (`codex:id` /
+  `opencode:id`), a current plan hash, per-item `--approve`, and env-var
+  presence. Dummy tokens must never persist in config, journal, snapshots, or
+  the bundle.
+- **Exact agent version gates.** Codex **0.150.1** and OpenCode **1.18.27**
+  only. Other versions are refused. The gates are never relaxed in v0.4.0.
+- **No credential or session transfer.** Bundles exclude known secret
+  locations (`auth.json`, sessions, sqlite, `mcp-auth.json`). Selected
+  prompt/skill files are copied verbatim and may contain unrecognized secrets.
 - **Models are pull-and-verify, not a bit-for-bit pin.** `root models pull`
   pulls a declared tag and writes a v3 verification record. The lock does not
   make weights digest-addressable. `root restore` / `root rollback` / `root sync`
@@ -539,11 +591,13 @@ from the Root-managed profile, not from PATH.
 - **macOS is the primary platform.** macOS (Apple Silicon and Intel) is fully
   tested. Linux (aarch64 and x86_64) is supported by the codebase but not
   officially tested. The Ollama pull-and-verify backend was not smoke-tested
-  on Linux in v0.3.0. Windows is not available.
+  on Linux in v0.3.0. Codex and OpenCode `root agent-bundle` Linux transfer
+  was recorded for v0.4.0 (exact gates 0.150.1 and 1.18.27); it is not
+  `root restore`. Windows is not available.
 
 ## Experimental Commands
 
-The CLI includes additional commands that are **not part of the v0.3.0 public
+The CLI includes additional commands that are **not part of the v0.4.0 public
 surface**. They may change, break, or be removed without notice:
 
 | Command | Status |
@@ -555,7 +609,7 @@ production use.
 
 ## Roadmap
 
-- **v0.3.x** — Harden pull-and-verify for local Ollama tags and v3 verification records
+- **v0.4.x** — Harden explicit `root agent-bundle` transfer (Codex / OpenCode)
 - **Later** — AI-native manifests, residency policies, and explainable routing
 
 See [Docs](Docs/) for the full plan.

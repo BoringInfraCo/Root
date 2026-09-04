@@ -5,6 +5,38 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-03
+
+v0.4.0 is explicit portable agent-bundle transfer. It is **not** `root restore`, **not** Rootfile, and **not** `root.lock` integration. Lock schema remains package-only emit 2 / max supported 3.
+
+### Added
+
+- **`root agent-bundle`.** Public command for transferring Codex or OpenCode working configuration between machines via an explicit bundle directory (`manifest.json` + content-addressed `blobs/`). Subcommands: `inspect`, `export`, `plan`, `apply`, `verify`, `rollback --last`, `enable-plan`, `enable`, and `purge --yes`.
+- **Codex S1 adapter.** Exact version gate **0.150.1**. Never relaxed. Reads `$CODEX_HOME` (or `~/.codex`). Does not copy credentials, sessions, history, or `auth.json`.
+- **OpenCode S2 adapter.** Exact version gate **1.18.27**. Never relaxed. Resolves `$XDG_CONFIG_HOME/opencode` (smoke isolation unsets `OPENCODE_CONFIG_DIR`). Parses JSONC with comment and trailing-comma strip. Does not copy credentials, sessions, or `mcp-auth.json`.
+- **MCP disable-until-enable.** Export and apply always write MCP declarations `enabled = false`. Enabling is a separate protected mutation.
+- **Namespaced MCP provenance.** Completed apply records `codex:<id>` / `opencode:<id>` via `journal::mcp_provenance_key`. Codex provenance cannot authorize an OpenCode enable, and vice versa.
+- **Hash-bound `--approve`.** Apply and enable require per-item `--approve <sha256>` (file hashes and MCP command/descriptor hashes). Global boolean approval is forbidden. Enable also requires a current `enable-plan` hash and env-var *presence* (names only; values are never written).
+- **Byte-identical rollback.** `root agent-bundle rollback --last` restores the pre-mutation regular-file tree (including tombstoned created files). Drift, symlinks, and non-regular files refuse rather than overwrite.
+- **Blob and snapshot hardening.** Bundle blobs must be regular files. FIFO, symlink, and other non-regular blobs are rejected. Apply snapshots live under `$ROOT_DIR/agent-snapshots`.
+
+### Changed
+
+- README documents `root agent-bundle` as a v0.4.0 public command. Historical "What vX.Y.Z Changed" notes are unchanged.
+- OpenCode JSONC configs with trailing commas are accepted after strip; unknown target keys are preserved.
+
+### Notes
+
+- Dummy tokens used to satisfy env-presence checks must never persist in bundle, config, journal, snapshots, or command output. Codex writes `env_vars = ["NAME"]`; OpenCode writes `{env:NAME}` references.
+- Isolation for Codex: `HOME`, `CODEX_HOME`, `ROOT_DIR`, `TMPDIR`. Isolation for OpenCode also sets `XDG_CONFIG_HOME` and unsets `OPENCODE_CONFIG_DIR`.
+- `root restore`, Rootfile `[agents]`, and `root.lock` are unchanged by this command. Package-only locks still emit schema 2; a non-empty models map still emits 3.
+- See `Docs/Release/V0_4_AGENT_BUNDLE_SMOKE_TEST.md`.
+
+### Tests Added
+
+- Codex S1 hermetic tests: inspect isolation, export allowlist/held unknowns, hash-bound apply, MCP disabled until enable, dummy-token non-persistence, byte-identical rollback, FIFO blob rejection, snapshot tamper refusal.
+- OpenCode S2 hermetic tests: `XDG_CONFIG_HOME` isolation with `OPENCODE_CONFIG_DIR` unset, JSONC trailing-comma parse, disabled local MCP + `{env:NAME}` refs, namespaced provenance, enable gates, rollback identity.
+
 ## [0.3.0] - 2026-09-02
 
 v0.2.6 was skipped.

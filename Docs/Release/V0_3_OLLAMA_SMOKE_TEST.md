@@ -1,5 +1,11 @@
 # Root v0.3.0 Pull-and-Verify Smoke Test
 
+> **v0.4.0 note:** After the v0.4.0 release, `root --version` reports
+> `root 0.4.0`. The Ollama pull-and-verify flow in this document is
+> unchanged. Lock schema remains package-only emit 2 / max supported 3.
+> `root agent-bundle` is a separate explicit-transfer command and is not
+> part of this smoke path.
+
 Manual release validation for declared Ollama models: plan (no mutation),
 tag pull then digest verify, v3 lock write, status digest overlay, and
 package-operation honesty.
