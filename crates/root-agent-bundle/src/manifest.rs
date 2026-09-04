@@ -11,10 +11,45 @@ use std::path::Path;
 
 pub const BUNDLE_VERSION: u32 = 1;
 pub const ADAPTER_ID: &str = "codex";
+pub const OPENCODE_ADAPTER_ID: &str = "opencode";
 pub const ADAPTER_SCHEMA_VERSION: u32 = 1;
 
 /// Exact live-tested Codex versions for S1. Expanded only after evidence.
 pub const SUPPORTED_CODEX_VERSIONS: &[&str] = &["0.150.1"];
+
+/// Exact live-tested OpenCode versions for S2. Expanded only after evidence.
+pub const SUPPORTED_OPENCODE_VERSIONS: &[&str] = &["1.18.27"];
+
+pub fn unsupported_adapter_error(adapter: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "unsupported bundle adapter '{}'. S2 supports 'codex' and 'opencode' only (no cross-agent translation)",
+        adapter
+    )
+}
+
+pub fn supported_versions_for(adapter: &str) -> Result<&'static [&'static str]> {
+    match adapter {
+        ADAPTER_ID => Ok(SUPPORTED_CODEX_VERSIONS),
+        OPENCODE_ADAPTER_ID => Ok(SUPPORTED_OPENCODE_VERSIONS),
+        other => Err(unsupported_adapter_error(other)),
+    }
+}
+
+pub fn mcp_approval_target(adapter: &str, id: &str) -> Result<(Scope, String)> {
+    match adapter {
+        ADAPTER_ID => Ok((Scope::CodexHome, format!("config.toml#mcp_servers.{}", id))),
+        OPENCODE_ADAPTER_ID => Ok((Scope::OpenCodeHome, format!("opencode.json#mcp.{}", id))),
+        other => Err(unsupported_adapter_error(other)),
+    }
+}
+
+pub fn allowed_settings_for(adapter: &str) -> Result<&'static [&'static str]> {
+    match adapter {
+        ADAPTER_ID => Ok(crate::codex::ALLOWED_SETTINGS),
+        OPENCODE_ADAPTER_ID => Ok(crate::opencode::ALLOWED_SETTINGS),
+        other => Err(unsupported_adapter_error(other)),
+    }
+}
 
 /// Bundle size caps (fail closed).
 pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
@@ -117,9 +152,13 @@ pub struct Manifest {
 
 impl Manifest {
     pub fn new(source_agent_version: String, created: Option<String>) -> Self {
+        Self::new_for(ADAPTER_ID, source_agent_version, created)
+    }
+
+    pub fn new_for(adapter: &str, source_agent_version: String, created: Option<String>) -> Self {
         Self {
             bundle_version: BUNDLE_VERSION,
-            adapter: ADAPTER_ID.to_string(),
+            adapter: adapter.to_string(),
             adapter_schema_version: ADAPTER_SCHEMA_VERSION,
             source_agent_version,
             created,
@@ -142,13 +181,7 @@ impl Manifest {
                 BUNDLE_VERSION
             );
         }
-        if self.adapter != ADAPTER_ID {
-            anyhow::bail!(
-                "unsupported bundle adapter '{}'. This build supports '{}' only (no cross-agent translation)",
-                self.adapter,
-                ADAPTER_ID
-            );
-        }
+        let supported_versions = supported_versions_for(&self.adapter)?;
         if self.adapter_schema_version != ADAPTER_SCHEMA_VERSION {
             anyhow::bail!(
                 "unsupported adapter schema version {}. Only version {} is supported",
@@ -156,11 +189,12 @@ impl Manifest {
                 ADAPTER_SCHEMA_VERSION
             );
         }
-        if !SUPPORTED_CODEX_VERSIONS.contains(&self.source_agent_version.as_str()) {
+        if !supported_versions.contains(&self.source_agent_version.as_str()) {
             anyhow::bail!(
-                "unsupported source agent version '{}'. S1 accepts exact versions {:?} only",
+                "unsupported source agent version '{}' for adapter '{}'. Supported exact versions: {:?}",
                 self.source_agent_version,
-                SUPPORTED_CODEX_VERSIONS
+                self.adapter,
+                supported_versions
             );
         }
         if self.files.len() > MAX_FILES {
@@ -199,10 +233,23 @@ impl Manifest {
             validate_rel(&f.rel)?;
             if !valid_bundle_file_target(f.scope, &f.rel) {
                 anyhow::bail!(
-                    "invalid bundle: file target '{}:{}' is outside the Codex v1 allowlist",
+                    "invalid bundle: file target '{}:{}' is outside the adapter v1 allowlist",
                     f.scope.as_str(),
                     f.rel
                 );
+            }
+            match (self.adapter.as_str(), f.scope) {
+                (ADAPTER_ID, Scope::OpenCodeHome) => {
+                    anyhow::bail!(
+                        "invalid bundle: Codex bundles must not contain OpenCodeHome files"
+                    );
+                }
+                (OPENCODE_ADAPTER_ID, Scope::CodexHome) => {
+                    anyhow::bail!(
+                        "invalid bundle: OpenCode bundles must not contain CodexHome files"
+                    );
+                }
+                _ => {}
             }
             if !is_canonical_sha256(&f.sha256) {
                 anyhow::bail!("invalid bundle: malformed sha256 for '{}'", f.rel);
@@ -356,15 +403,13 @@ impl Manifest {
                     );
                 }
             }
-            expected_approvals.insert((
-                Scope::CodexHome.as_str().to_string(),
-                format!("config.toml#mcp_servers.{}", id),
-                recomputed,
-            ));
+            let (scope, rel) = mcp_approval_target(&self.adapter, id)?;
+            expected_approvals.insert((scope.as_str().to_string(), rel, recomputed));
         }
         // Settings allowlist (keys + short plain-string values).
+        let allowed_settings = allowed_settings_for(&self.adapter)?;
         for (key, val) in &self.settings {
-            if !crate::codex::ALLOWED_SETTINGS.contains(&key.as_str()) {
+            if !allowed_settings.contains(&key.as_str()) {
                 anyhow::bail!("invalid bundle: settings key '{}' is not allowlisted", key);
             }
             match val {
@@ -463,9 +508,25 @@ pub fn valid_mcp_server_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
 }
 
-fn valid_bundle_file_target(scope: Scope, rel: &str) -> bool {
+pub(crate) fn valid_bundle_file_target(scope: Scope, rel: &str) -> bool {
     match scope {
         Scope::CodexHome => rel == "AGENTS.md",
+        Scope::OpenCodeHome => {
+            if rel == "AGENTS.md" {
+                return true;
+            }
+            let mut parts = rel.split('/');
+            let Some("skills") = parts.next() else {
+                return false;
+            };
+            let Some(skill) = parts.next() else {
+                return false;
+            };
+            let Some(_) = parts.next() else {
+                return false;
+            };
+            valid_skill_component(skill)
+        }
         Scope::SharedSkills => {
             let mut parts = rel.split('/');
             let Some(skill) = parts.next() else {
@@ -719,6 +780,149 @@ mod tests {
         assert!(m.validate().is_err());
     }
 
+    fn opencode_manifest() -> Manifest {
+        Manifest::new_for(OPENCODE_ADAPTER_ID, "1.18.27".to_string(), None)
+    }
+
+    #[test]
+    fn adapter_version_gate_is_adapter_specific() {
+        let m = opencode_manifest();
+        m.validate().unwrap();
+
+        let mut other_opencode = opencode_manifest();
+        other_opencode.source_agent_version = "1.18.26".to_string();
+        assert!(other_opencode.validate().is_err());
+
+        let mut codex_ok = minimal_manifest();
+        codex_ok.source_agent_version = "0.150.1".to_string();
+        codex_ok.validate().unwrap();
+
+        let mut codex_opencode_ver = minimal_manifest();
+        codex_opencode_ver.source_agent_version = "1.18.27".to_string();
+        assert!(codex_opencode_ver.validate().is_err());
+
+        let mut opencode_codex_ver = opencode_manifest();
+        opencode_codex_ver.source_agent_version = "0.150.1".to_string();
+        assert!(opencode_codex_ver.validate().is_err());
+    }
+
+    #[test]
+    fn opencode_home_rel_allowlist() {
+        assert!(valid_bundle_file_target(Scope::OpenCodeHome, "AGENTS.md"));
+        assert!(valid_bundle_file_target(
+            Scope::OpenCodeHome,
+            "skills/docs-writer/SKILL.md"
+        ));
+        assert!(valid_bundle_file_target(
+            Scope::OpenCodeHome,
+            "skills/docs-writer/nested/run.sh"
+        ));
+        assert!(!valid_bundle_file_target(
+            Scope::OpenCodeHome,
+            "opencode.json"
+        ));
+        assert!(!valid_bundle_file_target(Scope::OpenCodeHome, "auth.json"));
+        assert!(!valid_bundle_file_target(
+            Scope::OpenCodeHome,
+            "skills/docs-writer"
+        ));
+        assert!(!valid_bundle_file_target(
+            Scope::OpenCodeHome,
+            "skills/Docs-writer/SKILL.md"
+        ));
+        assert!(!valid_bundle_file_target(Scope::CodexHome, "skills/x/y"));
+
+        let mut ok = opencode_manifest();
+        ok.files.push(BundleFile {
+            scope: Scope::OpenCodeHome,
+            rel: "AGENTS.md".to_string(),
+            sha256: "a".repeat(64),
+            size: 2,
+            mode: "0644".to_string(),
+            kind: FileKind::PromptContent,
+            executable: false,
+        });
+        ok.validate().unwrap();
+
+        let mut native_skill = opencode_manifest();
+        native_skill.files.push(BundleFile {
+            scope: Scope::OpenCodeHome,
+            rel: "skills/docs-writer/SKILL.md".to_string(),
+            sha256: "a".repeat(64),
+            size: 2,
+            mode: "0644".to_string(),
+            kind: FileKind::PromptContent,
+            executable: false,
+        });
+        native_skill.validate().unwrap();
+
+        let mut shared = opencode_manifest();
+        shared.files.push(BundleFile {
+            scope: Scope::SharedSkills,
+            rel: "docs-writer/SKILL.md".to_string(),
+            sha256: "a".repeat(64),
+            size: 2,
+            mode: "0644".to_string(),
+            kind: FileKind::PromptContent,
+            executable: false,
+        });
+        shared.validate().unwrap();
+
+        let mut codex_home_in_opencode = opencode_manifest();
+        codex_home_in_opencode.files.push(BundleFile {
+            scope: Scope::CodexHome,
+            rel: "AGENTS.md".to_string(),
+            sha256: "a".repeat(64),
+            size: 2,
+            mode: "0644".to_string(),
+            kind: FileKind::PromptContent,
+            executable: false,
+        });
+        assert!(codex_home_in_opencode.validate().is_err());
+
+        let mut opencode_home_in_codex = minimal_manifest();
+        opencode_home_in_codex.files.push(BundleFile {
+            scope: Scope::OpenCodeHome,
+            rel: "AGENTS.md".to_string(),
+            sha256: "a".repeat(64),
+            size: 2,
+            mode: "0644".to_string(),
+            kind: FileKind::PromptContent,
+            executable: false,
+        });
+        assert!(opencode_home_in_codex.validate().is_err());
+    }
+
+    #[test]
+    fn opencode_mcp_approval_target_is_opencode_home() {
+        let mut m = opencode_manifest();
+        let command = vec!["npx".to_string()];
+        let hash = mcp_command_hash(&command, &[], &None, &[]);
+        m.mcp.insert(
+            "github".to_string(),
+            McpEntry {
+                transport: "stdio".to_string(),
+                enabled: false,
+                needs_env: vec![],
+                command_sha256: Some(hash.clone()),
+                command,
+                args: vec![],
+                cwd: None,
+                env_keys: vec![],
+            },
+        );
+        m.needs_approval.push(NeedsApproval {
+            scope: Scope::CodexHome,
+            rel: "config.toml#mcp_servers.github".to_string(),
+            sha256: hash.clone(),
+            reason: "MCP command".to_string(),
+        });
+        assert!(m.validate().is_err());
+        m.needs_approval[0].scope = Scope::OpenCodeHome;
+        m.needs_approval[0].rel = "opencode.json#mcp.github".to_string();
+        m.validate().unwrap();
+    }
+
     #[test]
     fn mcp_must_be_disabled_and_executable_needs_approval() {
         let mut m = minimal_manifest();
@@ -835,6 +1039,18 @@ mod tests {
             .settings
             .insert("notify".to_string(), serde_json::json!(["evil"]));
         assert!(unknown.validate().is_err());
+
+        let mut opencode_extra = opencode_manifest();
+        opencode_extra.settings.insert(
+            "model_reasoning_effort".to_string(),
+            serde_json::json!("high"),
+        );
+        assert!(opencode_extra.validate().is_err());
+        opencode_extra.settings.clear();
+        opencode_extra
+            .settings
+            .insert("model".to_string(), serde_json::json!("gpt-x"));
+        opencode_extra.validate().unwrap();
 
         let mut upper = valid_mcp_manifest();
         upper.needs_approval[0].sha256 = upper.needs_approval[0].sha256.to_ascii_uppercase();

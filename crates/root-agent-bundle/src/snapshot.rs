@@ -43,6 +43,10 @@ pub struct SnapshotEntry {
     pub applied_sha256: Option<String>,
 }
 
+fn valid_snapshot_agent(agent: &str) -> bool {
+    agent == crate::manifest::ADAPTER_ID || agent == crate::manifest::OPENCODE_ADAPTER_ID
+}
+
 /// Snapshot id rules: `asnap_` prefix, bounded, no separators/traversal.
 pub fn valid_snapshot_id(id: &str) -> bool {
     if !id.starts_with("asnap_") || id.len() > 200 || id.len() < 8 {
@@ -159,9 +163,9 @@ fn validate_snapshot(snap: &AgentSnapshot, directory_id: &str) -> Result<()> {
     if snap.id != directory_id || !valid_snapshot_id(&snap.id) {
         anyhow::bail!("Snapshot id mismatch (directory vs manifest)");
     }
-    if snap.agent != "codex" {
+    if !valid_snapshot_agent(&snap.agent) {
         anyhow::bail!(
-            "unsupported snapshot agent '{}': expected codex",
+            "unsupported snapshot agent '{}': expected codex or opencode",
             snap.agent
         );
     }
@@ -348,8 +352,11 @@ pub fn take_snapshot(
     targets: &[(Scope, String)],
     created: Option<String>,
 ) -> Result<AgentSnapshot> {
-    if agent != "codex" {
-        anyhow::bail!("unsupported snapshot agent '{}': expected codex", agent);
+    if !valid_snapshot_agent(agent) {
+        anyhow::bail!(
+            "unsupported snapshot agent '{}': expected codex or opencode",
+            agent
+        );
     }
     if op_id.is_empty()
         || op_id.len() > 200

@@ -1,8 +1,8 @@
-//! Portable Agent Environments — S1 Codex-only vertical slice.
+//! Portable Agent Environments — S1 Codex + S2 OpenCode.
 //!
 //! Explicit bundle transfer only (NOT Root restore; no Rootfile/lock
-//! integration). Same-agent (Codex → Codex), macOS/Linux, exact
-//! live-tested versions only.
+//! integration). Same-agent (Codex → Codex, OpenCode → OpenCode),
+//! macOS/Linux, exact live-tested versions only. No cross-agent translation.
 //!
 //! Security contract (bundle v1):
 //! - Manifest (`manifest.json`) + content-addressed blobs (`blobs/<sha256>`).
@@ -10,7 +10,7 @@
 //!   are forbidden.
 //! - All symlinks rejected.
 //! - Unknown source fields held, never exported; target unknowns preserved
-//!   via `toml_edit` patching.
+//!   via `toml_edit` (Codex) or `serde_json::Value` (OpenCode) patching.
 //! - Executable content requires per-item hash-bound `--approve <sha256>`;
 //!   global boolean approval is forbidden.
 //! - MCP declarations apply `enabled = false`; `enable` is a separate
@@ -25,11 +25,13 @@ pub mod export;
 pub mod journal;
 pub mod lock;
 pub mod manifest;
+pub mod opencode;
 pub mod plan;
 pub mod scope;
 pub mod snapshot;
 pub mod verify;
 
 pub use manifest::{
-    ADAPTER_ID, ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, SECRET_DISCLOSURE, SUPPORTED_CODEX_VERSIONS,
+    ADAPTER_ID, ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, OPENCODE_ADAPTER_ID, SECRET_DISCLOSURE,
+    SUPPORTED_CODEX_VERSIONS, SUPPORTED_OPENCODE_VERSIONS,
 };

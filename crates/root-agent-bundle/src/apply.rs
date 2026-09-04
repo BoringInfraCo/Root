@@ -7,11 +7,14 @@
 //! when post-verify fails.
 
 use crate::journal::{
-    completed_mcp_provenance, new_op_id, phase_requires_recovery, require_no_incomplete_op,
-    write_journal, ApplyJournal, Phase,
+    completed_mcp_provenance, mcp_provenance_key, new_op_id, phase_requires_recovery,
+    require_no_incomplete_op, write_journal, ApplyJournal, Phase,
 };
 use crate::lock::GlobalMutationLock;
-use crate::manifest::{load_bundle, manifest_hash, Manifest};
+use crate::manifest::{
+    load_bundle, manifest_hash, unsupported_adapter_error, Manifest, ADAPTER_ID,
+    OPENCODE_ADAPTER_ID,
+};
 use crate::plan::{compute_plan, plan_hash_for};
 use crate::scope::{resolve_target, Scope};
 use crate::snapshot::{
@@ -59,7 +62,10 @@ pub fn apply_bundle(
                 id
             )
         })?;
-        mcp_provenance.insert(id.clone(), descriptor_hash.to_lowercase());
+        mcp_provenance.insert(
+            mcp_provenance_key(&manifest.adapter, id),
+            descriptor_hash.to_lowercase(),
+        );
     }
 
     // Recompute preconditions under lock; verify plan hash (drift detection).
@@ -112,14 +118,14 @@ pub fn apply_bundle(
     };
     write_journal(&journal)?;
 
-    // Snapshot every target we may touch (files + config.toml when patched).
+    // Snapshot every target we may touch (files + adapter config when patched).
     let mut snap_targets: Vec<(Scope, String)> = manifest
         .files
         .iter()
         .map(|f| (f.scope, f.rel.clone()))
         .collect();
     if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-        let cfg = (Scope::CodexHome, "config.toml".to_string());
+        let cfg = config_snap_target(&manifest)?;
         if !snap_targets.contains(&cfg) {
             snap_targets.push(cfg);
         }
@@ -171,27 +177,27 @@ pub fn apply_bundle(
         // 2. Config patch (settings + MCP disabled).
         let mut mcp_imported = Vec::new();
         if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-            let prepared = prepare_config_toml(&manifest)?;
+            let (cfg_scope, cfg_rel) = config_snap_target(&manifest)?;
+            let prepared = prepare_adapter_config(&manifest)?;
             let hash = crate::snapshot::record_expected_applied(
                 &snap.id,
-                Scope::CodexHome,
-                "config.toml",
+                cfg_scope,
+                &cfg_rel,
                 &prepared.sha256,
             )?;
             journal.snapshot_manifest_hash = Some(hash);
             write_journal(&journal)?;
             write_beside(&prepared.path, &prepared.bytes, prepared.mode)?;
             mcp_imported = manifest.mcp.keys().cloned().collect();
-            journal
-                .completed_paths
-                .push("codex_home:config.toml".to_string());
+            let label = format!("{}:{}", cfg_scope.as_str(), cfg_rel);
+            journal.completed_paths.push(label.clone());
             write_journal(&journal)?;
-            applied.push("codex_home:config.toml".to_string());
+            applied.push(label);
         }
         // 3. Post-verify (before Done).
         journal.phase = Phase::Verifying;
         write_journal(&journal)?;
-        crate::verify::verify_codex_applied(bundle_dir, &manifest)?;
+        verify_applied(bundle_dir, &manifest)?;
         Ok(ApplyReport {
             op_id: op_id.clone(),
             snapshot_id: snap.id.clone(),
@@ -276,6 +282,30 @@ fn auto_rollback(
                 ),
             }
         }
+    }
+}
+
+fn config_snap_target(manifest: &Manifest) -> Result<(Scope, String)> {
+    match manifest.adapter.as_str() {
+        ADAPTER_ID => Ok((Scope::CodexHome, "config.toml".to_string())),
+        OPENCODE_ADAPTER_ID => Ok((Scope::OpenCodeHome, crate::opencode::config_rel()?)),
+        other => Err(unsupported_adapter_error(other)),
+    }
+}
+
+fn prepare_adapter_config(manifest: &Manifest) -> Result<PreparedConfig> {
+    match manifest.adapter.as_str() {
+        ADAPTER_ID => prepare_config_toml(manifest),
+        OPENCODE_ADAPTER_ID => prepare_config_opencode(manifest),
+        other => Err(unsupported_adapter_error(other)),
+    }
+}
+
+fn verify_applied(bundle_dir: &Path, manifest: &Manifest) -> Result<()> {
+    match manifest.adapter.as_str() {
+        ADAPTER_ID => crate::verify::verify_codex_applied(bundle_dir, manifest),
+        OPENCODE_ADAPTER_ID => crate::verify::verify_opencode_applied(bundle_dir, manifest),
+        other => Err(unsupported_adapter_error(other)),
     }
 }
 
@@ -367,6 +397,25 @@ fn prepare_config_toml(manifest: &Manifest) -> Result<PreparedConfig> {
     // Preserve existing mode (0600 expected) or use 0600 for new files.
     let mode = existing_file_mode(&path).unwrap_or(0o600);
     let bytes = rendered.into_bytes();
+    let sha256 = root_lockfile::compute_sha256(&bytes);
+    Ok(PreparedConfig {
+        path,
+        bytes,
+        mode,
+        sha256,
+    })
+}
+
+fn prepare_config_opencode(manifest: &Manifest) -> Result<PreparedConfig> {
+    let path = crate::opencode::live_config_path()?;
+    let mut value = if path.exists() {
+        crate::opencode::load_config_value(&path)?
+    } else {
+        serde_json::json!({})
+    };
+    crate::opencode::patch_config_value(&mut value, manifest)?;
+    let bytes = crate::opencode::render_pretty_json(&value)?;
+    let mode = existing_file_mode(&path).unwrap_or(0o600);
     let sha256 = root_lockfile::compute_sha256(&bytes);
     Ok(PreparedConfig {
         path,
@@ -595,7 +644,7 @@ pub fn enable_server(id: &str, plan_hash: &str, approvals: &[String]) -> Result<
     }
     check_enable_approval(&live, plan_hash, approvals)?;
     let mcp_provenance = completed_mcp_provenance()?;
-    check_enable_provenance(id, &live.descriptor_hash, &mcp_provenance)?;
+    check_enable_provenance("codex", id, &live.descriptor_hash, &mcp_provenance)?;
     // Required secret references must exist in the environment (names only —
     // values are never read or stored).
     let missing: Vec<String> = live
@@ -684,6 +733,113 @@ pub fn enable_server(id: &str, plan_hash: &str, approvals: &[String]) -> Result<
     }
 }
 
+/// OpenCode MCP enable: snapshot config, set `mcp.<id>.enabled = true`,
+/// verify, auto-rollback on failure. Provenance from completed apply journal.
+pub fn enable_opencode_server(
+    id: &str,
+    plan_hash: &str,
+    approvals: &[String],
+) -> Result<ApplyReport> {
+    if id.is_empty() || id.len() > 128 {
+        anyhow::bail!("invalid MCP server id");
+    }
+    let preflight = crate::opencode::enable_plan(id)?;
+    check_enable_approval(&preflight, plan_hash, approvals)?;
+    let _guard = GlobalMutationLock::acquire()?;
+    require_no_incomplete_op()?;
+    let live = crate::opencode::enable_plan(id)?;
+    if live.plan_hash != plan_hash || live.descriptor_hash != preflight.descriptor_hash {
+        anyhow::bail!(
+            "Drift detected: config changed since enable plan for '{}'. Re-run enable plan.",
+            id
+        );
+    }
+    check_enable_approval(&live, plan_hash, approvals)?;
+    let mcp_provenance = completed_mcp_provenance()?;
+    check_enable_provenance(
+        OPENCODE_ADAPTER_ID,
+        id,
+        &live.descriptor_hash,
+        &mcp_provenance,
+    )?;
+    let missing: Vec<String> = live
+        .needs_env
+        .iter()
+        .filter(|k| std::env::var_os(k).is_none())
+        .cloned()
+        .collect();
+    if !missing.is_empty() {
+        anyhow::bail!(
+            "Cannot enable MCP server '{}': required secret references missing from environment: {}. Set them, then retry.",
+            id,
+            missing.join(", ")
+        );
+    }
+
+    let op_id = new_op_id();
+    let config_path = crate::opencode::live_config_path()?;
+    let cfg_rel = crate::opencode::config_rel()?;
+    let snap = take_snapshot(
+        OPENCODE_ADAPTER_ID,
+        &op_id,
+        &[(Scope::OpenCodeHome, cfg_rel.clone())],
+        None,
+    )?;
+    let mut journal = ApplyJournal {
+        op_id: op_id.clone(),
+        agent: OPENCODE_ADAPTER_ID.to_string(),
+        plan_hash: plan_hash.to_string(),
+        snapshot_id: Some(snap.id.clone()),
+        snapshot_manifest_hash: Some(crate::snapshot::snapshot_manifest_hash(&snap)?),
+        phase: Phase::Applying,
+        completed_paths: Vec::new(),
+        target_preconditions: BTreeMap::from([(
+            format!("opencode_home:{}", cfg_rel),
+            live.config_precondition.clone(),
+        )]),
+        mcp_provenance: mcp_provenance.clone(),
+        prior_mcp_provenance: mcp_provenance,
+    };
+    write_journal(&journal)?;
+
+    let outcome: Result<ApplyReport> = (|| {
+        let mut value = crate::opencode::load_config_value(&config_path)?;
+        crate::opencode::set_mcp_enabled(&mut value, id, true)?;
+        let rendered = crate::opencode::render_pretty_json(&value)?;
+        let rendered_hash = root_lockfile::compute_sha256(&rendered);
+        let manifest_hash = crate::snapshot::record_expected_applied(
+            &snap.id,
+            Scope::OpenCodeHome,
+            &cfg_rel,
+            &rendered_hash,
+        )?;
+        journal.snapshot_manifest_hash = Some(manifest_hash);
+        write_journal(&journal)?;
+        let mode = existing_file_mode(&config_path).unwrap_or(0o600);
+        write_beside(&config_path, &rendered, mode)?;
+        journal.phase = Phase::Verifying;
+        write_journal(&journal)?;
+        crate::verify::verify_opencode_enabled(id)?;
+        Ok(ApplyReport {
+            op_id: op_id.clone(),
+            snapshot_id: snap.id.clone(),
+            plan_hash: plan_hash.to_string(),
+            applied: vec![format!("opencode_home:{} (enable {})", cfg_rel, id)],
+            skipped_identical: vec![],
+            mcp_imported: vec![id.to_string()],
+        })
+    })();
+
+    match outcome {
+        Ok(report) => {
+            journal.phase = Phase::Done;
+            write_journal(&journal)?;
+            Ok(report)
+        }
+        Err(e) => Err(auto_rollback(&snap, &mut journal, "Enable", e)),
+    }
+}
+
 fn check_enable_approval(
     plan: &crate::codex::EnablePlan,
     plan_hash: &str,
@@ -715,19 +871,23 @@ fn check_enable_approval(
 }
 
 fn check_enable_provenance(
+    adapter: &str,
     server: &str,
     descriptor_hash: &str,
     provenance: &BTreeMap<String, String>,
 ) -> Result<()> {
-    match provenance.get(server) {
+    let key = mcp_provenance_key(adapter, server);
+    match provenance.get(&key) {
         Some(imported_hash) if imported_hash.eq_ignore_ascii_case(descriptor_hash) => Ok(()),
         Some(_) => anyhow::bail!(
-            "MCP server '{}' no longer matches its imported bundle provenance. Re-apply a reviewed bundle and generate a new enable plan.",
-            server
+            "MCP server '{}' no longer matches its imported {} bundle provenance. Re-apply a reviewed bundle and generate a new enable plan.",
+            server,
+            adapter
         ),
         None => anyhow::bail!(
-            "MCP server '{}' has no completed agent-bundle provenance and cannot be enabled by Root. Import it from a reviewed bundle first.",
-            server
+            "MCP server '{}' has no completed agent-bundle provenance for adapter '{}' and cannot be enabled by Root. Import it from a reviewed bundle first.",
+            server,
+            adapter
         ),
     }
 }
@@ -788,10 +948,32 @@ mod tests {
     fn enable_requires_matching_completed_import_provenance() {
         let plan = enable_plan();
         let mut provenance = BTreeMap::new();
-        assert!(check_enable_provenance(&plan.server, &plan.descriptor_hash, &provenance).is_err());
-        provenance.insert(plan.server.clone(), "d".repeat(64));
-        assert!(check_enable_provenance(&plan.server, &plan.descriptor_hash, &provenance).is_err());
-        provenance.insert(plan.server.clone(), plan.descriptor_hash.clone());
-        assert!(check_enable_provenance(&plan.server, &plan.descriptor_hash, &provenance).is_ok());
+        assert!(
+            check_enable_provenance("codex", &plan.server, &plan.descriptor_hash, &provenance)
+                .is_err()
+        );
+        provenance.insert(
+            crate::journal::mcp_provenance_key("codex", &plan.server),
+            "d".repeat(64),
+        );
+        assert!(
+            check_enable_provenance("codex", &plan.server, &plan.descriptor_hash, &provenance)
+                .is_err()
+        );
+        provenance.insert(
+            crate::journal::mcp_provenance_key("codex", &plan.server),
+            plan.descriptor_hash.clone(),
+        );
+        assert!(
+            check_enable_provenance("codex", &plan.server, &plan.descriptor_hash, &provenance)
+                .is_ok()
+        );
+        assert!(check_enable_provenance(
+            "opencode",
+            &plan.server,
+            &plan.descriptor_hash,
+            &provenance
+        )
+        .is_err());
     }
 }

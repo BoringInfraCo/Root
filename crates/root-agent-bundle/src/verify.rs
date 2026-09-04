@@ -6,7 +6,8 @@
 //! comparisons, redacted `mcp list` names.
 
 use crate::codex::{find_on_path, probe_codex_version, CODEX_BINARY};
-use crate::manifest::{Manifest, SUPPORTED_CODEX_VERSIONS};
+use crate::manifest::{Manifest, SUPPORTED_CODEX_VERSIONS, SUPPORTED_OPENCODE_VERSIONS};
+use crate::opencode::{probe_opencode_version, OPENCODE_BINARY};
 use crate::scope::resolve_target;
 use anyhow::{Context, Result};
 use serde::Serialize;
@@ -175,6 +176,146 @@ pub fn verify_codex_enabled(id: &str) -> Result<()> {
         .context("verification failed: config.toml unparsable")?;
     let enabled = doc
         .get("mcp_servers")
+        .and_then(|v| v.get(id))
+        .and_then(|v| v.get("enabled"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !enabled {
+        anyhow::bail!(
+            "verification failed: server '{}' not enabled after enable",
+            id
+        );
+    }
+    Ok(())
+}
+
+/// Standalone OpenCode verify: binary + version + JSONC parse.
+pub fn verify_opencode() -> Result<VerifyReport> {
+    let mut checks = Vec::new();
+    let bin = find_on_path(OPENCODE_BINARY);
+    let mut version = None;
+    match bin {
+        None => checks.push(Check {
+            name: "binary_present".to_string(),
+            passed: false,
+            detail: "opencode not found on PATH".to_string(),
+        }),
+        Some(path) => {
+            checks.push(Check {
+                name: "binary_present".to_string(),
+                passed: true,
+                detail: path.display().to_string(),
+            });
+            match probe_opencode_version(&path) {
+                Ok(v) => {
+                    let supported = SUPPORTED_OPENCODE_VERSIONS.contains(&v.as_str());
+                    checks.push(Check {
+                        name: "version_supported".to_string(),
+                        passed: supported,
+                        detail: format!("{} (supported: {:?})", v, SUPPORTED_OPENCODE_VERSIONS),
+                    });
+                    version = Some(v);
+                }
+                Err(e) => checks.push(Check {
+                    name: "version_supported".to_string(),
+                    passed: false,
+                    detail: format!("{}", e),
+                }),
+            }
+        }
+    }
+    let config = crate::opencode::live_config_path()?;
+    if config.exists() {
+        match crate::opencode::load_config_value(&config) {
+            Ok(_) => checks.push(Check {
+                name: "config_parses".to_string(),
+                passed: true,
+                detail: "opencode config parses".to_string(),
+            }),
+            Err(e) => checks.push(Check {
+                name: "config_parses".to_string(),
+                passed: false,
+                detail: format!("opencode config parse error: {}", e),
+            }),
+        }
+    } else {
+        checks.push(Check {
+            name: "config_parses".to_string(),
+            passed: true,
+            detail: "no opencode config (absent is valid)".to_string(),
+        });
+    }
+    let success = checks.iter().all(|c| c.passed);
+    Ok(VerifyReport {
+        agent: "opencode".to_string(),
+        success,
+        version,
+        checks,
+    })
+}
+
+/// Post-apply verification: standalone checks + bundle hash agreement +
+/// MCP-disabled invariant for imported servers. Missing MCP is a failure
+/// (not treated as disabled).
+pub fn verify_opencode_applied(bundle_dir: &Path, manifest: &Manifest) -> Result<()> {
+    let report = verify_opencode()?;
+    if !report.success {
+        anyhow::bail!(
+            "verification failed: post-apply checks did not pass ({:?})",
+            report
+                .checks
+                .iter()
+                .filter(|c| !c.passed)
+                .map(|c| c.name.clone())
+                .collect::<Vec<_>>()
+        );
+    }
+    for f in &manifest.files {
+        let target = resolve_target(f.scope, &f.rel)?;
+        let live = std::fs::read(&target)
+            .with_context(|| format!("verification failed: {} missing after apply", f.rel))?;
+        let digest = root_lockfile::compute_sha256(&live);
+        if digest != f.sha256.to_lowercase() && digest != f.sha256 {
+            anyhow::bail!(
+                "verification failed: hash mismatch for '{}' after apply",
+                f.rel
+            );
+        }
+    }
+    let config = crate::opencode::live_config_path()?;
+    if !manifest.mcp.is_empty() {
+        let value = crate::opencode::load_config_value(&config)
+            .context("verification failed: opencode config missing")?;
+        for id in manifest.mcp.keys() {
+            let Some(server) = value.get("mcp").and_then(|v| v.get(id)) else {
+                anyhow::bail!(
+                    "verification failed: MCP server '{}' missing after apply",
+                    id
+                );
+            };
+            let enabled = server
+                .get("enabled")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if enabled {
+                anyhow::bail!(
+                    "verification failed: MCP server '{}' is enabled; bundles must apply disabled",
+                    id
+                );
+            }
+        }
+    }
+    let _ = bundle_dir;
+    Ok(())
+}
+
+/// Post-enable verification: server exists and is enabled, config parses.
+pub fn verify_opencode_enabled(id: &str) -> Result<()> {
+    let config = crate::opencode::live_config_path()?;
+    let value = crate::opencode::load_config_value(&config)
+        .context("verification failed: opencode config missing")?;
+    let enabled = value
+        .get("mcp")
         .and_then(|v| v.get(id))
         .and_then(|v| v.get("enabled"))
         .and_then(|v| v.as_bool())

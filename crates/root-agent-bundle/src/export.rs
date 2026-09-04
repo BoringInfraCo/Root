@@ -10,8 +10,8 @@ use crate::codex::{
     CODEX_BINARY,
 };
 use crate::manifest::{
-    BundleFile, FileKind, HeldItem, Manifest, McpEntry, NeedsApproval, ADAPTER_SCHEMA_VERSION,
-    BUNDLE_VERSION, MAX_FILES, MAX_FILE_BYTES,
+    mcp_approval_target, BundleFile, FileKind, HeldItem, Manifest, McpEntry, NeedsApproval,
+    ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, MAX_FILES, MAX_FILE_BYTES, OPENCODE_ADAPTER_ID,
 };
 use crate::scope::{scope_root, validate_rel, Scope};
 use anyhow::{Context, Result};
@@ -281,6 +281,212 @@ pub fn export_codex(bundle_dir: &Path, opts: &ExportOptions) -> Result<Manifest>
         manifest.needs_approval.push(NeedsApproval {
             scope: Scope::CodexHome,
             rel: format!("config.toml#mcp_servers.{}", id),
+            sha256: cmd_hash,
+            reason: format!("MCP stdio command for server '{}'", id),
+        });
+        for env in needs_env {
+            if !manifest.needs_env.contains(&env) {
+                manifest.needs_env.push(env);
+            }
+        }
+        manifest.needs_env.sort();
+    }
+
+    manifest.validate()?;
+    write_bundle_dir(bundle_dir, &manifest, &blobs)?;
+    Ok(manifest)
+}
+
+pub fn export_opencode(bundle_dir: &Path, opts: &ExportOptions) -> Result<Manifest> {
+    let bin = find_on_path(crate::opencode::OPENCODE_BINARY)
+        .context("opencode executable not found on PATH; refusing export")?;
+    let version = crate::opencode::probe_opencode_version(&bin)?;
+    if !crate::manifest::SUPPORTED_OPENCODE_VERSIONS.contains(&version.as_str()) {
+        anyhow::bail!(
+            "unsupported source agent version '{}'. S2 accepts exact OpenCode versions {:?} only",
+            version,
+            crate::manifest::SUPPORTED_OPENCODE_VERSIONS
+        );
+    }
+    let home = crate::opencode::opencode_home()?;
+    let created = if opts.no_timestamp {
+        None
+    } else {
+        Some(utc_now_rfc3339())
+    };
+    let mut manifest = Manifest::new_for(OPENCODE_ADAPTER_ID, version, created);
+    manifest.bundle_version = BUNDLE_VERSION;
+    manifest.adapter_schema_version = ADAPTER_SCHEMA_VERSION;
+    let mut blobs: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut seen_blob: BTreeSet<String> = BTreeSet::new();
+
+    let agents = home.join("AGENTS.md");
+    match std::fs::symlink_metadata(&agents) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            manifest.held.push(HeldItem {
+                source: "opencode AGENTS.md (absent)".to_string(),
+                reason: "absent on source".to_string(),
+            });
+        }
+        Err(e) => return Err(e).context("Failed to stat AGENTS.md"),
+        Ok(m) => {
+            if m.file_type().is_symlink() {
+                anyhow::bail!(
+                    "Refusing to export symlink AGENTS.md (bundle v1 rejects all symlinks)"
+                );
+            }
+            let bytes = std::fs::read(&agents)?;
+            if (bytes.len() as u64) > MAX_FILE_BYTES {
+                anyhow::bail!("AGENTS.md exceeds per-file limit");
+            }
+            let digest = root_lockfile::compute_sha256(&bytes);
+            if !seen_blob.contains(&digest) {
+                seen_blob.insert(digest.clone());
+                blobs.push((digest.clone(), bytes.clone()));
+            }
+            manifest.files.push(BundleFile {
+                scope: Scope::OpenCodeHome,
+                rel: "AGENTS.md".to_string(),
+                sha256: digest,
+                size: bytes.len() as u64,
+                mode: "0644".to_string(),
+                kind: FileKind::PromptContent,
+                executable: false,
+            });
+        }
+    }
+
+    let config_path = crate::opencode::live_config_path()?;
+    if config_path.exists() {
+        let settings = crate::opencode::read_allowed_settings(&config_path)?;
+        manifest.settings = settings;
+    }
+    manifest.held.push(HeldItem {
+        source: "unknown source fields".to_string(),
+        reason: "held by default in bundle v1 (never exported)".to_string(),
+    });
+    manifest.held.push(HeldItem {
+        source: "auth tokens, ~/.local/share/opencode/mcp-auth.json, sessions/, *.sqlite*, logs/"
+            .to_string(),
+        reason: "secret/volatile: excluded".to_string(),
+    });
+    manifest.held.push(HeldItem {
+        source: "$schema, provider, remote MCP, unknown config keys".to_string(),
+        reason: "held by default in bundle v1 (never exported)".to_string(),
+    });
+
+    let native_skills = home.join("skills");
+    let shared_skills = scope_root(Scope::SharedSkills)?;
+    for skill in &opts.skills {
+        if !valid_skill_name(skill) {
+            anyhow::bail!("invalid skill name '{}'", skill);
+        }
+        validate_rel(skill)?;
+        let (scope, skill_dir, rel_prefix) = {
+            let native = native_skills.join(skill);
+            match std::fs::symlink_metadata(&native) {
+                Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
+                    (Scope::OpenCodeHome, native, format!("skills/{}", skill))
+                }
+                Ok(_) => anyhow::bail!("Skill '{}' is not a directory (symlinks rejected)", skill),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    let shared = shared_skills.join(skill);
+                    let meta = std::fs::symlink_metadata(&shared)
+                        .with_context(|| format!("Skill '{}' not found", skill))?;
+                    if !meta.is_dir() || meta.file_type().is_symlink() {
+                        anyhow::bail!("Skill '{}' is not a directory (symlinks rejected)", skill);
+                    }
+                    (Scope::SharedSkills, shared, skill.clone())
+                }
+                Err(e) => return Err(e).context(format!("Failed to stat skill '{}'", skill)),
+            }
+        };
+        let files = collect_skill_files(&skill_dir)?;
+        if files.is_empty() {
+            anyhow::bail!("Skill '{}' is empty", skill);
+        }
+        let exec_allowed = opts.include_executable.iter().any(|e| e == skill);
+        for abs in files {
+            let rel_in_skill = abs
+                .strip_prefix(&skill_dir)
+                .context("Skill path escape")?
+                .to_str()
+                .context("Non-UTF8 skill path")?
+                .to_string();
+            let rel = format!("{}/{}", rel_prefix, rel_in_skill);
+            validate_rel(&rel)?;
+            let bytes = std::fs::read(&abs)?;
+            if (bytes.len() as u64) > MAX_FILE_BYTES {
+                anyhow::bail!("Skill file '{}' exceeds per-file limit", rel);
+            }
+            let executable = !is_markdown(&abs);
+            if executable && !exec_allowed {
+                manifest.held.push(HeldItem {
+                    source: format!("skill file {}", rel),
+                    reason: "executable content requires --include-executable <skill>".to_string(),
+                });
+                continue;
+            }
+            let digest = root_lockfile::compute_sha256(&bytes);
+            if !seen_blob.contains(&digest) {
+                seen_blob.insert(digest.clone());
+                blobs.push((digest.clone(), bytes.clone()));
+            }
+            if executable {
+                manifest.needs_approval.push(NeedsApproval {
+                    scope,
+                    rel: rel.clone(),
+                    sha256: digest.clone(),
+                    reason: format!("executable skill file {}", rel),
+                });
+            }
+            manifest.files.push(BundleFile {
+                scope,
+                rel,
+                sha256: digest,
+                size: bytes.len() as u64,
+                mode: if executable {
+                    "0755".to_string()
+                } else {
+                    "0644".to_string()
+                },
+                kind: if executable {
+                    FileKind::Executable
+                } else {
+                    FileKind::PromptContent
+                },
+                executable,
+            });
+        }
+    }
+
+    for id in &opts.include_mcp {
+        if id.is_empty() || id.len() > 128 {
+            anyhow::bail!("invalid MCP server id");
+        }
+        let san = crate::opencode::sanitize_mcp_server(&config_path, id)?;
+        let cmd_hash =
+            crate::manifest::mcp_command_hash(&san.command, &san.args, &san.cwd, &san.env_keys);
+        let mut needs_env = san.needs_env.clone();
+        needs_env.sort();
+        needs_env.dedup();
+        manifest.mcp.insert(
+            id.clone(),
+            McpEntry {
+                transport: san.transport,
+                enabled: false,
+                needs_env: needs_env.clone(),
+                command_sha256: Some(cmd_hash.clone()),
+                command: san.command.clone(),
+                args: san.args.clone(),
+                cwd: san.cwd.clone(),
+                env_keys: san.env_keys.clone(),
+            },
+        );
+        let (scope, rel) = mcp_approval_target(OPENCODE_ADAPTER_ID, id)?;
+        manifest.needs_approval.push(NeedsApproval {
+            scope,
+            rel,
             sha256: cmd_hash,
             reason: format!("MCP stdio command for server '{}'", id),
         });

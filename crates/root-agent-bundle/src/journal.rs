@@ -132,6 +132,11 @@ pub fn phase_requires_recovery(phase: Phase) -> bool {
     )
 }
 
+/// Namespaced provenance key so Codex and OpenCode cannot authorize each other.
+pub fn mcp_provenance_key(adapter: &str, server: &str) -> String {
+    format!("{}:{}", adapter, server)
+}
+
 /// Return provenance only from a completed state transition. In-progress or
 /// failed journals must never authorize an executable MCP command.
 pub fn completed_mcp_provenance() -> Result<BTreeMap<String, String>> {

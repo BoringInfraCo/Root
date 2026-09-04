@@ -574,7 +574,10 @@ fn enable_requires_plan_approval_and_env() {
     // reviewed bundle apply. The unit tests cover the full apply transition;
     // this integration test isolates enable's plan/approval/env gates.
     let mut provenance = std::collections::BTreeMap::new();
-    provenance.insert("testy".to_string(), plan.descriptor_hash.clone());
+    provenance.insert(
+        root_agent_bundle::journal::mcp_provenance_key("codex", "testy"),
+        plan.descriptor_hash.clone(),
+    );
     root_agent_bundle::journal::write_journal(&root_agent_bundle::journal::ApplyJournal {
         op_id: "op_reviewed_import".to_string(),
         agent: "codex".to_string(),

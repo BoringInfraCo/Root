@@ -126,7 +126,7 @@ enum Commands {
         #[command(subcommand)]
         subcommand: ModelsSubcommands,
     },
-    /// Transfer Codex working configuration between machines (explicit bundles only)
+    /// Transfer Codex or OpenCode working configuration between machines (explicit bundles only)
     #[command(name = "agent-bundle")]
     AgentBundle {
         #[command(subcommand)]
@@ -159,15 +159,15 @@ enum ModelsSubcommands {
 
 #[derive(Subcommand, Debug)]
 enum AgentBundleSubcommands {
-    /// Read-only inspection of the local Codex configuration (no writes)
+    /// Read-only inspection of the local Codex or OpenCode configuration (no writes)
     Inspect {
-        /// Agent id (S1 supports `codex` only)
+        /// Agent id (S2 supports `codex` and `opencode`)
         #[arg(long, default_value = "codex")]
         agent: String,
     },
     /// Export a versioned bundle directory (manifest.json + blobs/)
     Export {
-        /// Agent id (S1 supports `codex` only)
+        /// Agent id (S2 supports `codex` and `opencode`)
         #[arg(long, default_value = "codex")]
         agent: String,
         /// Output bundle directory (must not exist)
@@ -209,7 +209,7 @@ enum AgentBundleSubcommands {
     },
     /// Post-apply verification (read-only, secret-safe)
     Verify {
-        /// Agent id (S1 supports `codex` only)
+        /// Agent id (S2 supports `codex` and `opencode`)
         #[arg(long, default_value = "codex")]
         agent: String,
     },
@@ -220,12 +220,18 @@ enum AgentBundleSubcommands {
     },
     /// Preview enabling an MCP server (read-only enable plan + descriptor hash)
     EnablePlan {
+        /// Agent id (S2 supports `codex` and `opencode`)
+        #[arg(long, default_value = "codex")]
+        agent: String,
         /// MCP server id
         #[arg(long, value_name = "ID")]
         server: String,
     },
     /// Enable a previously applied (disabled) MCP server (protected mutation)
     Enable {
+        /// Agent id (S2 supports `codex` and `opencode`)
+        #[arg(long, default_value = "codex")]
+        agent: String,
         /// MCP server id
         #[arg(long, value_name = "ID")]
         server: String,
@@ -422,6 +428,13 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
     } else {
         1
     }
+}
+
+fn unsupported_bundle_agent(agent: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "unsupported bundle adapter '{}'. S2 supports 'codex' and 'opencode' only (no cross-agent translation)",
+        agent
+    )
 }
 
 fn format_user_error(e: &anyhow::Error) -> String {
@@ -1263,18 +1276,10 @@ fn main() {
             }
         },
         Commands::AgentBundle { subcommand } => match subcommand {
-            AgentBundleSubcommands::Inspect { agent } => {
-                if agent != "codex" {
-                    let error = anyhow::anyhow!(
-                        "unsupported bundle adapter '{}'. S1 supports 'codex' only (no cross-agent translation)",
-                        agent
-                    );
-                    let _ =
-                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
-                    unreachable!();
-                }
-                let _ = handle_structured(cli.json, root_agent_bundle::codex::inspect(), |r| {
-                    format!(
+            AgentBundleSubcommands::Inspect { agent } => match agent.as_str() {
+                "codex" => {
+                    let _ = handle_structured(cli.json, root_agent_bundle::codex::inspect(), |r| {
+                        format!(
                             "Codex present: {}\nVersion: {}\nSupported: {}\nHome: {}\nConfig: {}\nAGENTS.md: {}\nSkills: {}\nMCP servers: {}",
                             r.present,
                             r.version.as_deref().unwrap_or("(absent)"),
@@ -1293,8 +1298,44 @@ fn main() {
                                 r.mcp_servers.join(", ")
                             },
                         )
-                });
-            }
+                    });
+                }
+                "opencode" => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_agent_bundle::opencode::inspect(),
+                        |r| {
+                            format!(
+                            "OpenCode present: {}\nVersion: {}\nSupported: {}\nConfig dir: {}\nConfig: {}\nAGENTS.md: {}\nSkills: {}\nMCP servers: {}",
+                            r.present,
+                            r.version.as_deref().unwrap_or("(absent)"),
+                            r.version_supported,
+                            r.config_dir,
+                            r.config_present,
+                            r.agents_md_present,
+                            if r.skills.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.skills.join(", ")
+                            },
+                            if r.mcp_servers.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.mcp_servers.join(", ")
+                            },
+                        )
+                        },
+                    );
+                }
+                other => {
+                    let _ = handle_structured::<GenericOutput>(
+                        cli.json,
+                        Err(unsupported_bundle_agent(other)),
+                        |_| String::new(),
+                    );
+                    unreachable!();
+                }
+            },
             AgentBundleSubcommands::Export {
                 agent,
                 out,
@@ -1303,26 +1344,19 @@ fn main() {
                 include_executable,
                 no_timestamp,
             } => {
-                if agent != "codex" {
-                    let error = anyhow::anyhow!(
-                        "unsupported bundle adapter '{}'. S1 supports 'codex' only (no cross-agent translation)",
-                        agent
-                    );
-                    let _ =
-                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
-                    unreachable!();
-                }
                 let opts = root_agent_bundle::export::ExportOptions {
                     skills: skill,
                     include_mcp,
                     include_executable,
                     no_timestamp,
                 };
-                let _ = handle_structured(
-                    cli.json,
-                    root_agent_bundle::export::export_codex(&out, &opts),
-                    |m| {
-                        format!(
+                let export = match agent.as_str() {
+                    "codex" => root_agent_bundle::export::export_codex(&out, &opts),
+                    "opencode" => root_agent_bundle::export::export_opencode(&out, &opts),
+                    other => Err(unsupported_bundle_agent(other)),
+                };
+                let _ = handle_structured(cli.json, export, |m| {
+                    format!(
                             "Exported {} bundle v{} (agent {}).\nFiles: {}\nMCP disabled entries: {}\nNeeds env: {}\nNeeds approval: {}\n\n{}",
                             m.adapter,
                             m.bundle_version,
@@ -1337,8 +1371,7 @@ fn main() {
                             m.needs_approval.len(),
                             m.disclosure,
                         )
-                    },
-                );
+                });
             }
             AgentBundleSubcommands::Plan { bundle } => {
                 let res: anyhow::Result<root_agent_bundle::plan::PlanReport> = (|| {
@@ -1463,19 +1496,19 @@ fn main() {
                 );
             }
             AgentBundleSubcommands::Verify { agent } => {
-                if agent != "codex" {
-                    let error = anyhow::anyhow!(
-                        "unsupported bundle adapter '{}'. S1 supports 'codex' only (no cross-agent translation)",
-                        agent
-                    );
-                    let _ =
-                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
-                    unreachable!();
-                }
-                let res: anyhow::Result<root_agent_bundle::verify::VerifyReport> =
-                    root_agent_bundle::verify::verify_codex();
+                let (res, label) = match agent.as_str() {
+                    "codex" => (
+                        root_agent_bundle::verify::verify_codex(),
+                        "Codex verification",
+                    ),
+                    "opencode" => (
+                        root_agent_bundle::verify::verify_opencode(),
+                        "OpenCode verification",
+                    ),
+                    other => (Err(unsupported_bundle_agent(other)), "Agent verification"),
+                };
                 if let Some(report) = handle_structured(cli.json, res, |r| {
-                    let mut msg = String::from("Codex verification\n");
+                    let mut msg = format!("{}\n", label);
                     for c in &r.checks {
                         msg.push_str(&format!(
                             "  {} {}: {}\n",
@@ -1513,12 +1546,14 @@ fn main() {
                         format!("Rolled back snapshot {}.", r.snapshot_id)
                     });
             }
-            AgentBundleSubcommands::EnablePlan { server } => {
-                let _ = handle_structured(
-                    cli.json,
-                    root_agent_bundle::codex::enable_plan(&server),
-                    |r| {
-                        format!(
+            AgentBundleSubcommands::EnablePlan { agent, server } => {
+                let plan = match agent.as_str() {
+                    "codex" => root_agent_bundle::codex::enable_plan(&server),
+                    "opencode" => root_agent_bundle::opencode::enable_plan(&server),
+                    other => Err(unsupported_bundle_agent(other)),
+                };
+                let _ = handle_structured(cli.json, plan, |r| {
+                    format!(
                             "Enable plan for MCP server '{}'\nPlan hash: {}\nDescriptor sha256: {}\nNeeds env: {}",
                             r.server,
                             r.plan_hash,
@@ -1529,24 +1564,29 @@ fn main() {
                                 r.needs_env.join(", ")
                             },
                         )
-                    },
-                );
+                });
             }
             AgentBundleSubcommands::Enable {
+                agent,
                 server,
                 plan_hash,
                 approve,
             } => {
-                let _ = handle_structured(
-                    cli.json,
-                    root_agent_bundle::apply::enable_server(&server, &plan_hash, &approve),
-                    |r| {
-                        format!(
-                            "Enabled MCP server '{}'. Snapshot: {}.",
-                            server, r.snapshot_id
-                        )
-                    },
-                );
+                let enable = match agent.as_str() {
+                    "codex" => {
+                        root_agent_bundle::apply::enable_server(&server, &plan_hash, &approve)
+                    }
+                    "opencode" => root_agent_bundle::apply::enable_opencode_server(
+                        &server, &plan_hash, &approve,
+                    ),
+                    other => Err(unsupported_bundle_agent(other)),
+                };
+                let _ = handle_structured(cli.json, enable, |r| {
+                    format!(
+                        "Enabled MCP server '{}'. Snapshot: {}.",
+                        server, r.snapshot_id
+                    )
+                });
             }
             AgentBundleSubcommands::Purge { id, yes } => {
                 let _ = handle_structured(

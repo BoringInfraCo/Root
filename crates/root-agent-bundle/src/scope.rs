@@ -9,13 +9,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-/// Closed set of writable scopes for S1 (Codex-only).
+/// Closed set of writable scopes for S1/S2 (Codex + OpenCode).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
 pub enum Scope {
     /// `$CODEX_HOME` (`$CODEX_HOME` env or `~/.codex`).
     CodexHome,
+    /// OpenCode global config dir (`$OPENCODE_CONFIG_DIR`, else
+    /// `$XDG_CONFIG_HOME/opencode`, else `$HOME/.config/opencode`).
+    OpenCodeHome,
     /// `~/.agents/skills` (shared skill library).
     SharedSkills,
 }
@@ -24,6 +27,7 @@ impl Scope {
     pub fn as_str(&self) -> &'static str {
         match self {
             Scope::CodexHome => "codex_home",
+            Scope::OpenCodeHome => "opencode_home",
             Scope::SharedSkills => "shared_skills",
         }
     }
@@ -31,9 +35,10 @@ impl Scope {
     pub fn parse(s: &str) -> Result<Self> {
         match s {
             "codex_home" => Ok(Scope::CodexHome),
+            "opencode_home" => Ok(Scope::OpenCodeHome),
             "shared_skills" => Ok(Scope::SharedSkills),
             other => anyhow::bail!(
-                "unsupported bundle scope '{}'. Supported scopes: codex_home, shared_skills",
+                "unsupported bundle scope '{}'. Supported scopes: codex_home, opencode_home, shared_skills",
                 other
             ),
         }
@@ -42,7 +47,8 @@ impl Scope {
 
 /// Resolve the filesystem root for a scope.
 ///
-/// Honors `$CODEX_HOME` for `CodexHome`. Returns an error if the home
+/// Honors `$CODEX_HOME` for `CodexHome` and the OpenCode config-dir
+/// resolution order for `OpenCodeHome`. Returns an error if the home
 /// directory cannot be determined.
 pub fn scope_root(scope: Scope) -> Result<PathBuf> {
     match scope {
@@ -57,11 +63,32 @@ pub fn scope_root(scope: Scope) -> Result<PathBuf> {
             let home = dirs::home_dir().context("Could not determine home directory")?;
             Ok(home.join(".codex"))
         }
+        Scope::OpenCodeHome => opencode_config_dir(),
         Scope::SharedSkills => {
             let home = dirs::home_dir().context("Could not determine home directory")?;
             Ok(home.join(".agents").join("skills"))
         }
     }
+}
+
+/// OpenCode global config dir. Never uses macOS `dirs::config_dir()`
+/// (`~/Library/Application Support`); OpenCode uses `~/.config/opencode`.
+///
+/// Order: `$OPENCODE_CONFIG_DIR` if non-empty, else `$XDG_CONFIG_HOME/opencode`
+/// if `XDG_CONFIG_HOME` is non-empty, else `$HOME/.config/opencode`.
+pub fn opencode_config_dir() -> Result<PathBuf> {
+    if let Some(val) = std::env::var_os("OPENCODE_CONFIG_DIR") {
+        if !val.is_empty() {
+            return Ok(PathBuf::from(val));
+        }
+    }
+    if let Some(val) = std::env::var_os("XDG_CONFIG_HOME") {
+        if !val.is_empty() {
+            return Ok(PathBuf::from(val).join("opencode"));
+        }
+    }
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    Ok(home.join(".config").join("opencode"))
 }
 
 /// Validate a bundle-relative path (the `rel` half of a target).
@@ -268,9 +295,11 @@ mod tests {
     #[test]
     fn scope_parse_roundtrip() {
         assert_eq!(Scope::parse("codex_home").unwrap(), Scope::CodexHome);
+        assert_eq!(Scope::parse("opencode_home").unwrap(), Scope::OpenCodeHome);
         assert_eq!(Scope::parse("shared_skills").unwrap(), Scope::SharedSkills);
         assert!(Scope::parse("$CODEX_HOME/AGENTS.md").is_err());
         assert!(Scope::parse("codex").is_err());
+        assert!(Scope::parse("opencode").is_err());
     }
 
     #[test]

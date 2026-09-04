@@ -118,16 +118,14 @@ pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanRepor
         let _ = target;
         will_update.push(label);
     }
-    // Settings/MCP changes ride along with config.toml; surface as update when present.
+    // Settings/MCP changes ride along with the adapter config file; surface as
+    // update when present.
     if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-        let label = format!(
-            "{}:{}",
-            crate::scope::Scope::CodexHome.as_str(),
-            "config.toml"
-        );
+        let (cfg_scope, cfg_rel) = config_target_for(&manifest.adapter)?;
+        let label = format!("{}:{}", cfg_scope.as_str(), cfg_rel);
         let key = label.clone();
         if !preconditions.contains_key(&key) {
-            let (k, state) = target_precondition(crate::scope::Scope::CodexHome, "config.toml")?;
+            let (k, state) = target_precondition(cfg_scope, &cfg_rel)?;
             if state == "symlink:held" {
                 anyhow::bail!(
                     "Refusing to plan config patch through symlink target '{}'; bundle v1 rejects symlinks",
@@ -140,7 +138,7 @@ pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanRepor
             if state == "missing" {
                 will_create.push(label.clone());
             } else {
-                // Config updates are structural TOML patches. Conservatively
+                // Config updates are structural patches. Conservatively
                 // surface them even when the resulting bytes may be identical;
                 // apply revalidates this exact target precondition under lock.
                 will_update.push(label.clone());
@@ -148,14 +146,11 @@ pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanRepor
             preconditions.insert(k, state);
         }
     }
-    // config.toml change preview (read-only; values are allowlisted non-secrets).
+    // Config change preview (read-only; values are allowlisted non-secrets).
     let mut settings_changes = Vec::new();
     let mut mcp_to_add = Vec::new();
     if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-        let home = crate::scope::scope_root(crate::scope::Scope::CodexHome)?;
-        let config_path = home.join("config.toml");
-        let live_settings = crate::codex::read_allowed_settings(&config_path).unwrap_or_default();
-        let live_mcp = crate::codex::mcp_server_names(&config_path).unwrap_or_default();
+        let (live_settings, live_mcp) = live_config_preview(&manifest.adapter)?;
         for (key, new_val) in &manifest.settings {
             let new_str = new_val.as_str().unwrap_or("").to_string();
             let old = live_settings
@@ -211,6 +206,45 @@ pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanRepor
             })
             .collect(),
     })
+}
+
+fn config_target_for(adapter: &str) -> Result<(crate::scope::Scope, String)> {
+    match adapter {
+        crate::manifest::ADAPTER_ID => {
+            Ok((crate::scope::Scope::CodexHome, "config.toml".to_string()))
+        }
+        crate::manifest::OPENCODE_ADAPTER_ID => Ok((
+            crate::scope::Scope::OpenCodeHome,
+            crate::opencode::config_rel()?,
+        )),
+        other => Err(crate::manifest::unsupported_adapter_error(other)),
+    }
+}
+
+fn live_config_preview(
+    adapter: &str,
+) -> Result<(
+    std::collections::BTreeMap<String, serde_json::Value>,
+    Vec<String>,
+)> {
+    match adapter {
+        crate::manifest::ADAPTER_ID => {
+            let home = crate::scope::scope_root(crate::scope::Scope::CodexHome)?;
+            let config_path = home.join("config.toml");
+            Ok((
+                crate::codex::read_allowed_settings(&config_path).unwrap_or_default(),
+                crate::codex::mcp_server_names(&config_path).unwrap_or_default(),
+            ))
+        }
+        crate::manifest::OPENCODE_ADAPTER_ID => {
+            let config_path = crate::opencode::live_config_path()?;
+            Ok((
+                crate::opencode::read_allowed_settings(&config_path).unwrap_or_default(),
+                crate::opencode::mcp_server_names(&config_path).unwrap_or_default(),
+            ))
+        }
+        other => Err(crate::manifest::unsupported_adapter_error(other)),
+    }
 }
 
 pub fn plan_hash_for(

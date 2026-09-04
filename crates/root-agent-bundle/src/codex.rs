@@ -107,19 +107,60 @@ fn probe_version_with_timeout(
     timeout_secs: u64,
     cap_bytes: u64,
 ) -> Result<String> {
+    let probe_home = ProbeHome::create()?;
+    let text = probe_command_output(
+        binary,
+        args,
+        timeout_secs,
+        cap_bytes,
+        // Codex currently creates tmp/arg0 state even for `--version`.
+        // Never allow a read-only probe to write into the user's CODEX_HOME.
+        &[("CODEX_HOME", probe_home.path().as_os_str())],
+        "codex",
+    )?;
+    parse_codex_version(&text)
+}
+
+fn parse_codex_version(text: &str) -> Result<String> {
+    // Exact S1 syntax: `codex-cli X.Y.Z` (also tolerate the historical
+    // `codex X.Y.Z` label). Extra lines/tokens are rejected.
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    if tokens.len() != 2 || !matches!(tokens[0], "codex-cli" | "codex") {
+        anyhow::bail!("Unparseable codex --version output: '{}'", text);
+    }
+    let parts: Vec<&str> = tokens[1].split('.').collect();
+    if parts.len() != 3
+        || parts
+            .iter()
+            .any(|part| part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()))
+    {
+        anyhow::bail!("Unparseable codex --version output: '{}'", text);
+    }
+    Ok(tokens[1].to_string())
+}
+
+/// Bounded `--version` capture shared by Codex and OpenCode adapters.
+pub(crate) fn probe_command_output(
+    binary: &Path,
+    args: &[&str],
+    timeout_secs: u64,
+    cap_bytes: u64,
+    extra_env: &[(&str, &std::ffi::OsStr)],
+    label: &str,
+) -> Result<String> {
     use std::io::Read;
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
-    let probe_home = ProbeHome::create()?;
-    let mut child = std::process::Command::new(binary)
-        .args(args)
-        // Codex currently creates tmp/arg0 state even for `--version`.
-        // Never allow a read-only probe to write into the user's CODEX_HOME.
-        .env("CODEX_HOME", probe_home.path())
+    let mut cmd = std::process::Command::new(binary);
+    cmd.args(args)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    for (key, value) in extra_env {
+        cmd.env(key, value);
+    }
+    let mut child = cmd
         .spawn()
-        .context("Failed to execute codex --version")?;
+        .with_context(|| format!("Failed to execute {label} --version"))?;
     let stdout = child.stdout.take().context("Failed to capture stdout")?;
     let (output_tx, output_rx) = mpsc::sync_channel(1);
     std::thread::spawn(move || {
@@ -138,7 +179,7 @@ fn probe_version_with_timeout(
             Ok(Ok(buf)) if buf.len() as u64 > cap_bytes => {
                 let _ = child.kill();
                 let _ = child.wait();
-                anyhow::bail!("codex --version output exceeds {} bytes", cap_bytes);
+                anyhow::bail!("{label} --version output exceeds {cap_bytes} bytes");
             }
             Ok(Ok(buf)) => output = Some(buf),
             Ok(Err(e)) => {
@@ -150,7 +191,7 @@ fn probe_version_with_timeout(
             Err(mpsc::TryRecvError::Disconnected) => {
                 let _ = child.kill();
                 let _ = child.wait();
-                anyhow::bail!("Failed to read codex --version output");
+                anyhow::bail!("Failed to read {label} --version output");
             }
         }
         match child.try_wait().context("Failed to poll child")? {
@@ -162,14 +203,14 @@ fn probe_version_with_timeout(
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    anyhow::bail!("codex --version timed out after {}s", timeout_secs);
+                    anyhow::bail!("{label} --version timed out after {timeout_secs}s");
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
         }
     }
     if !status.success() {
-        anyhow::bail!("codex --version failed with status {}", status);
+        anyhow::bail!("{label} --version failed with status {status}");
     }
     let buf = match output {
         Some(buf) => buf,
@@ -178,38 +219,26 @@ fn probe_version_with_timeout(
             match output_rx.recv_timeout(remaining) {
                 Ok(Ok(buf)) => buf,
                 Ok(Err(e)) => return Err(e).context("Failed to read child output"),
-                Err(_) => anyhow::bail!("codex --version output read timed out"),
+                Err(_) => anyhow::bail!("{label} --version output read timed out"),
             }
         }
     };
     if buf.len() as u64 > cap_bytes {
-        anyhow::bail!("codex --version output exceeds {} bytes", cap_bytes);
+        anyhow::bail!("{label} --version output exceeds {cap_bytes} bytes");
     }
-    let text = String::from_utf8(buf)
-        .context("codex --version output is not valid UTF-8")?
-        .trim()
-        .to_string();
-    // Exact S1 syntax: `codex-cli X.Y.Z` (also tolerate the historical
-    // `codex X.Y.Z` label). Extra lines/tokens are rejected.
-    let tokens: Vec<&str> = text.split_whitespace().collect();
-    if tokens.len() != 2 || !matches!(tokens[0], "codex-cli" | "codex") {
-        anyhow::bail!("Unparseable codex --version output: '{}'", text);
-    }
-    let parts: Vec<&str> = tokens[1].split('.').collect();
-    if parts.len() != 3
-        || parts
-            .iter()
-            .any(|part| part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()))
-    {
-        anyhow::bail!("Unparseable codex --version output: '{}'", text);
-    }
-    Ok(tokens[1].to_string())
+    String::from_utf8(buf)
+        .with_context(|| format!("{label} --version output is not valid UTF-8"))
+        .map(|text| text.trim().to_string())
 }
 
-struct ProbeHome(PathBuf);
+pub(crate) struct ProbeHome(PathBuf);
 
 impl ProbeHome {
     fn create() -> Result<Self> {
+        Self::create_named("root-codex-version")
+    }
+
+    pub(crate) fn create_named(prefix: &str) -> Result<Self> {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT_ID: AtomicU64 = AtomicU64::new(0);
         let nonce = std::time::SystemTime::now()
@@ -219,7 +248,8 @@ impl ProbeHome {
         for _ in 0..32 {
             let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "root-codex-version-{}-{}-{}",
+                "{}-{}-{}-{}",
+                prefix,
                 std::process::id(),
                 nonce,
                 id
@@ -241,7 +271,7 @@ impl ProbeHome {
         anyhow::bail!("Failed to allocate isolated probe directory")
     }
 
-    fn path(&self) -> &Path {
+    pub(crate) fn path(&self) -> &Path {
         &self.0
     }
 }
