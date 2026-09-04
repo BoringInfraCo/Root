@@ -13,10 +13,5 @@ Docs/Release/V0_2_5_DECLARED_ENVIRONMENT_STATUS_SMOKE_TEST.md
 # Release build artifacts
 dist/
 
-# Remotion launch video
-remotion/node_modules/
-remotion/out/
-remotion/*.mp4
-remotion/*.webm
-remotion/assets/recordings/*.mp4
-remotion/assets/audio/*.mp3
+# Remotion launch videos (local only — not part of the public repo)
+remotion/
