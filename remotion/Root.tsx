@@ -6,6 +6,13 @@ import { TOTAL_DURATION, FPS, WIDTH, HEIGHT } from "./data/script";
 import { RootLaunchV2 } from "./CompositionV2";
 import { RootLaunchV2Short } from "./CompositionV2Short";
 import { V2_TOTAL_DURATION, V2_SHORT_TOTAL_DURATION } from "./data/script-v2";
+import { RootAgentBundle } from "./CompositionAgentBundle";
+import {
+  AB_TOTAL_DURATION,
+  AB_FPS,
+  AB_WIDTH,
+  AB_HEIGHT,
+} from "./data/script-agent-bundle";
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -41,6 +48,14 @@ export const RemotionRoot: React.FC = () => {
         fps={FPS}
         width={WIDTH}
         height={HEIGHT}
+      />
+      <Composition
+        id="RootAgentBundle"
+        component={RootAgentBundle}
+        durationInFrames={AB_TOTAL_DURATION}
+        fps={AB_FPS}
+        width={AB_WIDTH}
+        height={AB_HEIGHT}
       />
     </>
   );

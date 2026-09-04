@@ -1,12 +1,13 @@
 {
   "name": "root-launch-video",
   "version": "0.1.0",
-  "description": "Root v0.1.9 launch video",
+  "description": "Root launch and agent-bundle demo videos",
   "private": true,
   "type": "module",
   "scripts": {
     "studio": "remotion studio index.ts",
-    "render": "remotion render index.ts"
+    "render": "remotion render index.ts",
+    "render:agent-bundle": "remotion render index.ts RootAgentBundle out/agent-bundle.mp4"
   },
   "dependencies": {
     "@remotion/cli": "^4.0.0",
