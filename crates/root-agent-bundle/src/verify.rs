@@ -5,8 +5,11 @@
 //! `--version` probe, TOML/JSON parse checks, allowlist shape checks, hash
 //! comparisons, redacted `mcp list` names.
 
+use crate::claude::{probe_claude_version, CLAUDE_BINARY};
 use crate::codex::{find_on_path, probe_codex_version, CODEX_BINARY};
-use crate::manifest::{Manifest, SUPPORTED_CODEX_VERSIONS, SUPPORTED_OPENCODE_VERSIONS};
+use crate::manifest::{
+    Manifest, SUPPORTED_CLAUDE_VERSIONS, SUPPORTED_CODEX_VERSIONS, SUPPORTED_OPENCODE_VERSIONS,
+};
 use crate::opencode::{probe_opencode_version, OPENCODE_BINARY};
 use crate::scope::resolve_target;
 use anyhow::{Context, Result};
@@ -326,5 +329,104 @@ pub fn verify_opencode_enabled(id: &str) -> Result<()> {
             id
         );
     }
+    Ok(())
+}
+
+/// Standalone Claude verify: binary + version + strict JSON settings parse.
+pub fn verify_claude() -> Result<VerifyReport> {
+    let mut checks = Vec::new();
+    let bin = find_on_path(CLAUDE_BINARY);
+    let mut version = None;
+    match bin {
+        None => checks.push(Check {
+            name: "binary_present".to_string(),
+            passed: false,
+            detail: "claude not found on PATH".to_string(),
+        }),
+        Some(path) => {
+            checks.push(Check {
+                name: "binary_present".to_string(),
+                passed: true,
+                detail: path.display().to_string(),
+            });
+            match probe_claude_version(&path) {
+                Ok(v) => {
+                    let supported = SUPPORTED_CLAUDE_VERSIONS.contains(&v.as_str());
+                    checks.push(Check {
+                        name: "version_supported".to_string(),
+                        passed: supported,
+                        detail: format!("{} (supported: {:?})", v, SUPPORTED_CLAUDE_VERSIONS),
+                    });
+                    version = Some(v);
+                }
+                Err(e) => checks.push(Check {
+                    name: "version_supported".to_string(),
+                    passed: false,
+                    detail: format!("{}", e),
+                }),
+            }
+        }
+    }
+    let settings = crate::claude::settings_path()?;
+    if settings.exists() {
+        match crate::claude::read_allowed_settings(&settings) {
+            Ok(_) => checks.push(Check {
+                name: "config_parses".to_string(),
+                passed: true,
+                detail: "settings.json parses".to_string(),
+            }),
+            Err(e) => checks.push(Check {
+                name: "config_parses".to_string(),
+                passed: false,
+                detail: format!("settings.json parse error: {}", e),
+            }),
+        }
+    } else {
+        checks.push(Check {
+            name: "config_parses".to_string(),
+            passed: true,
+            detail: "no settings.json (absent is valid)".to_string(),
+        });
+    }
+    let success = checks.iter().all(|c| c.passed);
+    Ok(VerifyReport {
+        agent: "claude".to_string(),
+        success,
+        version,
+        checks,
+    })
+}
+
+pub fn verify_claude_applied(bundle_dir: &Path, manifest: &Manifest) -> Result<()> {
+    if !manifest.mcp.is_empty() {
+        return Err(crate::claude::mcp_apply_gated_error());
+    }
+    if !SUPPORTED_CLAUDE_VERSIONS.is_empty() {
+        let report = verify_claude()?;
+        if !report.success {
+            anyhow::bail!(
+                "verification failed: post-apply checks did not pass ({:?})",
+                report
+                    .checks
+                    .iter()
+                    .filter(|c| !c.passed)
+                    .map(|c| c.name.clone())
+                    .collect::<Vec<_>>()
+            );
+        }
+    }
+    for f in &manifest.files {
+        let target = resolve_target(f.scope, &f.rel)?;
+        let live = std::fs::read(&target)
+            .with_context(|| format!("verification failed: {} missing after apply", f.rel))?;
+        let digest = root_lockfile::compute_sha256(&live);
+        if digest != f.sha256.to_lowercase() && digest != f.sha256 {
+            anyhow::bail!(
+                "verification failed: hash mismatch for '{}' after apply",
+                f.rel
+            );
+        }
+    }
+    let _ = bundle_dir;
     Ok(())
 }

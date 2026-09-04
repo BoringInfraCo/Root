@@ -1,8 +1,9 @@
-//! Portable Agent Environments — S1 Codex + S2 OpenCode.
+//! Portable Agent Environments — S1 Codex + S2 OpenCode + S3 Claude.
 //!
 //! Explicit bundle transfer only (NOT Root restore; no Rootfile/lock
-//! integration). Same-agent (Codex → Codex, OpenCode → OpenCode),
-//! macOS/Linux, exact live-tested versions only. No cross-agent translation.
+//! integration). Same-agent only, macOS/Linux, exact live-tested versions.
+//! No cross-agent translation. Claude MCP is held in v0.4.1 on Claude Code
+//! 2.1.260 (no disable-until-enable; nonempty `mcp` is invalid).
 //!
 //! Security contract (bundle v1):
 //! - Manifest (`manifest.json`) + content-addressed blobs (`blobs/<sha256>`).
@@ -20,6 +21,7 @@
 
 pub mod apply;
 pub mod blob;
+pub mod claude;
 pub mod codex;
 pub mod export;
 pub mod journal;
@@ -32,6 +34,7 @@ pub mod snapshot;
 pub mod verify;
 
 pub use manifest::{
-    ADAPTER_ID, ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, OPENCODE_ADAPTER_ID, SECRET_DISCLOSURE,
-    SUPPORTED_CODEX_VERSIONS, SUPPORTED_OPENCODE_VERSIONS,
+    ADAPTER_ID, ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, CLAUDE_ADAPTER_ID, OPENCODE_ADAPTER_ID,
+    SECRET_DISCLOSURE, SUPPORTED_CLAUDE_VERSIONS, SUPPORTED_CODEX_VERSIONS,
+    SUPPORTED_OPENCODE_VERSIONS,
 };

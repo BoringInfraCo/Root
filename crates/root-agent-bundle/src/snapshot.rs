@@ -44,7 +44,9 @@ pub struct SnapshotEntry {
 }
 
 fn valid_snapshot_agent(agent: &str) -> bool {
-    agent == crate::manifest::ADAPTER_ID || agent == crate::manifest::OPENCODE_ADAPTER_ID
+    agent == crate::manifest::ADAPTER_ID
+        || agent == crate::manifest::OPENCODE_ADAPTER_ID
+        || agent == crate::manifest::CLAUDE_ADAPTER_ID
 }
 
 /// Snapshot id rules: `asnap_` prefix, bounded, no separators/traversal.
@@ -165,7 +167,7 @@ fn validate_snapshot(snap: &AgentSnapshot, directory_id: &str) -> Result<()> {
     }
     if !valid_snapshot_agent(&snap.agent) {
         anyhow::bail!(
-            "unsupported snapshot agent '{}': expected codex or opencode",
+            "unsupported snapshot agent '{}': expected codex, opencode, or claude",
             snap.agent
         );
     }
@@ -354,7 +356,7 @@ pub fn take_snapshot(
 ) -> Result<AgentSnapshot> {
     if !valid_snapshot_agent(agent) {
         anyhow::bail!(
-            "unsupported snapshot agent '{}': expected codex or opencode",
+            "unsupported snapshot agent '{}': expected codex, opencode, or claude",
             agent
         );
     }

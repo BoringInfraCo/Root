@@ -12,6 +12,7 @@ use std::path::Path;
 pub const BUNDLE_VERSION: u32 = 1;
 pub const ADAPTER_ID: &str = "codex";
 pub const OPENCODE_ADAPTER_ID: &str = "opencode";
+pub const CLAUDE_ADAPTER_ID: &str = "claude";
 pub const ADAPTER_SCHEMA_VERSION: u32 = 1;
 
 /// Exact live-tested Codex versions for S1. Expanded only after evidence.
@@ -20,9 +21,12 @@ pub const SUPPORTED_CODEX_VERSIONS: &[&str] = &["0.150.1"];
 /// Exact live-tested OpenCode versions for S2. Expanded only after evidence.
 pub const SUPPORTED_OPENCODE_VERSIONS: &[&str] = &["1.18.27"];
 
+/// Exact live-tested Claude Code versions for S3. Expanded only after evidence.
+pub const SUPPORTED_CLAUDE_VERSIONS: &[&str] = &["2.1.260"];
+
 pub fn unsupported_adapter_error(adapter: &str) -> anyhow::Error {
     anyhow::anyhow!(
-        "unsupported bundle adapter '{}'. S2 supports 'codex' and 'opencode' only (no cross-agent translation)",
+        "unsupported bundle adapter '{}'. S3 supports 'codex', 'opencode', and 'claude' only (no cross-agent translation)",
         adapter
     )
 }
@@ -31,6 +35,7 @@ pub fn supported_versions_for(adapter: &str) -> Result<&'static [&'static str]> 
     match adapter {
         ADAPTER_ID => Ok(SUPPORTED_CODEX_VERSIONS),
         OPENCODE_ADAPTER_ID => Ok(SUPPORTED_OPENCODE_VERSIONS),
+        CLAUDE_ADAPTER_ID => Ok(SUPPORTED_CLAUDE_VERSIONS),
         other => Err(unsupported_adapter_error(other)),
     }
 }
@@ -39,6 +44,10 @@ pub fn mcp_approval_target(adapter: &str, id: &str) -> Result<(Scope, String)> {
     match adapter {
         ADAPTER_ID => Ok((Scope::CodexHome, format!("config.toml#mcp_servers.{}", id))),
         OPENCODE_ADAPTER_ID => Ok((Scope::OpenCodeHome, format!("opencode.json#mcp.{}", id))),
+        CLAUDE_ADAPTER_ID => Ok((
+            Scope::ClaudeGlobalState,
+            format!(".claude.json#mcpServers.{}", id),
+        )),
         other => Err(unsupported_adapter_error(other)),
     }
 }
@@ -47,6 +56,7 @@ pub fn allowed_settings_for(adapter: &str) -> Result<&'static [&'static str]> {
     match adapter {
         ADAPTER_ID => Ok(crate::codex::ALLOWED_SETTINGS),
         OPENCODE_ADAPTER_ID => Ok(crate::opencode::ALLOWED_SETTINGS),
+        CLAUDE_ADAPTER_ID => Ok(crate::claude::ALLOWED_SETTINGS),
         other => Err(unsupported_adapter_error(other)),
     }
 }
@@ -197,6 +207,9 @@ impl Manifest {
                 supported_versions
             );
         }
+        if self.adapter == CLAUDE_ADAPTER_ID && !self.mcp.is_empty() {
+            anyhow::bail!("{}", crate::claude::CLAUDE_MCP_HELD_ERROR);
+        }
         if self.files.len() > MAX_FILES {
             anyhow::bail!(
                 "invalid bundle: {} files exceeds limit of {}",
@@ -239,14 +252,24 @@ impl Manifest {
                 );
             }
             match (self.adapter.as_str(), f.scope) {
-                (ADAPTER_ID, Scope::OpenCodeHome) => {
+                (ADAPTER_ID, Scope::OpenCodeHome)
+                | (ADAPTER_ID, Scope::ClaudeHome)
+                | (ADAPTER_ID, Scope::ClaudeGlobalState) => {
                     anyhow::bail!(
-                        "invalid bundle: Codex bundles must not contain OpenCodeHome files"
+                        "invalid bundle: Codex bundles must not contain OpenCode or Claude files"
                     );
                 }
-                (OPENCODE_ADAPTER_ID, Scope::CodexHome) => {
+                (OPENCODE_ADAPTER_ID, Scope::CodexHome)
+                | (OPENCODE_ADAPTER_ID, Scope::ClaudeHome)
+                | (OPENCODE_ADAPTER_ID, Scope::ClaudeGlobalState) => {
                     anyhow::bail!(
-                        "invalid bundle: OpenCode bundles must not contain CodexHome files"
+                        "invalid bundle: OpenCode bundles must not contain Codex or Claude files"
+                    );
+                }
+                (CLAUDE_ADAPTER_ID, Scope::CodexHome)
+                | (CLAUDE_ADAPTER_ID, Scope::OpenCodeHome) => {
+                    anyhow::bail!(
+                        "invalid bundle: Claude bundles must not contain Codex or OpenCode files"
                     );
                 }
                 _ => {}
@@ -511,6 +534,23 @@ pub fn valid_mcp_server_id(id: &str) -> bool {
 pub(crate) fn valid_bundle_file_target(scope: Scope, rel: &str) -> bool {
     match scope {
         Scope::CodexHome => rel == "AGENTS.md",
+        Scope::ClaudeHome => {
+            if rel == "CLAUDE.md" {
+                return true;
+            }
+            let mut parts = rel.split('/');
+            let Some("skills") = parts.next() else {
+                return false;
+            };
+            let Some(skill) = parts.next() else {
+                return false;
+            };
+            let Some(_) = parts.next() else {
+                return false;
+            };
+            valid_skill_component(skill)
+        }
+        Scope::ClaudeGlobalState => false,
         Scope::OpenCodeHome => {
             if rel == "AGENTS.md" {
                 return true;
@@ -773,11 +813,44 @@ mod tests {
         m.bundle_version = 2;
         assert!(m.validate().is_err());
         let mut m = minimal_manifest();
-        m.adapter = "claude".to_string();
+        m.adapter = "gemini".to_string();
         assert!(m.validate().is_err());
+        let claude = Manifest::new_for(CLAUDE_ADAPTER_ID, "2.1.260".to_string(), None);
+        claude.validate().unwrap();
+        let claude_other = Manifest::new_for(CLAUDE_ADAPTER_ID, "2.1.259".to_string(), None);
+        assert!(claude_other.validate().is_err());
         let mut m = minimal_manifest();
         m.source_agent_version = "0.153.0".to_string();
         assert!(m.validate().is_err());
+    }
+
+    #[test]
+    fn claude_nonempty_mcp_is_invalid() {
+        let mut m = Manifest::new_for(CLAUDE_ADAPTER_ID, "2.1.260".to_string(), None);
+        m.validate().unwrap();
+        let command = vec!["npx".to_string()];
+        let hash = mcp_command_hash(&command, &[], &None, &[]);
+        m.mcp.insert(
+            "github".to_string(),
+            McpEntry {
+                transport: "stdio".to_string(),
+                enabled: false,
+                needs_env: vec![],
+                command_sha256: Some(hash.clone()),
+                command,
+                args: vec![],
+                cwd: None,
+                env_keys: vec![],
+            },
+        );
+        m.needs_approval.push(NeedsApproval {
+            scope: Scope::ClaudeGlobalState,
+            rel: ".claude.json#mcpServers.github".to_string(),
+            sha256: hash,
+            reason: "MCP".to_string(),
+        });
+        let err = m.validate().unwrap_err().to_string();
+        assert_eq!(err, crate::claude::CLAUDE_MCP_HELD_ERROR);
     }
 
     fn opencode_manifest() -> Manifest {
@@ -831,6 +904,28 @@ mod tests {
             "skills/Docs-writer/SKILL.md"
         ));
         assert!(!valid_bundle_file_target(Scope::CodexHome, "skills/x/y"));
+        assert!(valid_bundle_file_target(Scope::ClaudeHome, "CLAUDE.md"));
+        assert!(valid_bundle_file_target(
+            Scope::ClaudeHome,
+            "skills/docs-writer/SKILL.md"
+        ));
+        assert!(!valid_bundle_file_target(
+            Scope::ClaudeHome,
+            "settings.json"
+        ));
+        assert!(!valid_bundle_file_target(Scope::ClaudeHome, ".claude.json"));
+        assert!(!valid_bundle_file_target(
+            Scope::ClaudeHome,
+            "../.claude.json"
+        ));
+        assert!(!valid_bundle_file_target(
+            Scope::ClaudeGlobalState,
+            ".claude.json"
+        ));
+        assert!(!valid_bundle_file_target(
+            Scope::ClaudeGlobalState,
+            "CLAUDE.md"
+        ));
 
         let mut ok = opencode_manifest();
         ok.files.push(BundleFile {

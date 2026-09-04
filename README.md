@@ -1,4 +1,4 @@
-# Root v0.4.0
+# Root v0.4.1
 
 > A curated package manager for developer CLI tools, backed by Nix.
 
@@ -7,6 +7,34 @@ undo it — without needing to learn Nix.
 
 [![CI](https://github.com/sgr0691/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/sgr0691/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+## What v0.4.1 Changed
+
+v0.4.1 is a **patch** on the Portable Agent-Bundle release. It adds a
+Claude S3 adapter to `root agent-bundle`.
+
+- **Claude S3** — exact version gate **2.1.260**. Never relaxed.
+  `inspect` / `export` / `plan` / `apply` / `verify` / `rollback` /
+  `purge` transfer a held subset only. This is still **not**
+  `root restore`, **not** Rootfile, and **not** `root.lock`. Lock schema
+  is unchanged (package-only emit 2; max supported 3).
+- **Allowlist** — `CLAUDE.md` and `settings.json` `model` only. Unknown
+  target keys are preserved. Skills: native `~/.claude/skills`, then
+  SharedSkills `~/.agents/skills`. Executables need
+  `--include-executable` plus apply `--approve`.
+- **Claude MCP is held.** Sentinel evidence on 2.1.260: no disable
+  mapping prevented process launch from two working directories. Do not
+  claim disable-until-enable for Claude. Stable error:
+  `unsupported in v0.4.1 on Claude Code 2.1.260; MCP is held.`
+  `--include-mcp`, `enable-plan --agent claude`, and
+  `enable --agent claude` return that error.
+- **No `.claude.json` mutation.** Apply never reads, writes, or
+  snapshots `.claude.json`. When `CLAUDE_CONFIG_DIR` is set, that file
+  lives inside the dir; when unset, it is the sibling `$HOME/.claude.json`.
+- **Stop Claude** before apply/rollback of `settings.json`.
+- **Isolation** — `HOME`, `CLAUDE_CONFIG_DIR`, `ROOT_DIR`, `TMPDIR`.
+- Codex **0.150.1** and OpenCode **1.18.27** are unchanged, including
+  MCP disable-until-enable on those adapters.
 
 ## What v0.4.0 Changed
 
@@ -292,7 +320,7 @@ All commands support `--json` for structured output (useful for scripting).
 | `root sandbox list` | List all Root-managed sandboxes |
 | `root sandbox destroy <id>` | Destroy a Root-managed sandbox |
 | `root models pull [name]` | Pull missing declared models by tag and write a v3 verification record |
-| `root agent-bundle inspect --agent <codex or opencode>` | Read-only inspect of local Codex or OpenCode working config |
+| `root agent-bundle inspect --agent <codex, opencode, or claude>` | Read-only inspect of local Codex, OpenCode, or Claude working config |
 | `root agent-bundle export --agent <id> --out <dir>` | Export a versioned bundle (`manifest.json` + `blobs/`) |
 | `root agent-bundle plan --bundle <dir>` | Preview apply (plan hash; no writes) |
 | `root agent-bundle apply --bundle <dir> --apply --plan-hash <h> --approve <sha>` | Apply a reviewed bundle (MCP imported disabled) |
@@ -512,7 +540,7 @@ and `root run <task-name>` to execute a task in the Root-managed environment.
 | **Event ledger** | JSONL file at `~/.root/events.jsonl` — an append-only audit trail of every operation |
 | **Mutation lock** | File at `~/.root/root.lockfile` — a process-level mutex preventing concurrent mutations |
 | **Profile** | Nix profile at `~/.root/profiles/default` — an isolated Nix profile for Root-managed binaries |
-| **agent-bundle** | Explicit Codex/OpenCode working-config transfer (`root agent-bundle`). Not `root restore`, not Rootfile, not `root.lock`. |
+| **agent-bundle** | Explicit Codex/OpenCode/Claude working-config transfer (`root agent-bundle`). Not `root restore`, not Rootfile, not `root.lock`. |
 
 ### How It Works
 
@@ -524,7 +552,7 @@ contain the full deterministic lock state. The event ledger at
 `~/.root/events.jsonl` records every operation. Verification checks binaries
 from the Root-managed profile, not from PATH.
 
-## Limitations (v0.4.0)
+## Limitations (v0.4.1)
 
 - **Curated catalog only.** Root supports a curated catalog only — 42 packages
   across eleven categories. Arbitrary `root install <anything>` is not yet
@@ -545,14 +573,26 @@ from the Root-managed profile, not from PATH.
   install agents or migrate credentials.
 - **`root agent-bundle` is explicit transfer only.** It is not `root restore`
   and does not read Rootfile `[agents]` or write `root.lock`. Same-agent only
-  (Codex → Codex, OpenCode → OpenCode); no cross-agent translation.
-- **MCP stays disabled until enable.** Apply imports MCP declarations with
-  `enabled = false`. Enable requires namespaced provenance (`codex:id` /
-  `opencode:id`), a current plan hash, per-item `--approve`, and env-var
-  presence. Dummy tokens must never persist in config, journal, snapshots, or
-  the bundle.
-- **Exact agent version gates.** Codex **0.150.1** and OpenCode **1.18.27**
-  only. Other versions are refused. The gates are never relaxed in v0.4.0.
+  (Codex → Codex, OpenCode → OpenCode, Claude → Claude); no cross-agent
+  translation.
+- **MCP stays disabled until enable (Codex and OpenCode).** Apply imports MCP
+  declarations with `enabled = false`. Enable requires namespaced provenance
+  (`codex:id` / `opencode:id`), a current plan hash, per-item `--approve`,
+  and env-var presence. Dummy tokens must never persist in config, journal,
+  snapshots, or the bundle.
+- **Claude MCP is held.** On Claude Code **2.1.260**, no disable mapping
+  prevented process launch from two working directories (`mcp list`/`get`
+  and `claude -p`). Do not claim disable-until-enable for Claude. Export
+  `--include-mcp`, `enable-plan --agent claude`, and `enable --agent claude`
+  return the stable error `unsupported in v0.4.1 on Claude Code 2.1.260; MCP is held.`
+- **Apply does not touch `.claude.json`.** Claude apply never reads, writes,
+  or snapshots `.claude.json`. Allowlist is `CLAUDE.md` and `settings.json`
+  `model` only (unknown target keys preserved).
+- **Stop Claude during apply/rollback.** Stop a running Claude process
+  before apply or rollback of `settings.json`.
+- **Exact agent version gates.** Codex **0.150.1**, OpenCode **1.18.27**, and
+  Claude Code **2.1.260** only. Other versions are refused. The gates are
+  never relaxed in v0.4.1.
 - **No credential or session transfer.** Bundles exclude known secret
   locations (`auth.json`, sessions, sqlite, `mcp-auth.json`). Selected
   prompt/skill files are copied verbatim and may contain unrecognized secrets.
@@ -597,7 +637,7 @@ from the Root-managed profile, not from PATH.
 
 ## Experimental Commands
 
-The CLI includes additional commands that are **not part of the v0.4.0 public
+The CLI includes additional commands that are **not part of the v0.4.1 public
 surface**. They may change, break, or be removed without notice:
 
 | Command | Status |
@@ -609,7 +649,7 @@ production use.
 
 ## Roadmap
 
-- **v0.4.x** — Harden explicit `root agent-bundle` transfer (Codex / OpenCode)
+- **v0.4.x** — Harden explicit `root agent-bundle` transfer (Codex / OpenCode / Claude)
 - **Later** — AI-native manifests, residency policies, and explainable routing
 
 See [Docs](Docs/) for the full plan.

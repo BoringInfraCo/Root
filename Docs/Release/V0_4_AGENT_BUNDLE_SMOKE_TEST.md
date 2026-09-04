@@ -1,5 +1,10 @@
 # Root v0.4.0 Agent-Bundle Smoke Test
 
+> **v0.4.1 note:** After the v0.4.1 release, `root --version` reports
+> `root 0.4.1`. The Codex and OpenCode smoke path in this document is
+> unchanged. Claude is a separate v0.4.1 smoke:
+> [`V0_4_1_CLAUDE_SMOKE_TEST.md`](V0_4_1_CLAUDE_SMOKE_TEST.md).
+
 Manual release validation for explicit portable agent-bundle transfer:
 inspect, export, plan, apply (MCP disabled), verify, enable-plan, enable
 (per-item `--approve` + env presence), verify enabled, byte-identical

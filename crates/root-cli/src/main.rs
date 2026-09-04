@@ -161,13 +161,13 @@ enum ModelsSubcommands {
 enum AgentBundleSubcommands {
     /// Read-only inspection of the local Codex or OpenCode configuration (no writes)
     Inspect {
-        /// Agent id (S2 supports `codex` and `opencode`)
+        /// Agent id (S3 supports `codex`, `opencode`, and `claude`)
         #[arg(long, default_value = "codex")]
         agent: String,
     },
     /// Export a versioned bundle directory (manifest.json + blobs/)
     Export {
-        /// Agent id (S2 supports `codex` and `opencode`)
+        /// Agent id (S3 supports `codex`, `opencode`, and `claude`)
         #[arg(long, default_value = "codex")]
         agent: String,
         /// Output bundle directory (must not exist)
@@ -209,7 +209,7 @@ enum AgentBundleSubcommands {
     },
     /// Post-apply verification (read-only, secret-safe)
     Verify {
-        /// Agent id (S2 supports `codex` and `opencode`)
+        /// Agent id (S3 supports `codex`, `opencode`, and `claude`)
         #[arg(long, default_value = "codex")]
         agent: String,
     },
@@ -220,7 +220,7 @@ enum AgentBundleSubcommands {
     },
     /// Preview enabling an MCP server (read-only enable plan + descriptor hash)
     EnablePlan {
-        /// Agent id (S2 supports `codex` and `opencode`)
+        /// Agent id (S3 supports `codex`, `opencode`, and `claude`)
         #[arg(long, default_value = "codex")]
         agent: String,
         /// MCP server id
@@ -229,7 +229,7 @@ enum AgentBundleSubcommands {
     },
     /// Enable a previously applied (disabled) MCP server (protected mutation)
     Enable {
-        /// Agent id (S2 supports `codex` and `opencode`)
+        /// Agent id (S3 supports `codex`, `opencode`, and `claude`)
         #[arg(long, default_value = "codex")]
         agent: String,
         /// MCP server id
@@ -432,7 +432,7 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
 
 fn unsupported_bundle_agent(agent: &str) -> anyhow::Error {
     anyhow::anyhow!(
-        "unsupported bundle adapter '{}'. S2 supports 'codex' and 'opencode' only (no cross-agent translation)",
+        "unsupported bundle adapter '{}'. S3 supports 'codex', 'opencode', and 'claude' only (no cross-agent translation)",
         agent
     )
 }
@@ -1327,6 +1327,34 @@ fn main() {
                         },
                     );
                 }
+                "claude" => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_agent_bundle::claude::inspect(),
+                        |r| {
+                            format!(
+                            "Claude present: {}\nVersion: {}\nSupported: {}\nConfig dir: {}\nGlobal state dir: {}\nsettings.json: {}\nCLAUDE.md: {}\nSkills: {}\nMCP servers (held): {}",
+                            r.present,
+                            r.version.as_deref().unwrap_or("(absent)"),
+                            r.version_supported,
+                            r.config_dir,
+                            r.global_state_dir,
+                            r.settings_present,
+                            r.claude_md_present,
+                            if r.skills.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.skills.join(", ")
+                            },
+                            if r.mcp_servers.is_empty() {
+                                "(none)".to_string()
+                            } else {
+                                r.mcp_servers.join(", ")
+                            },
+                        )
+                        },
+                    );
+                }
                 other => {
                     let _ = handle_structured::<GenericOutput>(
                         cli.json,
@@ -1353,6 +1381,7 @@ fn main() {
                 let export = match agent.as_str() {
                     "codex" => root_agent_bundle::export::export_codex(&out, &opts),
                     "opencode" => root_agent_bundle::export::export_opencode(&out, &opts),
+                    "claude" => root_agent_bundle::export::export_claude(&out, &opts),
                     other => Err(unsupported_bundle_agent(other)),
                 };
                 let _ = handle_structured(cli.json, export, |m| {
@@ -1505,6 +1534,10 @@ fn main() {
                         root_agent_bundle::verify::verify_opencode(),
                         "OpenCode verification",
                     ),
+                    "claude" => (
+                        root_agent_bundle::verify::verify_claude(),
+                        "Claude verification",
+                    ),
                     other => (Err(unsupported_bundle_agent(other)), "Agent verification"),
                 };
                 if let Some(report) = handle_structured(cli.json, res, |r| {
@@ -1550,6 +1583,7 @@ fn main() {
                 let plan = match agent.as_str() {
                     "codex" => root_agent_bundle::codex::enable_plan(&server),
                     "opencode" => root_agent_bundle::opencode::enable_plan(&server),
+                    "claude" => Err(root_agent_bundle::claude::claude_mcp_held_error()),
                     other => Err(unsupported_bundle_agent(other)),
                 };
                 let _ = handle_structured(cli.json, plan, |r| {
@@ -1579,6 +1613,7 @@ fn main() {
                     "opencode" => root_agent_bundle::apply::enable_opencode_server(
                         &server, &plan_hash, &approve,
                     ),
+                    "claude" => Err(root_agent_bundle::claude::claude_mcp_held_error()),
                     other => Err(unsupported_bundle_agent(other)),
                 };
                 let _ = handle_structured(cli.json, enable, |r| {

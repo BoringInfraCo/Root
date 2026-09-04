@@ -5,6 +5,35 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-03
+
+v0.4.1 is a patch on the Portable Agent-Bundle release. It adds a Claude S3 adapter to `root agent-bundle`. It is **not** `root restore`, **not** Rootfile, and **not** `root.lock` integration. Lock schema remains package-only emit 2 / max supported 3.
+
+### Added
+
+- **Claude S3 adapter.** Exact version gate **2.1.260**. Never relaxed. `--agent claude` on `inspect`, `export`, `plan`, `apply`, `verify`, `rollback --last`, and `purge --yes`.
+- **Held-subset transfer.** Allowlist is `CLAUDE.md` and `settings.json` `model` only (unknown target keys preserved). Skills: native `~/.claude/skills` first, then SharedSkills `~/.agents/skills`. Executables require `--include-executable` plus apply `--approve`.
+- **Two Claude scopes.** `claude_home` and `claude_global_state` (serde names match `as_str`). When `CLAUDE_CONFIG_DIR` is set, `.claude.json` lives inside that dir; when unset, sibling `$HOME/.claude.json`.
+
+### Changed
+
+- Apply config patch is multi-file. Codex (S1) and OpenCode (S2) still write one config file. Claude patches `settings.json` only in this release (MCP is held, so `.claude.json` is never a live apply target).
+- README documents Claude as a v0.4.1 public `root agent-bundle` adapter. Historical "What vX.Y.Z Changed" notes are unchanged.
+
+### Notes
+
+- **Claude MCP is held.** Sentinel evidence on Claude Code 2.1.260: no disable mapping prevented process launch from two working directories (`mcp list`/`get` and `claude -p`). Do not claim disable-until-enable for Claude. Stable error: `unsupported in v0.4.1 on Claude Code 2.1.260; MCP is held.`
+- `--include-mcp` on Claude export, `enable-plan --agent claude`, and `enable --agent claude` return that same held error. Bundles with nonempty `mcp` are invalid before plan, lock, or snapshot.
+- Apply never reads, writes, or snapshots `.claude.json`.
+- Isolation: `HOME`, `CLAUDE_CONFIG_DIR`, `ROOT_DIR`, `TMPDIR`.
+- Stop a running Claude process before apply/rollback of `settings.json`.
+- Codex **0.150.1** and OpenCode **1.18.27** gates are unchanged. Those adapters keep MCP disable-until-enable.
+- See `Docs/Release/V0_4_1_CLAUDE_SMOKE_TEST.md`.
+
+### Tests Added
+
+- Claude S3 hermetic tests: inspect isolation (`CLAUDE_CONFIG_DIR`), export allowlist/`model`-only settings, `--include-mcp` refusal with the stable held error, hash-bound apply of settings + native/shared skills, unknown `settings.json` keys preserved, `.claude.json` unchanged and not snapshotted, byte-identical rollback with skill tombstones, FIFO/symlink rejection, unsupported version `2.1.259` refused, gated export/apply/enable errors identical.
+
 ## [0.4.0] - 2026-09-03
 
 v0.4.0 is explicit portable agent-bundle transfer. It is **not** `root restore`, **not** Rootfile, and **not** `root.lock` integration. Lock schema remains package-only emit 2 / max supported 3.

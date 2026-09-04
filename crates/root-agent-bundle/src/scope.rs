@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::{Component, Path, PathBuf};
 
-/// Closed set of writable scopes for S1/S2 (Codex + OpenCode).
+/// Closed set of writable scopes for S1/S2/S3 (Codex + OpenCode + Claude).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[serde(deny_unknown_fields)]
@@ -19,6 +19,13 @@ pub enum Scope {
     /// OpenCode global config dir (`$OPENCODE_CONFIG_DIR`, else
     /// `$XDG_CONFIG_HOME/opencode`, else `$HOME/.config/opencode`).
     OpenCodeHome,
+    /// Claude config dir (`$CLAUDE_CONFIG_DIR` if set, else `~/.claude`).
+    /// `as_str` and serde are both `claude_home`.
+    ClaudeHome,
+    /// Directory that contains `.claude.json`: `$CLAUDE_CONFIG_DIR` if set,
+    /// else `$HOME`. Allowed rel is `.claude.json` only. Never `../.claude.json`
+    /// from `ClaudeHome`.
+    ClaudeGlobalState,
     /// `~/.agents/skills` (shared skill library).
     SharedSkills,
 }
@@ -28,6 +35,8 @@ impl Scope {
         match self {
             Scope::CodexHome => "codex_home",
             Scope::OpenCodeHome => "opencode_home",
+            Scope::ClaudeHome => "claude_home",
+            Scope::ClaudeGlobalState => "claude_global_state",
             Scope::SharedSkills => "shared_skills",
         }
     }
@@ -36,9 +45,11 @@ impl Scope {
         match s {
             "codex_home" => Ok(Scope::CodexHome),
             "opencode_home" => Ok(Scope::OpenCodeHome),
+            "claude_home" => Ok(Scope::ClaudeHome),
+            "claude_global_state" => Ok(Scope::ClaudeGlobalState),
             "shared_skills" => Ok(Scope::SharedSkills),
             other => anyhow::bail!(
-                "unsupported bundle scope '{}'. Supported scopes: codex_home, opencode_home, shared_skills",
+                "unsupported bundle scope '{}'. Supported scopes: codex_home, opencode_home, claude_home, claude_global_state, shared_skills",
                 other
             ),
         }
@@ -64,6 +75,8 @@ pub fn scope_root(scope: Scope) -> Result<PathBuf> {
             Ok(home.join(".codex"))
         }
         Scope::OpenCodeHome => opencode_config_dir(),
+        Scope::ClaudeHome => claude_config_dir(),
+        Scope::ClaudeGlobalState => claude_global_state_dir(),
         Scope::SharedSkills => {
             let home = dirs::home_dir().context("Could not determine home directory")?;
             Ok(home.join(".agents").join("skills"))
@@ -89,6 +102,37 @@ pub fn opencode_config_dir() -> Result<PathBuf> {
     }
     let home = dirs::home_dir().context("Could not determine home directory")?;
     Ok(home.join(".config").join("opencode"))
+}
+
+/// Claude Code config dir. Never uses macOS `dirs::config_dir()`.
+///
+/// `$CLAUDE_CONFIG_DIR` if non-empty, else `$HOME/.claude`.
+pub fn claude_config_dir() -> Result<PathBuf> {
+    if let Some(val) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        if !val.is_empty() {
+            return Ok(PathBuf::from(val));
+        }
+    }
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    Ok(home.join(".claude"))
+}
+
+/// Directory that contains `.claude.json`.
+///
+/// `$CLAUDE_CONFIG_DIR` if non-empty (file lives inside that dir), else `$HOME`
+/// (default sibling `~/.claude.json`).
+///
+/// Live-tested on Claude Code 2.1.260: with `CLAUDE_CONFIG_DIR` set, `claude mcp
+/// list` writes `$CLAUDE_CONFIG_DIR/.claude.json` and not `$HOME/.claude.json`.
+/// With it unset, it writes `$HOME/.claude.json` and not
+/// `$HOME/.claude/.claude.json`. `claude --version` writes no config files.
+pub fn claude_global_state_dir() -> Result<PathBuf> {
+    if let Some(val) = std::env::var_os("CLAUDE_CONFIG_DIR") {
+        if !val.is_empty() {
+            return Ok(PathBuf::from(val));
+        }
+    }
+    dirs::home_dir().context("Could not determine home directory")
 }
 
 /// Validate a bundle-relative path (the `rel` half of a target).
@@ -296,10 +340,40 @@ mod tests {
     fn scope_parse_roundtrip() {
         assert_eq!(Scope::parse("codex_home").unwrap(), Scope::CodexHome);
         assert_eq!(Scope::parse("opencode_home").unwrap(), Scope::OpenCodeHome);
+        assert_eq!(Scope::parse("claude_home").unwrap(), Scope::ClaudeHome);
+        assert_eq!(
+            Scope::parse("claude_global_state").unwrap(),
+            Scope::ClaudeGlobalState
+        );
         assert_eq!(Scope::parse("shared_skills").unwrap(), Scope::SharedSkills);
+        assert_eq!(Scope::ClaudeHome.as_str(), "claude_home");
+        assert_eq!(Scope::ClaudeGlobalState.as_str(), "claude_global_state");
+        let home_json = serde_json::to_string(&Scope::ClaudeHome).unwrap();
+        let state_json = serde_json::to_string(&Scope::ClaudeGlobalState).unwrap();
+        assert_eq!(home_json, "\"claude_home\"");
+        assert_eq!(state_json, "\"claude_global_state\"");
         assert!(Scope::parse("$CODEX_HOME/AGENTS.md").is_err());
         assert!(Scope::parse("codex").is_err());
         assert!(Scope::parse("opencode").is_err());
+        assert!(Scope::parse("claude").is_err());
+    }
+
+    #[test]
+    fn claude_dirs_follow_claude_config_dir_or_default_home() {
+        let tmp = unique_tmp("claude_dirs");
+        let isolated = tmp.join("cfg");
+        std::fs::create_dir_all(&isolated).unwrap();
+        let saved = std::env::var_os("CLAUDE_CONFIG_DIR");
+        std::env::set_var("CLAUDE_CONFIG_DIR", &isolated);
+        let home = claude_config_dir().unwrap();
+        let state = claude_global_state_dir().unwrap();
+        assert_eq!(home, isolated);
+        assert_eq!(state, isolated);
+        match saved {
+            Some(v) => std::env::set_var("CLAUDE_CONFIG_DIR", v),
+            None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
@@ -317,9 +391,18 @@ mod tests {
         ] {
             assert!(validate_rel(bad).is_err(), "should reject '{}'", bad);
         }
-        for good in ["AGENTS.md", "skills/foo/SKILL.md", "a/b/c.txt"] {
+        for good in [
+            "AGENTS.md",
+            "skills/foo/SKILL.md",
+            "a/b/c.txt",
+            ".claude.json",
+            "settings.json",
+            "CLAUDE.md",
+        ] {
             assert!(validate_rel(good).is_ok(), "should accept '{}'", good);
         }
+        assert!(validate_rel("../.claude.json").is_err());
+        assert!(validate_rel("$CLAUDE_CONFIG_DIR/settings.json").is_err());
     }
 
     #[test]

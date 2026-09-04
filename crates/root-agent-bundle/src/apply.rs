@@ -12,7 +12,7 @@ use crate::journal::{
 };
 use crate::lock::GlobalMutationLock;
 use crate::manifest::{
-    load_bundle, manifest_hash, unsupported_adapter_error, Manifest, ADAPTER_ID,
+    load_bundle, manifest_hash, unsupported_adapter_error, Manifest, ADAPTER_ID, CLAUDE_ADAPTER_ID,
     OPENCODE_ADAPTER_ID,
 };
 use crate::plan::{compute_plan, plan_hash_for};
@@ -124,8 +124,7 @@ pub fn apply_bundle(
         .iter()
         .map(|f| (f.scope, f.rel.clone()))
         .collect();
-    if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-        let cfg = config_snap_target(&manifest)?;
+    for cfg in crate::plan::config_targets_for(&manifest.adapter, &manifest)? {
         if !snap_targets.contains(&cfg) {
             snap_targets.push(cfg);
         }
@@ -174,11 +173,14 @@ pub fn apply_bundle(
             write_journal(&journal)?;
             applied.push(label);
         }
-        // 2. Config patch (settings + MCP disabled).
+        // 2. Config patch (settings + MCP disabled). One or more files.
         let mut mcp_imported = Vec::new();
-        if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-            let (cfg_scope, cfg_rel) = config_snap_target(&manifest)?;
-            let prepared = prepare_adapter_config(&manifest)?;
+        let prepared_configs = prepare_adapter_configs(&manifest)?;
+        let cfg_targets = crate::plan::config_targets_for(&manifest.adapter, &manifest)?;
+        if prepared_configs.len() != cfg_targets.len() {
+            anyhow::bail!("internal error: prepared configs do not match plan config targets");
+        }
+        for (prepared, (cfg_scope, cfg_rel)) in prepared_configs.into_iter().zip(cfg_targets) {
             let hash = crate::snapshot::record_expected_applied(
                 &snap.id,
                 cfg_scope,
@@ -188,11 +190,13 @@ pub fn apply_bundle(
             journal.snapshot_manifest_hash = Some(hash);
             write_journal(&journal)?;
             write_beside(&prepared.path, &prepared.bytes, prepared.mode)?;
-            mcp_imported = manifest.mcp.keys().cloned().collect();
             let label = format!("{}:{}", cfg_scope.as_str(), cfg_rel);
             journal.completed_paths.push(label.clone());
             write_journal(&journal)?;
             applied.push(label);
+        }
+        if !manifest.mcp.is_empty() {
+            mcp_imported = manifest.mcp.keys().cloned().collect();
         }
         // 3. Post-verify (before Done).
         journal.phase = Phase::Verifying;
@@ -285,18 +289,39 @@ fn auto_rollback(
     }
 }
 
-fn config_snap_target(manifest: &Manifest) -> Result<(Scope, String)> {
+fn prepare_adapter_configs(manifest: &Manifest) -> Result<Vec<PreparedConfig>> {
     match manifest.adapter.as_str() {
-        ADAPTER_ID => Ok((Scope::CodexHome, "config.toml".to_string())),
-        OPENCODE_ADAPTER_ID => Ok((Scope::OpenCodeHome, crate::opencode::config_rel()?)),
-        other => Err(unsupported_adapter_error(other)),
-    }
-}
-
-fn prepare_adapter_config(manifest: &Manifest) -> Result<PreparedConfig> {
-    match manifest.adapter.as_str() {
-        ADAPTER_ID => prepare_config_toml(manifest),
-        OPENCODE_ADAPTER_ID => prepare_config_opencode(manifest),
+        ADAPTER_ID => {
+            if manifest.settings.is_empty() && manifest.mcp.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![prepare_config_toml(manifest)?])
+            }
+        }
+        OPENCODE_ADAPTER_ID => {
+            if manifest.settings.is_empty() && manifest.mcp.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![prepare_config_opencode(manifest)?])
+            }
+        }
+        CLAUDE_ADAPTER_ID => {
+            if !manifest.mcp.is_empty() {
+                return Err(crate::claude::mcp_apply_gated_error());
+            }
+            if manifest.settings.is_empty() {
+                return Ok(Vec::new());
+            }
+            let (path, bytes) = crate::claude::prepare_settings_patch(manifest)?;
+            let mode = existing_file_mode(&path).unwrap_or(0o600);
+            let sha256 = root_lockfile::compute_sha256(&bytes);
+            Ok(vec![PreparedConfig {
+                path,
+                bytes,
+                mode,
+                sha256,
+            }])
+        }
         other => Err(unsupported_adapter_error(other)),
     }
 }
@@ -305,6 +330,7 @@ fn verify_applied(bundle_dir: &Path, manifest: &Manifest) -> Result<()> {
     match manifest.adapter.as_str() {
         ADAPTER_ID => crate::verify::verify_codex_applied(bundle_dir, manifest),
         OPENCODE_ADAPTER_ID => crate::verify::verify_opencode_applied(bundle_dir, manifest),
+        CLAUDE_ADAPTER_ID => crate::verify::verify_claude_applied(bundle_dir, manifest),
         other => Err(unsupported_adapter_error(other)),
     }
 }

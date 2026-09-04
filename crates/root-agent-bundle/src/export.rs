@@ -11,7 +11,8 @@ use crate::codex::{
 };
 use crate::manifest::{
     mcp_approval_target, BundleFile, FileKind, HeldItem, Manifest, McpEntry, NeedsApproval,
-    ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, MAX_FILES, MAX_FILE_BYTES, OPENCODE_ADAPTER_ID,
+    ADAPTER_SCHEMA_VERSION, BUNDLE_VERSION, CLAUDE_ADAPTER_ID, MAX_FILES, MAX_FILE_BYTES,
+    OPENCODE_ADAPTER_ID,
 };
 use crate::scope::{scope_root, validate_rel, Scope};
 use anyhow::{Context, Result};
@@ -498,6 +499,188 @@ pub fn export_opencode(bundle_dir: &Path, opts: &ExportOptions) -> Result<Manife
         manifest.needs_env.sort();
     }
 
+    manifest.validate()?;
+    write_bundle_dir(bundle_dir, &manifest, &blobs)?;
+    Ok(manifest)
+}
+
+pub fn export_claude(bundle_dir: &Path, opts: &ExportOptions) -> Result<Manifest> {
+    if !opts.include_mcp.is_empty() {
+        return Err(crate::claude::mcp_export_gated_error());
+    }
+    let bin = find_on_path(crate::claude::CLAUDE_BINARY)
+        .context("claude executable not found on PATH; refusing export")?;
+    let version = crate::claude::probe_claude_version(&bin)?;
+    if !crate::manifest::SUPPORTED_CLAUDE_VERSIONS.contains(&version.as_str()) {
+        anyhow::bail!(
+            "unsupported source agent version '{}'. S3 accepts exact Claude versions {:?} only",
+            version,
+            crate::manifest::SUPPORTED_CLAUDE_VERSIONS
+        );
+    }
+    let home = crate::claude::claude_home()?;
+    let created = if opts.no_timestamp {
+        None
+    } else {
+        Some(utc_now_rfc3339())
+    };
+    let mut manifest = Manifest::new_for(CLAUDE_ADAPTER_ID, version, created);
+    manifest.bundle_version = BUNDLE_VERSION;
+    manifest.adapter_schema_version = ADAPTER_SCHEMA_VERSION;
+    let mut blobs: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut seen_blob: BTreeSet<String> = BTreeSet::new();
+
+    let claude_md = home.join("CLAUDE.md");
+    match std::fs::symlink_metadata(&claude_md) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            manifest.held.push(HeldItem {
+                source: "claude CLAUDE.md (absent)".to_string(),
+                reason: "absent on source".to_string(),
+            });
+        }
+        Err(e) => return Err(e).context("Failed to stat CLAUDE.md"),
+        Ok(m) => {
+            if m.file_type().is_symlink() {
+                anyhow::bail!(
+                    "Refusing to export symlink CLAUDE.md (bundle v1 rejects all symlinks)"
+                );
+            }
+            let bytes = std::fs::read(&claude_md)?;
+            if (bytes.len() as u64) > MAX_FILE_BYTES {
+                anyhow::bail!("CLAUDE.md exceeds per-file limit");
+            }
+            let digest = root_lockfile::compute_sha256(&bytes);
+            if !seen_blob.contains(&digest) {
+                seen_blob.insert(digest.clone());
+                blobs.push((digest.clone(), bytes.clone()));
+            }
+            manifest.files.push(BundleFile {
+                scope: Scope::ClaudeHome,
+                rel: "CLAUDE.md".to_string(),
+                sha256: digest,
+                size: bytes.len() as u64,
+                mode: "0644".to_string(),
+                kind: FileKind::PromptContent,
+                executable: false,
+            });
+        }
+    }
+
+    let settings_path = crate::claude::settings_path()?;
+    if settings_path.exists() {
+        manifest.settings = crate::claude::read_allowed_settings(&settings_path)?;
+    }
+    manifest.held.push(HeldItem {
+        source: "unknown source fields".to_string(),
+        reason: "held by default in bundle v1 (never exported)".to_string(),
+    });
+    manifest.held.push(HeldItem {
+        source: ".credentials.json, .claude.json (sign-in/OAuth/projects), sessions, transcripts"
+            .to_string(),
+        reason: "secret/volatile: excluded from the portable bundle".to_string(),
+    });
+    manifest.held.push(HeldItem {
+        source: "permissions, hooks, env, rules/, commands/, agents/, workflows/, plugins/"
+            .to_string(),
+        reason: "held by default in bundle v1 (never exported)".to_string(),
+    });
+    manifest.held.push(HeldItem {
+        source: "user-scope, local-scope, and remote MCP".to_string(),
+        reason: crate::claude::CLAUDE_MCP_HELD_ERROR.to_string(),
+    });
+    manifest.held.push(HeldItem {
+        source: "running Claude process".to_string(),
+        reason: "stop claude during apply/rollback of settings.json".to_string(),
+    });
+
+    let native_skills = home.join("skills");
+    let shared_skills = scope_root(Scope::SharedSkills)?;
+    for skill in &opts.skills {
+        if !valid_skill_name(skill) {
+            anyhow::bail!("invalid skill name '{}'", skill);
+        }
+        validate_rel(skill)?;
+        let (scope, skill_dir, rel_prefix) = {
+            let native = native_skills.join(skill);
+            match std::fs::symlink_metadata(&native) {
+                Ok(meta) if meta.is_dir() && !meta.file_type().is_symlink() => {
+                    (Scope::ClaudeHome, native, format!("skills/{}", skill))
+                }
+                Ok(_) => anyhow::bail!("Skill '{}' is not a directory (symlinks rejected)", skill),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    let shared = shared_skills.join(skill);
+                    let meta = std::fs::symlink_metadata(&shared)
+                        .with_context(|| format!("Skill '{}' not found", skill))?;
+                    if !meta.is_dir() || meta.file_type().is_symlink() {
+                        anyhow::bail!("Skill '{}' is not a directory (symlinks rejected)", skill);
+                    }
+                    (Scope::SharedSkills, shared, skill.clone())
+                }
+                Err(e) => return Err(e).context(format!("Failed to stat skill '{}'", skill)),
+            }
+        };
+        let files = collect_skill_files(&skill_dir)?;
+        if files.is_empty() {
+            anyhow::bail!("Skill '{}' is empty", skill);
+        }
+        let exec_allowed = opts.include_executable.iter().any(|e| e == skill);
+        for abs in files {
+            let rel_in_skill = abs
+                .strip_prefix(&skill_dir)
+                .context("Skill path escape")?
+                .to_str()
+                .context("Non-UTF8 skill path")?
+                .to_string();
+            let rel = format!("{}/{}", rel_prefix, rel_in_skill);
+            validate_rel(&rel)?;
+            let bytes = std::fs::read(&abs)?;
+            if (bytes.len() as u64) > MAX_FILE_BYTES {
+                anyhow::bail!("Skill file '{}' exceeds per-file limit", rel);
+            }
+            let executable = !is_markdown(&abs);
+            if executable && !exec_allowed {
+                manifest.held.push(HeldItem {
+                    source: format!("skill file {}", rel),
+                    reason: "executable content requires --include-executable <skill>".to_string(),
+                });
+                continue;
+            }
+            let digest = root_lockfile::compute_sha256(&bytes);
+            if !seen_blob.contains(&digest) {
+                seen_blob.insert(digest.clone());
+                blobs.push((digest.clone(), bytes.clone()));
+            }
+            if executable {
+                manifest.needs_approval.push(NeedsApproval {
+                    scope,
+                    rel: rel.clone(),
+                    sha256: digest.clone(),
+                    reason: format!("executable skill file {}", rel),
+                });
+            }
+            manifest.files.push(BundleFile {
+                scope,
+                rel,
+                sha256: digest,
+                size: bytes.len() as u64,
+                mode: if executable {
+                    "0755".to_string()
+                } else {
+                    "0644".to_string()
+                },
+                kind: if executable {
+                    FileKind::Executable
+                } else {
+                    FileKind::PromptContent
+                },
+                executable,
+            });
+        }
+    }
+
+    if manifest.files.len() > MAX_FILES {
+        anyhow::bail!("too many files to export");
+    }
     manifest.validate()?;
     write_bundle_dir(bundle_dir, &manifest, &blobs)?;
     Ok(manifest)

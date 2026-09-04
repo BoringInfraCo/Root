@@ -81,6 +81,7 @@ pub fn target_precondition(scope: crate::scope::Scope, rel: &str) -> Result<(Str
 }
 
 pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanReport> {
+    manifest.validate()?;
     let bundle_hash = manifest_hash(manifest)?;
     let mut preconditions = BTreeMap::new();
     let mut will_create = Vec::new();
@@ -118,10 +119,9 @@ pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanRepor
         let _ = target;
         will_update.push(label);
     }
-    // Settings/MCP changes ride along with the adapter config file; surface as
-    // update when present.
-    if !manifest.settings.is_empty() || !manifest.mcp.is_empty() {
-        let (cfg_scope, cfg_rel) = config_target_for(&manifest.adapter)?;
+    // Settings/MCP ride along with adapter config file(s). Codex/OpenCode
+    // still use one file; Claude may use settings.json and/or .claude.json.
+    for (cfg_scope, cfg_rel) in config_targets_for(&manifest.adapter, manifest)? {
         let label = format!("{}:{}", cfg_scope.as_str(), cfg_rel);
         let key = label.clone();
         if !preconditions.contains_key(&key) {
@@ -208,15 +208,49 @@ pub fn compute_plan(_bundle_dir: &Path, manifest: &Manifest) -> Result<PlanRepor
     })
 }
 
-fn config_target_for(adapter: &str) -> Result<(crate::scope::Scope, String)> {
+/// Zero or more live config files this adapter will snapshot and patch.
+///
+/// Codex/OpenCode: one file when settings or MCP is present.
+/// Claude: `settings.json` only when `manifest.settings` is nonempty;
+/// `.claude.json` only when `manifest.mcp` is nonempty.
+pub(crate) fn config_targets_for(
+    adapter: &str,
+    manifest: &Manifest,
+) -> Result<Vec<(crate::scope::Scope, String)>> {
     match adapter {
         crate::manifest::ADAPTER_ID => {
-            Ok((crate::scope::Scope::CodexHome, "config.toml".to_string()))
+            if manifest.settings.is_empty() && manifest.mcp.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![(
+                    crate::scope::Scope::CodexHome,
+                    "config.toml".to_string(),
+                )])
+            }
         }
-        crate::manifest::OPENCODE_ADAPTER_ID => Ok((
-            crate::scope::Scope::OpenCodeHome,
-            crate::opencode::config_rel()?,
-        )),
+        crate::manifest::OPENCODE_ADAPTER_ID => {
+            if manifest.settings.is_empty() && manifest.mcp.is_empty() {
+                Ok(Vec::new())
+            } else {
+                Ok(vec![(
+                    crate::scope::Scope::OpenCodeHome,
+                    crate::opencode::config_rel()?,
+                )])
+            }
+        }
+        crate::manifest::CLAUDE_ADAPTER_ID => {
+            let mut out = Vec::new();
+            if !manifest.settings.is_empty() {
+                out.push((crate::scope::Scope::ClaudeHome, "settings.json".to_string()));
+            }
+            if !manifest.mcp.is_empty() {
+                out.push((
+                    crate::scope::Scope::ClaudeGlobalState,
+                    ".claude.json".to_string(),
+                ));
+            }
+            Ok(out)
+        }
         other => Err(crate::manifest::unsupported_adapter_error(other)),
     }
 }
@@ -241,6 +275,13 @@ fn live_config_preview(
             Ok((
                 crate::opencode::read_allowed_settings(&config_path).unwrap_or_default(),
                 crate::opencode::mcp_server_names(&config_path).unwrap_or_default(),
+            ))
+        }
+        crate::manifest::CLAUDE_ADAPTER_ID => {
+            let settings = crate::claude::settings_path()?;
+            Ok((
+                crate::claude::read_allowed_settings(&settings).unwrap_or_default(),
+                crate::claude::list_user_mcp_names().unwrap_or_default(),
             ))
         }
         other => Err(crate::manifest::unsupported_adapter_error(other)),
@@ -274,5 +315,76 @@ mod tests {
         let h3 = plan_hash_for("bh", &b).unwrap();
         assert_eq!(h1, h2);
         assert_ne!(h1, h3);
+    }
+
+    fn claude_manifest() -> Manifest {
+        Manifest::new_for(
+            crate::manifest::CLAUDE_ADAPTER_ID,
+            "unfrozen".to_string(),
+            None,
+        )
+    }
+
+    #[test]
+    fn claude_config_targets_are_strictly_conditional() {
+        let empty = claude_manifest();
+        assert!(config_targets_for(&empty.adapter, &empty)
+            .unwrap()
+            .is_empty());
+
+        let mut settings_only = claude_manifest();
+        settings_only
+            .settings
+            .insert("model".to_string(), serde_json::json!("sonnet"));
+        let settings_targets = config_targets_for(&settings_only.adapter, &settings_only).unwrap();
+        assert_eq!(
+            settings_targets,
+            vec![(crate::scope::Scope::ClaudeHome, "settings.json".to_string())]
+        );
+
+        let mut mcp_only = claude_manifest();
+        mcp_only.mcp.insert(
+            "github".to_string(),
+            crate::manifest::McpEntry {
+                transport: "stdio".to_string(),
+                enabled: false,
+                needs_env: vec![],
+                command_sha256: Some("a".repeat(64)),
+                command: vec!["npx".to_string()],
+                args: vec![],
+                cwd: None,
+                env_keys: vec![],
+            },
+        );
+        let mcp_targets = config_targets_for(&mcp_only.adapter, &mcp_only).unwrap();
+        assert_eq!(
+            mcp_targets,
+            vec![(
+                crate::scope::Scope::ClaudeGlobalState,
+                ".claude.json".to_string()
+            )]
+        );
+
+        let mut both = settings_only;
+        both.mcp = mcp_only.mcp;
+        let both_targets = config_targets_for(&both.adapter, &both).unwrap();
+        assert_eq!(both_targets.len(), 2);
+        assert_eq!(both_targets[0].1, "settings.json");
+        assert_eq!(both_targets[1].1, ".claude.json");
+    }
+
+    #[test]
+    fn codex_and_opencode_still_use_one_config_target() {
+        let mut codex = Manifest::new("0.150.1".to_string(), None);
+        assert!(config_targets_for(&codex.adapter, &codex)
+            .unwrap()
+            .is_empty());
+        codex
+            .settings
+            .insert("model".to_string(), serde_json::json!("gpt-5"));
+        let t = config_targets_for(&codex.adapter, &codex).unwrap();
+        assert_eq!(t.len(), 1);
+        assert_eq!(t[0].0, crate::scope::Scope::CodexHome);
+        assert_eq!(t[0].1, "config.toml");
     }
 }
