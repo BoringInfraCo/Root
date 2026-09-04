@@ -39,6 +39,10 @@ REAL_HOME="${HOME:-}"
 REAL_ROOT_DIR="${ROOT_DIR:-}"
 REAL_CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-}"
 REAL_TMPDIR="${TMPDIR:-}"
+REAL_CODEX_HOME="${CODEX_HOME:-}"
+REAL_XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-}"
+REAL_OPENCODE_CONFIG_DIR="${OPENCODE_CONFIG_DIR:-}"
+REAL_OPENCODE_CONFIG="${OPENCODE_CONFIG:-}"
 SAVED_ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY-}"
 SAVED_ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN-}"
 SAVED_CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN-}"
@@ -194,6 +198,26 @@ restore_operator_env() {
   else
     unset TMPDIR || true
   fi
+  if [ -n "${REAL_CODEX_HOME:-}" ]; then
+    export CODEX_HOME="$REAL_CODEX_HOME"
+  else
+    unset CODEX_HOME || true
+  fi
+  if [ -n "${REAL_XDG_CONFIG_HOME:-}" ]; then
+    export XDG_CONFIG_HOME="$REAL_XDG_CONFIG_HOME"
+  else
+    unset XDG_CONFIG_HOME || true
+  fi
+  if [ -n "${REAL_OPENCODE_CONFIG_DIR:-}" ]; then
+    export OPENCODE_CONFIG_DIR="$REAL_OPENCODE_CONFIG_DIR"
+  else
+    unset OPENCODE_CONFIG_DIR || true
+  fi
+  if [ -n "${REAL_OPENCODE_CONFIG:-}" ]; then
+    export OPENCODE_CONFIG="$REAL_OPENCODE_CONFIG"
+  else
+    unset OPENCODE_CONFIG || true
+  fi
   if [ "$HAD_ANTHROPIC_API_KEY" -eq 1 ]; then
     export ANTHROPIC_API_KEY="$SAVED_ANTHROPIC_API_KEY"
   else
@@ -286,6 +310,7 @@ isolate_run() {
   export CLAUDE_CONFIG_DIR="$run/claude-config"
   export TMPDIR="$run/tmp"
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN || true
+  unset CODEX_HOME OPENCODE_CONFIG_DIR OPENCODE_CONFIG || true
   if [ "$HOME" = "$REAL_HOME" ]; then
     echo "FAIL: isolation collapsed onto real HOME" >&2
     return 1
@@ -319,6 +344,7 @@ isolate_run() {
 
 run_root() {
   env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN -u CLAUDE_CODE_OAUTH_TOKEN \
+    -u CODEX_HOME -u OPENCODE_CONFIG_DIR -u OPENCODE_CONFIG \
     HOME="$HOME" \
     ROOT_DIR="$ROOT_DIR" \
     CLAUDE_CONFIG_DIR="$CLAUDE_CONFIG_DIR" \
@@ -351,7 +377,8 @@ EOF
   cat >"$CLAUDE_CONFIG_DIR/settings.json" <<EOF
 {
   "model": "${SOURCE_MODEL}",
-  "permissions": {"allow": ["Bash(ls)"]}
+  "permissions": {"allow": ["Bash(ls)"]},
+  "hooks": {"Stop": []}
 }
 EOF
   write_canary "$CLAUDE_CONFIG_DIR/.claude.json"
@@ -375,7 +402,9 @@ EOF
   cat >"$CLAUDE_CONFIG_DIR/settings.json" <<EOF
 {
   "model": "${TARGET_MODEL}",
-  "permissions": {"allow": ["Bash(ls)"]}
+  "permissions": {"allow": ["Bash(ls)"]},
+  "hooks": {"Stop": []},
+  "target_only_experimental": "preserve-this-value"
 }
 EOF
   write_canary "$CLAUDE_CONFIG_DIR/.claude.json"
@@ -418,20 +447,29 @@ for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
     dirnames.sort(); filenames.sort()
     for name in filenames:
         path=os.path.join(dirpath, name)
-        if name == ".claude.json" or name.endswith(".claude.json"):
+        if name == ".claude.json" or "claude.json" in name:
             hits.append("file:"+path)
             continue
-        if name == "manifest.json":
+        try:
+            text=open(path, "r", encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        if ".claude.json" not in text:
+            continue
+        rels=[]
+        if name.endswith(".json"):
             try:
-                data=json.load(open(path))
-            except Exception as e:
-                print("cannot parse snapshot manifest %s: %s" % (path, e))
-                sys.exit(1)
-            for entry in data.get("entries") or []:
-                rel=str(entry.get("rel") or "")
-                scope=str(entry.get("scope") or "")
-                if rel == ".claude.json" or "claude.json" in rel or "claude.json" in scope:
-                    hits.append("%s scope=%s rel=%s" % (path, scope, rel))
+                data=json.loads(text)
+            except Exception:
+                data=None
+            if isinstance(data, dict):
+                for entry in data.get("entries") or []:
+                    rel=str(entry.get("rel") or "")
+                    scope=str(entry.get("scope") or "")
+                    if rel == ".claude.json" or "claude.json" in rel:
+                        rels.append("%s:%s" % (scope, rel))
+        if rels or ".claude.json" in text:
+            hits.append(path + ((" " + ",".join(rels)) if rels else " (text mentions .claude.json)"))
 if hits:
     print("agent-snapshots contain .claude.json:")
     print("\n".join(hits[:20]))
@@ -447,9 +485,14 @@ got=data.get("model")
 if got != model:
     print("settings.json model is %r, expected %r" % (got, model))
     sys.exit(1)
-allow=(data.get("permissions") or {}).get("allow")
-if allow != ["Bash(ls)"]:
+if data.get("permissions") != {"allow": ["Bash(ls)"]}:
     print("settings.json permissions not preserved: %r" % (data.get("permissions"),))
+    sys.exit(1)
+if data.get("hooks") != {"Stop": []}:
+    print("settings.json hooks not preserved: %r" % (data.get("hooks"),))
+    sys.exit(1)
+if data.get("target_only_experimental") != "preserve-this-value":
+    print("settings.json target_only_experimental not preserved: %r" % (data.get("target_only_experimental"),))
     sys.exit(1)
 ' "$1" "$2"
 }
@@ -543,6 +586,15 @@ if [ "$(json_get "$logs/inspect.json" "version_supported")" != "true" ]; then
   fail "claude inspect: version_supported is not true (gate is $SUPPORTED_CLAUDE)"
   exit 1
 fi
+python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+skills=d.get("skills") or []
+for need in ("docs-writer", "repo-helper"):
+    if need not in skills:
+        raise SystemExit("inspect skills missing "+need+": "+repr(skills))
+if d.get("config_dir") != sys.argv[2] or d.get("global_state_dir") != sys.argv[2]:
+    raise SystemExit("inspect dirs are not the isolated CLAUDE_CONFIG_DIR")
+' "$logs/inspect.json" "$CLAUDE_CONFIG_DIR"
 pass "claude inspect (isolated config_dir, version $SUPPORTED_CLAUDE)"
 
 rm -rf "$bundle"
@@ -579,8 +631,9 @@ if mcp:
 settings=m.get("settings") or {}
 if settings.get("model") != model:
     raise SystemExit("exported model is %r, expected %r" % (settings.get("model"), model))
-if "permissions" in settings:
-    raise SystemExit("permissions must not be exported")
+for held in ("permissions", "hooks", "target_only_experimental"):
+    if held in settings:
+        raise SystemExit(held+" must not be exported")
 rels=[f.get("rel") for f in (m.get("files") or [])]
 for need in ("CLAUDE.md", "skills/docs-writer/SKILL.md", "repo-helper/run.sh"):
     if need not in rels:
