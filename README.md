@@ -45,7 +45,7 @@ Rootfile is intent, `root.lock` is truth (schema v2 packages, v3 models), snapsh
 Root requires Nix (installer offers Determinate Nix if missing):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sgr0691/Root/main/scripts/install.sh | sh
+curl -fsSL https://boringinfra.company/root/install.sh | sh
 root doctor
 ```
 
