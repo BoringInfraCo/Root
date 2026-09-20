@@ -10,7 +10,7 @@ v0.5 makes the **work** durable on top of that environment. Workspaces, goals, d
 
 *Built for developers, coding agents, and reproducible dev machines.*
 
-[![CI](https://github.com/sgr0691/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/sgr0691/Root/actions/workflows/ci.yml)
+[![CI](https://github.com/BoringInfraCo/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringInfraCo/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [Docs](Docs/) · [Changelog](CHANGELOG.md) · [Smoke tests](Docs/Release/)

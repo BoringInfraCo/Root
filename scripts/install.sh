@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="sgr0691/Root"
+REPO="BoringInfraCo/Root"
 VERSION=""
 DRY_RUN=false
 ASSUME_YES=false
