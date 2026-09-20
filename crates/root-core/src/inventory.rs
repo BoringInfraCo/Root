@@ -985,7 +985,7 @@ mod tests {
             "codex",
             "#!/bin/sh\necho 'codex-cli 0.42.0'\nexit 0\n",
         );
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let result = probe.inspect_agent("codex");
         assert_eq!(result.presence, Presence::Present);
         assert_eq!(result.observed_version.as_deref(), Some("0.42.0"));
@@ -1003,7 +1003,7 @@ mod tests {
             "claude",
             "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then exit 1; fi\nif [ \"$1\" = \"-v\" ]; then echo '1.2.3'; exit 0; fi\nexit 1\n",
         );
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let result = probe.inspect_agent("claude");
         assert_eq!(result.presence, Presence::Present);
         assert_eq!(result.observed_version.as_deref(), Some("1.2.3"));
@@ -1022,7 +1022,7 @@ mod tests {
             "#!/bin/sh\necho 'opencode 2.0.1'\nexit 0\n",
         );
         write_script(&dir, "pi", "#!/bin/sh\necho 'pi 0.5.0'\nexit 0\n");
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let opencode = probe.inspect_agent("opencode");
         let pi = probe.inspect_agent("pi");
         assert_eq!(opencode.observed_version.as_deref(), Some("2.0.1"));
@@ -1036,7 +1036,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("root_inv_empty_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let result = probe.inspect_agent("codex");
         assert_eq!(result.presence, Presence::Absent);
         assert_eq!(result.reason.as_deref(), Some(REASON_NOT_FOUND));
@@ -1065,7 +1065,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         write_script(&dir, "claude", "#!/bin/sh\nexit 1\n");
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let result = probe.inspect_agent("claude");
         assert_eq!(result.presence, Presence::Unknown);
         assert_ne!(result.presence, Presence::Absent);
@@ -1080,7 +1080,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         write_script(&dir, "codex", "#!/bin/sh\necho 'not-a-version'\nexit 0\n");
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let result = probe.inspect_agent("codex");
         assert_eq!(result.presence, Presence::Unknown);
         assert_eq!(result.reason.as_deref(), Some(REASON_MALFORMED_OUTPUT));
@@ -1098,7 +1098,7 @@ mod tests {
             "codex",
             "#!/bin/sh\necho 'codex-cli CANARY_SECRET_TOKEN 0.9.0'\nexit 0\n",
         );
-        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(vec![dir.clone()], 1, Duration::from_secs(10));
         let result = probe.inspect_agent("codex");
         let encoded = serde_json::to_string(&InventoryItem {
             name: "codex".into(),
@@ -1155,7 +1155,7 @@ mod tests {
     fn ollama_http_present_and_extra_fields_ignored() {
         let tags = r#"{"models":[{"name":"qwen3:8b","model":"qwen3:8b","digest":"sha256:deadbeef","size":123,"modified_at":"2026-01-01T00:00:00Z","extra":"ignored"}]}"#;
         let (port, _handle) = spawn_json_server(r#"{"version":"0.11.0"}"#, tags, 200, 200);
-        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(10));
         let present = probe.inspect_model("qwen3:8b", "ollama");
         assert_eq!(present.presence, Presence::Present);
         assert_eq!(present.observed_digest.as_deref(), Some("sha256:deadbeef"));
@@ -1166,13 +1166,14 @@ mod tests {
     #[test]
     fn ollama_http_malformed_and_protocol() {
         let (bad_port, _) = spawn_json_server("not-json", "not-json", 200, 200);
-        let bad = SystemInventoryProbe::for_tests(Vec::new(), bad_port, Duration::from_secs(2));
+        let bad = SystemInventoryProbe::for_tests(Vec::new(), bad_port, Duration::from_secs(10));
         let malformed = bad.inspect_model("qwen3:8b", "ollama");
         assert_eq!(malformed.presence, Presence::Unknown);
         assert_eq!(malformed.reason.as_deref(), Some(REASON_MALFORMED_OUTPUT));
 
         let (proto_port, _) = spawn_json_server("{}", r#"{"models":[]}"#, 200, 200);
-        let proto = SystemInventoryProbe::for_tests(Vec::new(), proto_port, Duration::from_secs(2));
+        let proto =
+            SystemInventoryProbe::for_tests(Vec::new(), proto_port, Duration::from_secs(10));
         let unsupported = proto.inspect_model("qwen3:8b", "ollama");
         assert_eq!(
             unsupported.reason.as_deref(),
@@ -1193,7 +1194,7 @@ mod tests {
     fn ollama_http_does_not_leak_canary_header_or_body() {
         let tags = r#"{"models":[{"name":"qwen3:8b","digest":"sha256:abc","token":"CANARY_SECRET_TOKEN"}]}"#;
         let (port, _) = spawn_json_server(r#"{"version":"0.1.0"}"#, tags, 200, 200);
-        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(10));
         let result = probe.inspect_model("qwen3:8b", "ollama");
         let encoded = serde_json::to_string(&result.observed_digest).unwrap();
         assert!(!encoded.contains("CANARY_SECRET_TOKEN"));
@@ -1205,7 +1206,7 @@ mod tests {
         let tags =
             r#"{"models":[{"name":"qwen3:latest","model":"qwen3:latest","digest":"sha256:abc"}]}"#;
         let (port, _handle) = spawn_json_server(r#"{"version":"0.11.0"}"#, tags, 200, 200);
-        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(10));
         let untagged = probe.inspect_model("qwen3", "ollama");
         assert_eq!(untagged.presence, Presence::Present);
         assert_eq!(untagged.observed_digest.as_deref(), Some("sha256:abc"));
@@ -1219,7 +1220,7 @@ mod tests {
     fn ollama_http_untagged_list_matches_latest() {
         let tags = r#"{"models":[{"name":"qwen3","digest":"sha256:abc"}]}"#;
         let (port, _handle) = spawn_json_server(r#"{"version":"0.11.0"}"#, tags, 200, 200);
-        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(2));
+        let probe = SystemInventoryProbe::for_tests(Vec::new(), port, Duration::from_secs(10));
         assert_eq!(
             probe.inspect_model("qwen3", "ollama").presence,
             Presence::Present

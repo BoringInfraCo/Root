@@ -61,3 +61,17 @@ Agent:
 Summary: Installed poppler via Root (deterministic, snapshot-protected).
 pdftotext verified successfully.
 ```
+
+## Engineering continuity (v0.5)
+
+Root also persists engineering work independently of this session. When a Root workspace exists for the repository, record durable state instead of relying on chat history:
+
+- Inspect — `root workspace status --json`, `root goal show --json`
+- Record — `root decision add "<decision>" --json`, `root finding add "<finding>" --json`
+- Checkpoint — `root checkpoint create --message "<summary>" --json`
+- Continue elsewhere — `root resume --json`, `root handoff --to codex --json`
+- After interruption — `root recover --json`
+
+Root exposes the same operations over MCP (`workspace.status`, `work.record_decision`, `work.record_finding`, `continuity.checkpoint`, `continuity.resume`, `continuity.handoff`). Run `root mcp serve`, or inspect with `root mcp status --json`.
+
+Record decisions and findings only when they are durable and evidence-backed — not chain-of-thought. Never persist credentials; Root refuses obvious secrets.

@@ -1,8 +1,12 @@
-# Root v0.4.1
+# Root v0.5.0
 
-**Deterministic dev tools without learning Nix.**
+**Root is a persistent engineering environment for AI agents.**
 
-Root is a curated package manager for developer CLI tools, backed by Nix. You declare intent in a `Rootfile`, Root pins exact store paths in `root.lock`, snapshots before every mutation, and installs to an isolated profile at `~/.root/profiles/default`. Every install is verified and undoable.
+Start in Codex. Continue in Claude. Pick it up tomorrow. The work stays where you left it.
+
+Root began as a deterministic package manager for developer CLI tools, backed by Nix. That foundation is unchanged: declare intent in a `Rootfile`, Root pins exact store paths in `root.lock`, snapshots before every mutation, and installs to an isolated profile at `~/.root/profiles/default`. Every install is verified and undoable.
+
+v0.5 makes the **work** durable on top of that environment. Workspaces, goals, decisions, findings, artifacts, provenance, and checkpoints persist independently of any agent, so another agent can resume without copying a transcript.
 
 *Built for developers, coding agents, and reproducible dev machines.*
 
@@ -10,6 +14,18 @@ Root is a curated package manager for developer CLI tools, backed by Nix. You de
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [Docs](Docs/) · [Changelog](CHANGELOG.md) · [Smoke tests](Docs/Release/)
+
+## What v0.5.0 Changed
+
+v0.5.0 adds engineering continuity on top of the deterministic environment. Existing v0.4 command behavior is unchanged; the lock schema is still package-only emit 2 / max supported 3. Full history in `CHANGELOG.md`.
+
+- **Work state** — `root workspace`, `goal`, `decision`, `finding`, `artifact` persist goal/decisions/findings/artifact references with provenance and an append-only event ledger (SQLite schema v2 under `~/.root/work/`).
+- **Checkpoints** — `root checkpoint create|list|show` capture immutable work + Git + environment references with a deterministic continuation summary.
+- **Continuity** — `root resume` and `root handoff --to <agent>` project a small, newest-first continuation package (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20) with drift detection.
+- **Recovery** — `root recover` reports what durable state exists after an interruption and what Root can and cannot continue from.
+- **MCP** — `root mcp serve|status` exposes a local stdio interface with server-side capability policy.
+- **Adapters** — `root adapters list|inspect --agent codex|claude` for harness setup.
+- **Secret protection** — work-state mutations refuse obvious credentials; this is a guard rail, not a complete scanner.
 
 ## What is Root?
 
@@ -61,9 +77,16 @@ root sync / restore --lock ./root.lock / rollback --last # reconcile + undo
 root run <task> / sandbox create|run|list|destroy # execute + isolate
 root models pull / plan models                   # Ollama pull-and-verify (v3 record)
 root agent-bundle inspect|export|plan|apply|verify|rollback # explicit config transfer
+root workspace init|status / goal set|show       # durable work state
+root decision add|list|show / finding add|list|show # record + inspect work
+root artifact add|list                           # reference existing files
+root checkpoint create|list|show                 # immutable continuation points
+root resume / handoff --to <agent>               # continuation + cross-agent handoff
+root recover                                     # what survived an interruption
+root mcp serve|status / adapters list|inspect    # agent interface + setup
 ```
 
-> `root import brew` is experimental and not part of the v0.4.1 public surface — may change or break without notice.
+> `root import brew` is experimental and not part of the v0.5.0 public surface — may change or break without notice.
 
 <details>
 <summary>Exit codes & verify details</summary>
@@ -99,12 +122,14 @@ Patch on the Portable Agent-Bundle release. Full history in `CHANGELOG.md`.
 - **Never touches `.claude.json`** — apply/rollback snapshot `settings.json` only; stop Claude first.
 - **Codex 0.150.1 / OpenCode 1.18.27 unchanged**, including MCP disable-until-enable.
 
-## Limitations (v0.4.1)
+## Limitations (v0.5.0)
 
 - **Curated catalog only** — 42 tools across 11 categories; arbitrary installs rejected. Run `root catalog`. `docker-client` is CLI only.
 - **Undo covers Root only** — rollback restores Root lock/profile state, not Homebrew/manual changes; restore recovery is best-effort.
 - **Agents + models are honest, not magic** — status inspects (never installs agents / pulls models); bundles are same-agent, credential-free; models are tag-pull verification records, digest drift needs re-pull.
 - **Strict gates** — Codex 0.150.1, OpenCode 1.18.27, Claude 2.1.260 exactly; local Ollama `127.0.0.1:11434` only; no digest pull, no endpoint field.
+- **Continuity is captured, not omniscient** — Root records goals/decisions/findings/artifact references and checkpoints. It cannot recover unrecorded conversations, unsaved editor state, or commands it did not observe. Secret detection is a conservative guard rail, not a complete scanner. Resume is capped (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20).
+- **MCP is local and unauthenticated** — stdio only, one workspace per process, server-side capability policy; see [Docs/MCP/SECURITY.md](Docs/MCP/SECURITY.md).
 - **Online, serial, macOS-first** — network required, one mutation at a time (`root.lockfile` + `model-pull.json`), macOS tested / Linux best-effort / no Windows; Docker daemon needed for sandbox.
 - **Nix required** — Root manages its own profile but doesn't bundle Nix; if a crash leaves `~/.root/root.lockfile`, run `root doctor` then remove it.
 

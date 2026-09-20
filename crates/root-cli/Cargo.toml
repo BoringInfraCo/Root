@@ -17,4 +17,8 @@ root-doctor = { path = "../root-doctor" }
 root-nix = { path = "../root-nix" }
 root-sandbox = { path = "../root-sandbox" }
 root-agent-bundle = { path = "../root-agent-bundle" }
+root-work = { path = "../root-work" }
+root-continuity = { path = "../root-continuity" }
+root-mcp = { path = "../root-mcp" }
+root-adapters = { path = "../root-adapters" }
 anyhow = "1.0"

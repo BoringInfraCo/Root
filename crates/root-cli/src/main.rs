@@ -132,6 +132,60 @@ enum Commands {
         #[command(subcommand)]
         subcommand: AgentBundleSubcommands,
     },
+    /// Initialize and inspect the durable Root workspace for this repository
+    Workspace {
+        #[command(subcommand)]
+        subcommand: WorkspaceSubcommands,
+    },
+    /// Set or show the active work goal
+    Goal {
+        #[command(subcommand)]
+        subcommand: GoalSubcommands,
+    },
+    /// Record and inspect durable engineering decisions
+    Decision {
+        #[command(subcommand)]
+        subcommand: DecisionSubcommands,
+    },
+    /// Record and inspect evidence-backed findings
+    Finding {
+        #[command(subcommand)]
+        subcommand: FindingSubcommands,
+    },
+    /// Record and inspect artifact references
+    Artifact {
+        #[command(subcommand)]
+        subcommand: ArtifactSubcommands,
+    },
+    /// Create and inspect durable continuation checkpoints
+    Checkpoint {
+        #[command(subcommand)]
+        subcommand: CheckpointSubcommands,
+    },
+    /// Produce a continuation package from the most recent checkpoint
+    Resume {
+        /// Resume from a specific checkpoint ID instead of the latest
+        #[arg(long, value_name = "ID")]
+        checkpoint: Option<String>,
+    },
+    /// Produce a portable handoff package for another agent or human
+    Handoff {
+        /// Target adapter id (codex or claude)
+        #[arg(long, value_name = "AGENT")]
+        to: Option<String>,
+    },
+    /// Report durable state after an interruption and what Root can continue from
+    Recover,
+    /// Serve and inspect the local MCP interface
+    Mcp {
+        #[command(subcommand)]
+        subcommand: McpSubcommands,
+    },
+    /// Inspect supported coding-agent adapters
+    Adapters {
+        #[command(subcommand)]
+        subcommand: AdaptersSubcommands,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -300,12 +354,150 @@ enum SandboxSubcommands {
     },
 }
 
+#[derive(Subcommand, Debug)]
+enum WorkspaceSubcommands {
+    /// Initialize a durable Root workspace inside the current Git repository
+    Init,
+    /// Show workspace identity, active goal, and work counts
+    Status,
+}
+
+#[derive(Subcommand, Debug)]
+enum GoalSubcommands {
+    /// Set the active goal (supersedes the previous goal without deleting it)
+    Set {
+        #[arg(value_name = "GOAL")]
+        goal: String,
+    },
+    /// Show the active goal
+    Show,
+}
+
+#[derive(Subcommand, Debug)]
+enum DecisionSubcommands {
+    /// Record a durable decision
+    Add {
+        #[arg(value_name = "STATEMENT")]
+        statement: String,
+        /// Optional rationale for the decision
+        #[arg(long, value_name = "TEXT")]
+        rationale: Option<String>,
+    },
+    /// List recorded decisions
+    List,
+    /// Show a decision by ID
+    Show {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum FindingSubcommands {
+    /// Record an evidence-backed finding
+    Add {
+        #[arg(value_name = "STATEMENT")]
+        statement: String,
+        /// Optional evidence reference (path, command, or note)
+        #[arg(long, value_name = "REF")]
+        evidence: Option<String>,
+    },
+    /// List recorded findings
+    List,
+    /// Show a finding by ID
+    Show {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ArtifactSubcommands {
+    /// Record a reference to an existing file artifact
+    Add {
+        #[arg(value_name = "PATH")]
+        path: String,
+    },
+    /// List recorded artifacts
+    List,
+}
+
+#[derive(Subcommand, Debug)]
+enum CheckpointSubcommands {
+    /// Create an immutable checkpoint of current work, Git, and environment state
+    Create {
+        /// Optional continuation message for the checkpoint
+        #[arg(long, value_name = "MESSAGE")]
+        message: Option<String>,
+    },
+    /// List checkpoints
+    List,
+    /// Show a checkpoint by ID, or the most recent with --last
+    Show {
+        #[arg(value_name = "ID")]
+        id: Option<String>,
+        /// Show the most recent checkpoint
+        #[arg(long)]
+        last: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum McpSubcommands {
+    /// Serve MCP over stdio (newline-delimited JSON-RPC 2.0)
+    Serve,
+    /// Show MCP workspace, capabilities, and exposed tools
+    Status,
+}
+
+#[derive(Subcommand, Debug)]
+enum AdaptersSubcommands {
+    /// List supported adapters and their local detection status
+    List,
+    /// Inspect one adapter's compatibility, MCP configuration, and instructions
+    Inspect {
+        /// Adapter id (codex or claude)
+        #[arg(long, value_name = "AGENT")]
+        agent: String,
+    },
+}
+
 #[derive(Serialize)]
 struct GenericOutput {
     success: bool,
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     raw_stderr: Option<String>,
+}
+
+#[derive(Serialize)]
+struct AdaptersListReport {
+    adapters: Vec<root_adapters::CompatibilityReport>,
+}
+
+#[derive(Serialize)]
+struct AdapterInspectReport {
+    detection: root_adapters::AdapterDetection,
+    compatibility: root_adapters::CompatibilityReport,
+    mcp_config: root_adapters::McpConfig,
+    instructions: String,
+}
+
+fn adapters_list() -> anyhow::Result<AdaptersListReport> {
+    let mut adapters = Vec::new();
+    for id in root_adapters::list() {
+        adapters.push(root_adapters::compatibility(id)?);
+    }
+    Ok(AdaptersListReport { adapters })
+}
+
+fn adapter_inspect(agent: &str) -> anyhow::Result<AdapterInspectReport> {
+    Ok(AdapterInspectReport {
+        detection: root_adapters::detect(agent)?,
+        compatibility: root_adapters::compatibility(agent)?,
+        mcp_config: root_adapters::mcp_config(agent)?,
+        instructions: root_adapters::root_instructions(agent)?,
+    })
 }
 
 fn print_json<T: Serialize>(output: &T) {
@@ -381,6 +573,353 @@ fn json_error_output(e: &anyhow::Error) -> GenericOutput {
         message: format!("{}", e),
         raw_stderr,
     }
+}
+
+fn current_dir() -> PathBuf {
+    std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+}
+
+fn format_workspace_init(r: &root_work::WorkspaceInitReport) -> String {
+    format!(
+        "Root workspace initialized.\n\nWorkspace\n  {}\n  {}\n\nRepository\n  {}\n\nState\n  {}",
+        r.workspace.name, r.workspace.id, r.workspace.repo_path, r.database,
+    )
+}
+
+fn format_workspace_status(r: &root_work::WorkspaceStatusReport) -> String {
+    let mut msg = format!(
+        "Workspace\n  {}\n  {}\n\nRepository\n  {}\n  {}\n",
+        r.workspace.name,
+        r.workspace.id,
+        r.repository.path,
+        r.repository.branch.as_deref().unwrap_or("(unknown branch)")
+    );
+    match &r.goal {
+        Some(goal) => msg.push_str(&format!("\nGoal\n  {}\n", goal.statement)),
+        None => msg.push_str("\nGoal\n  (none)\n"),
+    }
+    msg.push_str(&format!(
+        "\nWork\n  Decisions   {}\n  Findings    {}\n  Artifacts   {}\n",
+        r.counts.decisions, r.counts.findings, r.counts.artifacts
+    ));
+    if let Some(activity) = &r.last_activity {
+        msg.push_str(&format!(
+            "\nLast activity\n  {} {}\n",
+            activity.description, activity.age_human
+        ));
+    }
+    msg
+}
+
+fn format_goal(r: &root_work::GoalReport) -> String {
+    format!(
+        "Goal\n  {}\n  {}\n  status: {}\n  created: {}",
+        r.goal.id, r.goal.statement, r.goal.status, r.goal.created_at
+    )
+}
+
+fn format_decision(r: &root_work::DecisionRecord) -> String {
+    let mut msg = format!(
+        "Decision\n  {}\n  {}\n  status: {}\n  created: {}",
+        r.id, r.statement, r.status, r.created_at
+    );
+    if let Some(rationale) = &r.rationale {
+        msg.push_str(&format!("\n  rationale: {}", rationale));
+    }
+    msg
+}
+
+fn format_decision_list(r: &root_work::DecisionListReport) -> String {
+    if r.decisions.is_empty() {
+        return "No decisions recorded.".to_string();
+    }
+    let mut msg = format!("Decisions ({})\n", r.decisions.len());
+    for decision in &r.decisions {
+        msg.push_str(&format!(
+            "  {}  [{}]  {}\n",
+            decision.id, decision.status, decision.statement
+        ));
+    }
+    msg
+}
+
+fn format_finding(r: &root_work::FindingRecord) -> String {
+    let mut msg = format!(
+        "Finding\n  {}\n  {}\n  status: {}\n  created: {}",
+        r.id, r.statement, r.status, r.created_at
+    );
+    if let Some(evidence) = &r.evidence_ref {
+        msg.push_str(&format!("\n  evidence: {}", evidence));
+    }
+    msg
+}
+
+fn format_finding_list(r: &root_work::FindingListReport) -> String {
+    if r.findings.is_empty() {
+        return "No findings recorded.".to_string();
+    }
+    let mut msg = format!("Findings ({})\n", r.findings.len());
+    for finding in &r.findings {
+        msg.push_str(&format!(
+            "  {}  [{}]  {}\n",
+            finding.id, finding.status, finding.statement
+        ));
+    }
+    msg
+}
+
+fn format_artifact(r: &root_work::ArtifactRecord) -> String {
+    let mut msg = format!(
+        "Artifact\n  {}\n  {} ({})\n  created: {}",
+        r.id, r.uri, r.kind, r.created_at
+    );
+    if let Some(fingerprint) = &r.fingerprint {
+        msg.push_str(&format!("\n  fingerprint: {}", fingerprint));
+    }
+    msg
+}
+
+fn format_artifact_list(r: &root_work::ArtifactListReport) -> String {
+    if r.artifacts.is_empty() {
+        return "No artifacts recorded.".to_string();
+    }
+    let mut msg = format!("Artifacts ({})\n", r.artifacts.len());
+    for artifact in &r.artifacts {
+        msg.push_str(&format!(
+            "  {}  {} ({})\n",
+            artifact.id, artifact.uri, artifact.kind
+        ));
+    }
+    msg
+}
+
+fn format_checkpoint(checkpoint: &root_work::CheckpointRecord) -> String {
+    let mut msg = format!("Checkpoint\n  {}\n", checkpoint.id);
+    if let Some(message) = &checkpoint.message {
+        msg.push_str(&format!("  message: {}\n", message));
+    }
+    msg.push_str(&format!(
+        "  work revision: {}\n  environment: {}\n  created: {}\n",
+        checkpoint.work_revision, checkpoint.environment_status, checkpoint.created_at
+    ));
+
+    let branch = checkpoint.git_branch.as_deref().unwrap_or("(no branch)");
+    let head = checkpoint
+        .git_head
+        .as_deref()
+        .map(|sha| sha.chars().take(7).collect::<String>())
+        .unwrap_or_else(|| "(no commits)".to_string());
+    let dirty = if checkpoint.git_dirty_fingerprint.is_none() {
+        "unknown"
+    } else if checkpoint.git_dirty {
+        "dirty"
+    } else {
+        "clean"
+    };
+    msg.push_str(&format!(
+        "\nRepository\n  {} @ {}\n  {}\n",
+        branch, head, dirty
+    ));
+
+    if !checkpoint.continuation_summary.is_empty() {
+        msg.push_str("\nContinuation\n");
+        for line in checkpoint.continuation_summary.lines() {
+            msg.push_str(&format!("  {}\n", line));
+        }
+    }
+    msg
+}
+
+fn format_checkpoint_list(r: &root_work::CheckpointListReport) -> String {
+    if r.checkpoints.is_empty() {
+        return "No checkpoints recorded.".to_string();
+    }
+    let mut msg = format!("Checkpoints ({})\n", r.checkpoints.len());
+    for checkpoint in &r.checkpoints {
+        let dirty = if checkpoint.git_dirty {
+            "dirty"
+        } else {
+            "clean"
+        };
+        msg.push_str(&format!(
+            "  {}  rev {}  {}  {}\n",
+            checkpoint.id, checkpoint.work_revision, dirty, checkpoint.created_at
+        ));
+        if let Some(message) = &checkpoint.message {
+            msg.push_str(&format!("    {}\n", message));
+        }
+    }
+    msg
+}
+
+fn environment_status_label(status: &str) -> &'static str {
+    match status {
+        root_work::model::ENV_VERIFIED => "Root environment verified.",
+        root_work::model::ENV_OBSERVED => {
+            "Root environment observed (Rootfile and root.lock present)."
+        }
+        root_work::model::ENV_UNKNOWN => "Root environment partially observed.",
+        root_work::model::ENV_MISSING => "No Root environment declared.",
+        _ => "Root environment status unknown.",
+    }
+}
+
+fn format_resume(r: &root_continuity::ResumeReport) -> String {
+    let mut msg = String::from("Root Resume\n");
+
+    msg.push_str("\nGoal\n");
+    match &r.goal {
+        Some(goal) => msg.push_str(&format!("  {}\n", goal.statement)),
+        None => msg.push_str("  (none)\n"),
+    }
+
+    msg.push_str("\nCheckpoint\n");
+    msg.push_str(&format!("  {}\n", r.checkpoint.id));
+    if let Some(message) = &r.checkpoint.message {
+        msg.push_str(&format!("  {}\n", message));
+    }
+
+    msg.push_str("\nCurrent state\n");
+    msg.push_str(&format!("  {}\n", r.current_state.summary));
+
+    if !r.findings.is_empty() {
+        msg.push_str("\nFindings\n");
+        for finding in &r.findings {
+            msg.push_str(&format!("  {}\n", finding.statement));
+        }
+        if r.findings_omitted > 0 {
+            msg.push_str(&format!(
+                "  ({} older findings omitted)\n",
+                r.findings_omitted
+            ));
+        }
+    }
+
+    if !r.decisions.is_empty() {
+        msg.push_str("\nDecisions\n");
+        for decision in &r.decisions {
+            msg.push_str(&format!("  {}\n", decision.statement));
+        }
+        if r.decisions_omitted > 0 {
+            msg.push_str(&format!(
+                "  ({} older decisions omitted)\n",
+                r.decisions_omitted
+            ));
+        }
+    }
+
+    if !r.artifacts.is_empty() {
+        msg.push_str("\nRelevant artifacts\n");
+        for artifact in &r.artifacts {
+            msg.push_str(&format!("  {}\n", artifact.uri));
+        }
+        if r.artifacts_omitted > 0 {
+            msg.push_str(&format!(
+                "  ({} older artifacts omitted)\n",
+                r.artifacts_omitted
+            ));
+        }
+    }
+
+    msg.push_str("\nEnvironment\n");
+    msg.push_str(&format!(
+        "  {}\n",
+        environment_status_label(&r.environment_state.status)
+    ));
+
+    msg.push_str("\nDrift\n");
+    if r.drift.items.is_empty() {
+        msg.push_str("  None detected.\n");
+    } else {
+        for item in &r.drift.items {
+            msg.push_str(&format!("  [{}] {}\n", item.level, item.detail));
+        }
+    }
+
+    msg.push_str("\nSuggested continuation\n");
+    for suggestion in &r.suggested_continuation {
+        msg.push_str(&format!("  Suggestion (not verified): {}\n", suggestion));
+    }
+
+    msg
+}
+
+fn format_recover(r: &root_continuity::RecoverReport) -> String {
+    root_continuity::render_recover(r)
+}
+
+fn format_mcp_status(r: &root_mcp::McpStatusReport) -> String {
+    let mut msg = String::from("Root MCP\n");
+    match &r.workspace {
+        Some(workspace) => {
+            msg.push_str(&format!(
+                "\nWorkspace\n  {} ({})\n",
+                workspace.name, workspace.id
+            ));
+        }
+        None => msg.push_str("\nWorkspace\n  (none)\n"),
+    }
+    msg.push_str("\nCapabilities\n");
+    msg.push_str(&format!("  read: {}\n", r.capabilities.read));
+    msg.push_str(&format!("  record: {}\n", r.capabilities.record));
+    msg.push_str(&format!("  checkpoint: {}\n", r.capabilities.checkpoint));
+    msg.push_str(&format!(
+        "  environment_verify: {}\n",
+        r.capabilities.environment_verify
+    ));
+    msg.push_str(&format!("\nPolicy source: {}\n", r.policy_source));
+    msg.push_str(&format!("Protocol: {}\n", r.protocol_version));
+    msg.push_str(&format!("\nTools ({})\n", r.tools.len()));
+    for tool in &r.tools {
+        msg.push_str(&format!("  {}\n", tool));
+    }
+    msg
+}
+
+fn format_adapters_list(r: &AdaptersListReport) -> String {
+    let mut msg = String::from("Adapters\n");
+    for adapter in &r.adapters {
+        let presence = if adapter.present {
+            "installed"
+        } else {
+            "not installed"
+        };
+        msg.push_str(&format!(
+            "\n{}\n  {}\n  supported: {}\n",
+            root_adapters::display_name(&adapter.adapter),
+            presence,
+            adapter.supported
+        ));
+        if let Some(version) = &adapter.version {
+            msg.push_str(&format!("  version: {}\n", version));
+        }
+        for warning in &adapter.warnings {
+            msg.push_str(&format!("  warning: {}\n", warning));
+        }
+    }
+    msg
+}
+
+fn format_adapter_inspect(r: &AdapterInspectReport) -> String {
+    let mut msg = format!(
+        "Adapter\n  {}\n  installed: {}\n  supported: {}\n",
+        root_adapters::display_name(&r.compatibility.adapter),
+        r.detection.present,
+        r.compatibility.supported
+    );
+    if let Some(version) = &r.detection.version {
+        msg.push_str(&format!("  version: {}\n", version));
+    }
+    msg.push_str(&format!("\nMCP configuration ({})\n", r.mcp_config.format));
+    msg.push_str(&format!("{}\n", r.mcp_config.snippet));
+    msg.push_str(&format!("\nInstructions\n{}\n", r.instructions));
+    if !r.compatibility.warnings.is_empty() {
+        msg.push_str("\nWarnings\n");
+        for warning in &r.compatibility.warnings {
+            msg.push_str(&format!("  {}\n", warning));
+        }
+    }
+    msg
 }
 
 fn exit_code_for_error(e: &anyhow::Error) -> i32 {
@@ -1635,6 +2174,180 @@ fn main() {
                         }
                     },
                 );
+            }
+        },
+        Commands::Workspace { subcommand } => match subcommand {
+            WorkspaceSubcommands::Init => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::workspace_init(&current_dir()),
+                    format_workspace_init,
+                );
+            }
+            WorkspaceSubcommands::Status => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::workspace_status(&current_dir()),
+                    format_workspace_status,
+                );
+            }
+        },
+        Commands::Goal { subcommand } => match subcommand {
+            GoalSubcommands::Set { goal } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::goal_set(&current_dir(), &goal),
+                    format_goal,
+                );
+            }
+            GoalSubcommands::Show => {
+                let _ =
+                    handle_structured(cli.json, root_work::goal_show(&current_dir()), format_goal);
+            }
+        },
+        Commands::Decision { subcommand } => match subcommand {
+            DecisionSubcommands::Add {
+                statement,
+                rationale,
+            } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::decision_add(&current_dir(), &statement, rationale.as_deref()),
+                    |r| format_decision(&r.decision),
+                );
+            }
+            DecisionSubcommands::List => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::decision_list(&current_dir()),
+                    format_decision_list,
+                );
+            }
+            DecisionSubcommands::Show { id } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::decision_show(&current_dir(), &id),
+                    |r| format_decision(&r.decision),
+                );
+            }
+        },
+        Commands::Finding { subcommand } => match subcommand {
+            FindingSubcommands::Add {
+                statement,
+                evidence,
+            } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::finding_add(&current_dir(), &statement, evidence.as_deref()),
+                    |r| format_finding(&r.finding),
+                );
+            }
+            FindingSubcommands::List => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::finding_list(&current_dir()),
+                    format_finding_list,
+                );
+            }
+            FindingSubcommands::Show { id } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::finding_show(&current_dir(), &id),
+                    |r| format_finding(&r.finding),
+                );
+            }
+        },
+        Commands::Artifact { subcommand } => match subcommand {
+            ArtifactSubcommands::Add { path } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::artifact_add(&current_dir(), &path),
+                    |r| format_artifact(&r.artifact),
+                );
+            }
+            ArtifactSubcommands::List => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_work::artifact_list(&current_dir()),
+                    format_artifact_list,
+                );
+            }
+        },
+        Commands::Checkpoint { subcommand } => match subcommand {
+            CheckpointSubcommands::Create { message } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_continuity::create(&current_dir(), message.as_deref()),
+                    |r| format_checkpoint(&r.checkpoint),
+                );
+            }
+            CheckpointSubcommands::List => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_continuity::list(&current_dir()),
+                    format_checkpoint_list,
+                );
+            }
+            CheckpointSubcommands::Show { id, last } => {
+                if last {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_continuity::show_last(&current_dir()),
+                        |r| format_checkpoint(&r.checkpoint),
+                    );
+                } else if let Some(id) = id {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_continuity::show(&current_dir(), &id),
+                        |r| format_checkpoint(&r.checkpoint),
+                    );
+                } else {
+                    let error = anyhow::anyhow!("Provide a checkpoint ID or use --last.");
+                    let _ =
+                        handle_structured::<GenericOutput>(cli.json, Err(error), |_| String::new());
+                    unreachable!();
+                }
+            }
+        },
+        Commands::Resume { checkpoint } => {
+            let _ = handle_structured(
+                cli.json,
+                root_continuity::resume(&current_dir(), checkpoint.as_deref()),
+                format_resume,
+            );
+        }
+        Commands::Handoff { to } => {
+            let _ = handle_structured(
+                cli.json,
+                root_continuity::handoff(&current_dir(), to.as_deref()),
+                root_continuity::render_handoff,
+            );
+        }
+        Commands::Recover => {
+            let _ = handle_structured(
+                cli.json,
+                root_continuity::recover(&current_dir()),
+                format_recover,
+            );
+        }
+        Commands::Mcp { subcommand } => match subcommand {
+            McpSubcommands::Serve => {
+                if let Err(e) = root_mcp::serve() {
+                    eprintln!("Error: {}", format_user_error(&e));
+                    process::exit(exit_code_for_error(&e));
+                }
+            }
+            McpSubcommands::Status => {
+                let _ = handle_structured(cli.json, root_mcp::status(), format_mcp_status);
+            }
+        },
+        Commands::Adapters { subcommand } => match subcommand {
+            AdaptersSubcommands::List => {
+                let _ = handle_structured(cli.json, adapters_list(), format_adapters_list);
+            }
+            AdaptersSubcommands::Inspect { agent } => {
+                let _ =
+                    handle_structured(cli.json, adapter_inspect(&agent), format_adapter_inspect);
             }
         },
         Commands::Status => {

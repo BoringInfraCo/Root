@@ -70,3 +70,17 @@ If Root is not installed or Nix is unavailable, the agent must:
 1. Inform the user that Root is required
 2. Ask before using alternative install methods
 3. Never silently fall back to unsafe installs
+
+## Engineering Continuity (v0.5)
+
+Root persists engineering work independently of any agent session. When a Root workspace exists for the repository, record durable state instead of relying on chat history:
+
+- Inspect — `root workspace status --json`, `root goal show --json`
+- Record — `root decision add "<decision>" --json`, `root finding add "<finding>" --json`
+- Checkpoint — `root checkpoint create --message "<summary>" --json`
+- Continue elsewhere — `root resume --json`, `root handoff --to <agent> --json`
+- After interruption — `root recover --json`
+
+The same operations are exposed over MCP by `root mcp serve` (`workspace.status`, `work.record_decision`, `work.record_finding`, `continuity.checkpoint`, `continuity.resume`, `continuity.handoff`); inspect with `root mcp status --json`.
+
+Record decisions and findings only when they are durable and evidence-backed — not chain-of-thought. Never persist credentials; Root refuses obvious secrets.

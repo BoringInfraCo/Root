@@ -26,3 +26,15 @@ Always follow this exact sequence with `--json` output:
 ## Summary Format
 
 After install or rollback, summarize what changed, what stayed unchanged, and whether rollback is available.
+
+## Engineering Continuity (v0.5)
+
+When a Root workspace exists for the repository, persist durable engineering state instead of relying on chat history. Use `--json`:
+
+- Inspect — `root workspace status --json`, `root goal show --json`
+- Record — `root decision add "<decision>" --json`, `root finding add "<finding>" --json`
+- Checkpoint — `root checkpoint create --message "<summary>" --json`
+- Continue elsewhere — `root resume --json`, `root handoff --to <agent> --json`
+- After interruption — `root recover --json`
+
+These are also available over MCP via `root mcp serve` (`continuity.resume`, `work.record_decision`, etc.); inspect with `root mcp status --json`. Record only durable, evidence-backed decisions and findings — never chain-of-thought or credentials (Root refuses obvious secrets).

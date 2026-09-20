@@ -151,3 +151,19 @@ If Root is unavailable (not installed, Nix missing, or initialization failed), *
 1. Inform the user that Root is unavailable.
 2. Offer to install Root (requires Nix: `curl -L https://nixos.org/nix/install | sh`).
 3. Only proceed with an alternative if the user explicitly authorizes it.
+
+---
+
+## Engineering Continuity (v0.5)
+
+Root also persists engineering work independently of this agent session. When a Root workspace exists for the repository, record durable state instead of relying on chat history:
+
+- Inspect — `root workspace status --json`, `root goal show --json`
+- Record — `root decision add "<decision>" --json`, `root finding add "<finding>" --json`
+- Checkpoint — `root checkpoint create --message "<summary>" --json`
+- Continue elsewhere — `root resume --json`, `root handoff --to claude --json`
+- After interruption — `root recover --json`
+
+Over MCP the same operations are tools: `workspace.status`, `work.record_decision`, `work.record_finding`, `continuity.checkpoint`, `continuity.resume`, `continuity.handoff`. Start it with `root mcp serve`; inspect it with `root mcp status --json`.
+
+Record decisions and findings only when they are durable and evidence-backed — not chain-of-thought. Never persist credentials; Root refuses obvious secrets.

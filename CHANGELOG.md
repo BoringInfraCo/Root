@@ -5,6 +5,42 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-19
+
+v0.5.0 makes the work durable. It adds a canonical, harness-independent Work State Engine, an immutable checkpoint / resume continuity loop, a local MCP interface, Codex and Claude adapters, recovery reporting, and release hardening. Existing v0.4 environment management is unchanged, and the lock schema remains package-only emit 2 / max supported 3.
+
+### Added
+
+- **Durable work state.** `root workspace init|status`, `root goal set|show`, `root decision add|list|show`, `root finding add|list|show`, and `root artifact add|list` persist goals, decisions, findings, artifact references, sessions, and provenance under `~/.root/work/` (SQLite schema v2) with an append-only `work_events` ledger.
+- **Checkpoints.** `root checkpoint create|list|show` captures immutable work revision, Git HEAD/branch/dirty fingerprint, Root environment references, and a deterministic continuation summary.
+- **Continuity.** `root resume [--checkpoint <id>]` projects a deterministic continuation package with drift; `root handoff --to <agent>` adds provenance (`from`), a normalized target (`to`), and harness instructions.
+- **Bounded resume.** Resume includes at most 10 decisions, 10 findings, and 20 artifacts (newest first) and reports `decisions_omitted` / `findings_omitted` / `artifacts_omitted`.
+- **Recovery.** `root recover` reports the last durable checkpoint, observed repository/environment state, drift, available work state, an honest `recoverable` list, a fixed `not_recoverable` list, and a deterministic `recommended_action`. It never claims to recover unobserved state.
+- **MCP interface.** `root mcp serve|status` exposes a local stdio MCP server (`2024-11-05`) with read / record / checkpoint / environment_verify capabilities enforced server-side. See `Docs/MCP/`.
+- **Adapters.** `root adapters list|inspect --agent codex|claude` for harness compatibility, MCP configuration, and instructions.
+- **Secret protection.** Work-state mutations refuse obvious credentials (PEM private keys, AWS / GitHub / Slack / OpenAI-style keys, bearer tokens, password/secret/token assignments). This is a conservative guard rail, not a complete scanner.
+
+### Changed
+
+- README reframes Root as a persistent engineering environment for AI agents, with the deterministic environment kept as the foundation.
+- Resume and handoff output stays concise for long-running workspaces by capping listed items; full active counts remain in `current_state`.
+
+### Notes
+
+- Checkpoints are immutable and append-only. Drift never mutates Git or the working tree.
+- Recovery, resume, and handoff are projections of persisted state. They do not ingest transcripts, recover unsaved editor state, or replay unobserved commands.
+- MCP is local and unauthenticated; provenance and session identity are self-asserted claims. See `Docs/MCP/SECURITY.md`.
+- Migration behavior is explicit: fresh installs create schema v2, v1 migrates to v2 without data loss, newer schema versions are refused clearly, and a failed migration rolls back and can be retried.
+- See `Docs/Work/`, `Docs/Continuity/`, `Docs/MCP/`, `Docs/Recovery/`, and `Docs/Release/V0_5_CONTINUITY_SMOKE_TEST.md`.
+
+### Tests Added
+
+- Recovery unit and CLI tests: no checkpoint, checkpoint, drift after HEAD change, fixed not-recoverable list, recommended-action branches, human formatter.
+- Secret detection unit tests plus store atomicity tests (empty statement, secret, unsupported artifact kind leave no row or event).
+- Migration tests: fresh v2, v1 → v2 data preservation, newer-schema refusal, failed-migration rollback and clean retry.
+- Long-running fixture (1 goal, 25 decisions, 50 findings, 100 artifacts, 20 checkpoints, 2 sessions) asserting capped resume with omitted counts.
+- MCP validation tests: non-object params, non-string tool name, oversized statement, denied capability, unknown tool, secret refusal.
+
 ## [0.4.1] - 2026-09-03
 
 v0.4.1 is a patch on the Portable Agent-Bundle release. It adds a Claude S3 adapter to `root agent-bundle`. It is **not** `root restore`, **not** Rootfile, and **not** `root.lock` integration. Lock schema remains package-only emit 2 / max supported 3.
