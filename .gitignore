@@ -3,6 +3,7 @@ target
 *.swo
 *~
 .DS_Store
+.history/
 
 # Internal design docs — not part of the public repo
 Docs/v0.1/

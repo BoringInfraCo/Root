@@ -8,6 +8,7 @@
 use crate::drift::DriftReport;
 use crate::environment::EnvironmentState;
 use crate::resume::{resume, ResumeReport};
+use crate::with::{target_instruction_text, SUPPORTED_TARGETS};
 use anyhow::{bail, Result};
 use root_work::model::{
     ENV_MISSING, ENV_OBSERVED, ENV_UNKNOWN, ENV_VERIFIED, SOURCE_HUMAN, SOURCE_ROOT,
@@ -52,7 +53,7 @@ pub fn handoff(cwd: &Path, to: Option<&str>) -> Result<HandoffReport> {
     let from = origin(&store, checkpoint.provenance_id.as_deref());
 
     let instructions = match &target {
-        Some(id) => Some(root_adapters::root_instructions(id)?),
+        Some(id) => Some(target_instruction_text(id)?),
         None => None,
     };
 
@@ -73,11 +74,11 @@ fn normalize_target(to: Option<&str>) -> Result<Option<String>> {
             if id.is_empty() {
                 bail!("A handoff target id is required after --to.");
             }
-            if !root_adapters::list().contains(&id.as_str()) {
+            if !SUPPORTED_TARGETS.contains(&id.as_str()) {
                 bail!(
                     "Unsupported handoff target '{}'.\n\nSupported adapters: {}.",
                     raw.trim(),
-                    root_adapters::list().join(", ")
+                    SUPPORTED_TARGETS.join(", ")
                 );
             }
             Ok(Some(id))
@@ -228,9 +229,7 @@ mod tests {
     use root_work::{ProvenanceContext, WorkspaceRecord};
     use std::ffi::OsString;
     use std::path::PathBuf;
-    use std::sync::{Mutex, MutexGuard};
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    use std::sync::MutexGuard;
 
     struct RootDirGuard {
         previous: Option<OsString>,
@@ -239,7 +238,8 @@ mod tests {
 
     impl RootDirGuard {
         fn set(dir: &Path) -> Self {
-            let lock = ENV_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+            // Shared crate lock: serialize with every other ROOT_DIR test.
+            let lock = crate::test_lock();
             let previous = std::env::var_os("ROOT_DIR");
             std::env::set_var("ROOT_DIR", dir);
             Self {
@@ -328,6 +328,7 @@ mod tests {
             snapshot: "{}".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
             provenance_id: Some("root_prov_test".into()),
+            agent_env_ref: None,
         }
     }
 
@@ -403,6 +404,8 @@ mod tests {
             findings,
             artifacts: Vec::new(),
             work_revision: 5,
+            agent_env: None,
+            agent_env_sha256: None,
         }
     }
 
@@ -458,6 +461,48 @@ mod tests {
             .unwrap()
             .to_lowercase()
             .contains("checkpoint"));
+    }
+
+    #[test]
+    fn handoff_to_opencode_uses_the_shared_opencode_instructions() {
+        let fixture = Fixture::new("opencode");
+        let _guard = RootDirGuard::set(&fixture.root_dir);
+        crate::create(&fixture.repo, Some("opencode checkpoint")).unwrap();
+
+        let report = handoff(&fixture.repo, Some("OPENCODE")).unwrap();
+        assert_eq!(report.to.as_deref(), Some("opencode"));
+        let instructions = report.instructions.as_deref().expect("instructions");
+        assert!(
+            instructions.contains("Root continuity instructions (OpenCode)"),
+            "{instructions}"
+        );
+        assert!(instructions.to_lowercase().contains("checkpoint"));
+    }
+
+    #[test]
+    fn handoff_codex_and_claude_instructions_are_byte_identical() {
+        let fixture = Fixture::new("unchanged");
+        let _guard = RootDirGuard::set(&fixture.root_dir);
+        crate::create(&fixture.repo, Some("checkpoint")).unwrap();
+
+        for id in ["codex", "claude"] {
+            let expected = root_adapters::root_instructions(id).unwrap();
+            let report = handoff(&fixture.repo, Some(id)).unwrap();
+            assert_eq!(report.instructions.as_deref(), Some(expected.as_str()));
+        }
+    }
+
+    #[test]
+    fn handoff_unknown_target_fails_closed_listing_canonical_targets() {
+        let fixture = Fixture::new("unknown_target");
+        let _guard = RootDirGuard::set(&fixture.root_dir);
+        crate::create(&fixture.repo, Some("checkpoint")).unwrap();
+
+        let error = handoff(&fixture.repo, Some("gemini"))
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Unsupported handoff target"), "{error}");
+        assert!(error.contains("codex, opencode, claude"), "{error}");
     }
 
     #[test]

@@ -783,6 +783,7 @@ mod tests {
 
     #[test]
     fn version_probe_isolates_opencode_config_dirs() {
+        let _env = crate::lock_env();
         let dir = std::env::temp_dir().join(format!(
             "root_agent_bundle_opencode_probe_{}",
             std::process::id()

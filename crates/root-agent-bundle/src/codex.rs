@@ -621,6 +621,27 @@ fn read_file_capped(path: &Path, cap: u64) -> Result<Vec<u8>> {
 mod tests {
     use super::*;
 
+    struct PathGuard {
+        saved: Option<std::ffi::OsString>,
+    }
+
+    impl PathGuard {
+        fn set(path: &std::path::Path) -> Self {
+            let saved = std::env::var_os("PATH");
+            std::env::set_var("PATH", path);
+            Self { saved }
+        }
+    }
+
+    impl Drop for PathGuard {
+        fn drop(&mut self) {
+            match self.saved.take() {
+                Some(v) => std::env::set_var("PATH", v),
+                None => std::env::remove_var("PATH"),
+            }
+        }
+    }
+
     #[test]
     fn find_on_path_rejects_bad_names() {
         assert!(find_on_path("").is_none());
@@ -629,6 +650,7 @@ mod tests {
 
     #[test]
     fn find_on_path_accepts_absolute_dirs_and_symlinks() {
+        let _env = crate::lock_env();
         // Regression test: absolute PATH entries (which contain RootDir)
         // must be searched, and symlinked binaries must resolve.
         let dir =
@@ -642,14 +664,9 @@ mod tests {
             std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
             std::os::unix::fs::symlink(&real, dir.join("probe-link")).unwrap();
         }
-        let old = std::env::var_os("PATH");
-        std::env::set_var("PATH", &dir);
+        let _path = PathGuard::set(&dir);
         let found_bin = find_on_path("probe-bin");
         let found_link = find_on_path("probe-link");
-        match old {
-            Some(v) => std::env::set_var("PATH", v),
-            None => std::env::remove_var("PATH"),
-        }
         assert!(found_bin.is_some(), "absolute PATH dir must be searched");
         #[cfg(unix)]
         assert!(found_link.is_some(), "symlinked binary must resolve");
@@ -658,6 +675,7 @@ mod tests {
 
     #[test]
     fn version_probe_rejects_oversize_output() {
+        let _env = crate::lock_env();
         let dir =
             std::env::temp_dir().join(format!("root_agent_bundle_probe_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
@@ -680,6 +698,7 @@ mod tests {
 
     #[test]
     fn version_probe_times_out() {
+        let _env = crate::lock_env();
         let dir =
             std::env::temp_dir().join(format!("root_agent_bundle_probe_t_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
@@ -699,6 +718,7 @@ mod tests {
 
     #[test]
     fn allowed_settings_keys_only() {
+        let _env = crate::lock_env();
         let dir = std::env::temp_dir().join(format!(
             "root_agent_bundle_codex_test_{}",
             std::process::id()
@@ -718,6 +738,7 @@ mod tests {
 
     #[test]
     fn version_probe_isolates_codex_home() {
+        let _env = crate::lock_env();
         let dir = std::env::temp_dir().join(format!(
             "root_agent_bundle_probe_home_{}",
             std::process::id()

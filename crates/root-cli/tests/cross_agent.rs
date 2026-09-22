@@ -34,6 +34,7 @@ impl Fixture {
         let root_dir = base.join("root");
         std::fs::create_dir_all(&repo).unwrap();
         std::fs::create_dir_all(&root_dir).unwrap();
+        std::fs::create_dir_all(base.join("home")).unwrap();
         git(&repo, &["init", "-q"]);
         std::fs::write(repo.join("README.md"), b"# campfire\n").unwrap();
         git(&repo, &["add", "-A"]);
@@ -115,6 +116,7 @@ impl Server {
             .args(["mcp", "serve"])
             .current_dir(&fixture.repo)
             .env("ROOT_DIR", &fixture.root_dir)
+            .env("HOME", fixture.base.join("home"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -283,4 +285,50 @@ fn codex_state_reaches_claude_without_copying_a_transcript() {
         .starts_with("Suggestion (not verified):"));
     assert!(rendered.contains("Handoff"));
     assert!(rendered.contains("Invitations expire after 24h"));
+}
+
+#[test]
+fn mcp_resume_with_returns_steps() {
+    let fixture = Fixture::new("resume_with");
+    fixture.json(&["workspace", "init", "--json"]);
+    fixture.json(&["goal", "set", "Implement workspace invitations", "--json"]);
+    fixture.json(&["decision", "add", "Invitations expire after 24h", "--json"]);
+    fixture.json(&["checkpoint", "create", "--json"]);
+
+    let mut server = Server::start(&fixture, "claude");
+    server.initialize();
+
+    let resume = server.call(
+        2,
+        "continuity.resume",
+        serde_json::json!({ "with": "claude" }),
+    );
+    assert_eq!(resume["isError"], false, "{resume}");
+    let structured = &resume["structuredContent"];
+    assert_eq!(structured["target"], "claude");
+    assert_eq!(structured["steps"].as_array().unwrap().len(), 7);
+    assert_eq!(structured["steps"][0]["name"], "prepare config");
+    assert_eq!(structured["steps"][6]["name"], "launch continuation");
+    assert!(structured["package"].is_object());
+
+    let unknown = server.call(
+        3,
+        "continuity.resume",
+        serde_json::json!({ "with": "gemini" }),
+    );
+    assert_eq!(unknown["isError"], true, "{unknown}");
+    assert!(unknown["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Unsupported --with target"));
+
+    // No `with`: unchanged v0.5 shape (resume + rendered), no `steps`/`package`.
+    let legacy = server.call(4, "continuity.resume", serde_json::json!({}));
+    assert_eq!(legacy["isError"], false);
+    let structured = &legacy["structuredContent"];
+    assert!(structured.get("steps").is_none());
+    assert!(structured.get("package").is_none());
+    let plain = &structured["resume"];
+    assert_eq!(plain["decisions"].as_array().unwrap().len(), 1);
+    assert_eq!(plain["decisions_omitted"], 0);
 }

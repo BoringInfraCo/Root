@@ -22,6 +22,21 @@ pub struct WorkStore {
     repository: Repository,
 }
 
+/// Result of resolving a repository against Root workspace metadata.
+///
+/// Keeps "no workspace yet" (a normal, recoverable state) distinct from "a
+/// pointer exists but is unusable" (never silently ignored, never auto-created
+/// around). Callers choose the remediation appropriate to their command.
+#[derive(Debug, Clone, PartialEq)]
+pub enum WorkspaceLookup {
+    /// A workspace is bound to this repository.
+    Bound(String),
+    /// No workspace metadata exists for this repository.
+    Absent,
+    /// A project pointer is present but malformed or names an unknown id.
+    PointerInvalid(String),
+}
+
 impl WorkStore {
     /// Initialize a new workspace inside `repository`.
     pub fn init(repository: Repository) -> Result<WorkspaceInitReport> {
@@ -120,8 +135,26 @@ impl WorkStore {
         Self::open_at(&root_dir, repository)
     }
 
+    /// Open the existing workspace associated with `repository` read-only.
+    pub fn open_read_only(repository: Repository) -> Result<Self> {
+        let root_dir = root_dir()?;
+        Self::open_at_read_only(&root_dir, repository)
+    }
+
     /// Open the existing workspace using an explicit Root directory.
     pub fn open_at(root_dir: &Path, repository: Repository) -> Result<Self> {
+        Self::open_at_inner(root_dir, repository, false)
+    }
+
+    /// Open the existing workspace using an explicit Root directory, read-only.
+    ///
+    /// Never migrates or writes: an out-of-date schema is refused rather than
+    /// mutated, and no `-wal`/`-shm` sidecars are created.
+    pub fn open_at_read_only(root_dir: &Path, repository: Repository) -> Result<Self> {
+        Self::open_at_inner(root_dir, repository, true)
+    }
+
+    fn open_at_inner(root_dir: &Path, repository: Repository, read_only: bool) -> Result<Self> {
         let workspace_id = locate_workspace_id(root_dir, &repository)?;
         let db_path = paths::database_path(root_dir, &workspace_id);
         if !db_path.exists() {
@@ -132,7 +165,11 @@ impl WorkStore {
                 db_path.display()
             );
         }
-        let conn = db::open(&db_path)?;
+        let conn = if read_only {
+            db::open_read_only(&db_path)?
+        } else {
+            db::open(&db_path)?
+        };
         let workspace = load_workspace(&conn, &workspace_id)?.ok_or_else(|| {
             anyhow::anyhow!(
                 "Workspace metadata points at '{}', but no matching workspace exists in {}.",
@@ -604,6 +641,9 @@ impl WorkStore {
             reject_secret(message)?;
         }
         reject_secret(input.continuation_summary)?;
+        if let Some(agent_env_ref) = input.agent_env_ref {
+            reject_secret(agent_env_ref)?;
+        }
         let goal_id = self.active_goal_record()?.map(|goal| goal.id);
         let tx = self.conn.transaction()?;
         let provenance = insert_provenance_ctx(&tx, &context)?;
@@ -625,14 +665,15 @@ impl WorkStore {
             snapshot: input.snapshot.to_string(),
             created_at: now_rfc3339(),
             provenance_id: Some(provenance.clone()),
+            agent_env_ref: input.agent_env_ref.map(|value| value.to_string()),
         };
         tx.execute(
             "INSERT INTO checkpoints (
                 id, workspace_id, goal_id, message, work_revision, git_head, git_branch,
                 git_dirty, git_dirty_fingerprint, rootfile_digest, root_lock_digest,
                 profile_reference, environment_status, continuation_summary, snapshot,
-                created_at, provenance_id
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+                created_at, provenance_id, agent_env_ref
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
             params![
                 record.id,
                 record.workspace_id,
@@ -650,7 +691,8 @@ impl WorkStore {
                 record.continuation_summary,
                 record.snapshot,
                 record.created_at,
-                record.provenance_id
+                record.provenance_id,
+                record.agent_env_ref
             ],
         )?;
         touch_workspace(&tx, &self.workspace.id, &record.created_at)?;
@@ -673,9 +715,12 @@ impl WorkStore {
 
     pub fn list_checkpoints(&self) -> Result<Vec<CheckpointSummary>> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, workspace_id, goal_id, message, work_revision, git_head, git_branch,
-                    git_dirty, environment_status, created_at
-             FROM checkpoints WHERE workspace_id = ?1 ORDER BY created_at DESC, rowid DESC",
+            "SELECT c.id, c.workspace_id, c.goal_id, c.message, c.work_revision, c.git_head,
+                    c.git_branch, c.git_dirty, c.environment_status, c.created_at,
+                    c.agent_env_ref, p.agent
+             FROM checkpoints c
+             LEFT JOIN provenance p ON p.id = c.provenance_id
+             WHERE c.workspace_id = ?1 ORDER BY c.created_at DESC, c.rowid DESC",
         )?;
         let rows = stmt.query_map(params![self.workspace.id], row_to_checkpoint_summary)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
@@ -687,7 +732,7 @@ impl WorkStore {
                 "SELECT id, workspace_id, goal_id, message, work_revision, git_head, git_branch,
                         git_dirty, git_dirty_fingerprint, rootfile_digest, root_lock_digest,
                         profile_reference, environment_status, continuation_summary, snapshot,
-                        created_at, provenance_id
+                        created_at, provenance_id, agent_env_ref
                  FROM checkpoints WHERE id = ?1 AND workspace_id = ?2",
                 params![checkpoint_id, self.workspace.id],
                 row_to_checkpoint,
@@ -703,7 +748,7 @@ impl WorkStore {
                 "SELECT id, workspace_id, goal_id, message, work_revision, git_head, git_branch,
                         git_dirty, git_dirty_fingerprint, rootfile_digest, root_lock_digest,
                         profile_reference, environment_status, continuation_summary, snapshot,
-                        created_at, provenance_id
+                        created_at, provenance_id, agent_env_ref
                  FROM checkpoints WHERE workspace_id = ?1
                  ORDER BY created_at DESC, rowid DESC LIMIT 1",
                 params![self.workspace.id],
@@ -762,6 +807,8 @@ pub struct NewCheckpoint<'a> {
     pub environment_status: &'a str,
     pub continuation_summary: &'a str,
     pub snapshot: &'a str,
+    /// Serialized `AgentEnvSummary` JSON (refs/names only, never values).
+    pub agent_env_ref: Option<&'a str>,
 }
 
 /// Attribution for durable work objects. CLI-created records default to human.
@@ -808,19 +855,63 @@ fn reject_secret(value: &str) -> Result<()> {
     Ok(())
 }
 
-fn locate_workspace_id(root_dir: &Path, repository: &Repository) -> Result<String> {
+/// Resolve a repository against the workspace index and optional project
+/// pointer without mutating anything.
+///
+/// Project pointer (opt-in) wins and is fail-closed: a pointer that is
+/// malformed or names an id absent from the index yields `PointerInvalid`
+/// rather than falling back to identity/path discovery (which could bind a
+/// divergent workspace). An absent pointer falls back to identity then path.
+pub fn lookup_workspace(root_dir: &Path, repository: &Repository) -> Result<WorkspaceLookup> {
     let index = WorkIndex::load(root_dir)?;
-    let repo_path = repository.root.display().to_string();
-    if let Some(entry) = index
-        .find_by_identity(&repository.identity())
-        .or_else(|| index.find_by_path(&repo_path))
-    {
-        return Ok(entry.id.clone());
+    match crate::pointer::load(&repository.root) {
+        Ok(Some(pointer)) => match index
+            .workspaces
+            .iter()
+            .find(|e| e.id == pointer.workspace_id)
+        {
+            Some(entry) => Ok(WorkspaceLookup::Bound(entry.id.clone())),
+            None => Ok(WorkspaceLookup::PointerInvalid(pointer_invalid_message(
+                &format!("Unknown workspace id '{}'", pointer.workspace_id),
+                &repository.root,
+            ))),
+        },
+        Ok(None) => {
+            let repo_path = repository.root.display().to_string();
+            if let Some(entry) = index
+                .find_by_identity(&repository.identity())
+                .or_else(|| index.find_by_path(&repo_path))
+            {
+                Ok(WorkspaceLookup::Bound(entry.id.clone()))
+            } else {
+                Ok(WorkspaceLookup::Absent)
+            }
+        }
+        Err(error) => Ok(WorkspaceLookup::PointerInvalid(pointer_invalid_message(
+            &error.to_string(),
+            &repository.root,
+        ))),
     }
-    bail!(
-        "No Root workspace found for this repository.\n\n\
-         Initialize one with:  root workspace init"
+}
+
+fn pointer_invalid_message(reason: &str, repo_root: &Path) -> String {
+    format!(
+        "{reason} in the project pointer ({}).\n\n\
+         Rebind this repository with:  root restore --rebind\n\
+         Or re-initialize the pointer with:  root workspace init --write-pointer",
+        paths::workspace_pointer_path(repo_root).display()
     )
+}
+
+fn locate_workspace_id(root_dir: &Path, repository: &Repository) -> Result<String> {
+    match lookup_workspace(root_dir, repository)? {
+        WorkspaceLookup::Bound(id) => Ok(id),
+        WorkspaceLookup::Absent => bail!(
+            "No Root workspace found for this repository.\n\n\
+             Initialize one with:  root workspace init"
+        ),
+        WorkspaceLookup::PointerInvalid(message) => bail!("{message}"),
+    }
 }
 
 fn load_workspace(conn: &Connection, workspace_id: &str) -> Result<Option<WorkspaceRecord>> {
@@ -904,7 +995,7 @@ fn describe_event(event: &WorkEvent) -> String {
     }
 }
 
-fn row_to_workspace(row: &Row) -> rusqlite::Result<WorkspaceRecord> {
+pub(crate) fn row_to_workspace(row: &Row) -> rusqlite::Result<WorkspaceRecord> {
     Ok(WorkspaceRecord {
         id: row.get(0)?,
         name: row.get(1)?,
@@ -915,7 +1006,19 @@ fn row_to_workspace(row: &Row) -> rusqlite::Result<WorkspaceRecord> {
     })
 }
 
-fn row_to_goal(row: &Row) -> rusqlite::Result<GoalRecord> {
+pub(crate) fn row_to_session(row: &Row) -> rusqlite::Result<SessionRecord> {
+    Ok(SessionRecord {
+        id: row.get(0)?,
+        workspace_id: row.get(1)?,
+        harness: row.get(2)?,
+        agent_identity: row.get(3)?,
+        started_at: row.get(4)?,
+        ended_at: row.get(5)?,
+        resumed_from_checkpoint_id: row.get(6)?,
+    })
+}
+
+pub(crate) fn row_to_goal(row: &Row) -> rusqlite::Result<GoalRecord> {
     Ok(GoalRecord {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
@@ -927,7 +1030,7 @@ fn row_to_goal(row: &Row) -> rusqlite::Result<GoalRecord> {
     })
 }
 
-fn row_to_decision(row: &Row) -> rusqlite::Result<DecisionRecord> {
+pub(crate) fn row_to_decision(row: &Row) -> rusqlite::Result<DecisionRecord> {
     Ok(DecisionRecord {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
@@ -940,7 +1043,7 @@ fn row_to_decision(row: &Row) -> rusqlite::Result<DecisionRecord> {
     })
 }
 
-fn row_to_finding(row: &Row) -> rusqlite::Result<FindingRecord> {
+pub(crate) fn row_to_finding(row: &Row) -> rusqlite::Result<FindingRecord> {
     Ok(FindingRecord {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
@@ -953,7 +1056,7 @@ fn row_to_finding(row: &Row) -> rusqlite::Result<FindingRecord> {
     })
 }
 
-fn row_to_artifact(row: &Row) -> rusqlite::Result<ArtifactRecord> {
+pub(crate) fn row_to_artifact(row: &Row) -> rusqlite::Result<ArtifactRecord> {
     Ok(ArtifactRecord {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
@@ -965,7 +1068,7 @@ fn row_to_artifact(row: &Row) -> rusqlite::Result<ArtifactRecord> {
     })
 }
 
-fn row_to_checkpoint(row: &Row) -> rusqlite::Result<CheckpointRecord> {
+pub(crate) fn row_to_checkpoint(row: &Row) -> rusqlite::Result<CheckpointRecord> {
     Ok(CheckpointRecord {
         id: row.get(0)?,
         workspace_id: row.get(1)?,
@@ -984,6 +1087,7 @@ fn row_to_checkpoint(row: &Row) -> rusqlite::Result<CheckpointRecord> {
         snapshot: row.get(14)?,
         created_at: row.get(15)?,
         provenance_id: row.get(16)?,
+        agent_env_ref: row.get(17)?,
     })
 }
 
@@ -999,10 +1103,12 @@ fn row_to_checkpoint_summary(row: &Row) -> rusqlite::Result<CheckpointSummary> {
         git_dirty: row.get::<_, i64>(7)? != 0,
         environment_status: row.get(8)?,
         created_at: row.get(9)?,
+        agent_env_ref: row.get(10)?,
+        provenance_agent: row.get(11)?,
     })
 }
 
-fn row_to_provenance(row: &Row) -> rusqlite::Result<ProvenanceRecord> {
+pub(crate) fn row_to_provenance(row: &Row) -> rusqlite::Result<ProvenanceRecord> {
     Ok(ProvenanceRecord {
         id: row.get(0)?,
         source_type: row.get(1)?,
@@ -1014,7 +1120,7 @@ fn row_to_provenance(row: &Row) -> rusqlite::Result<ProvenanceRecord> {
     })
 }
 
-fn row_to_event(row: &Row) -> rusqlite::Result<WorkEvent> {
+pub(crate) fn row_to_event(row: &Row) -> rusqlite::Result<WorkEvent> {
     Ok(WorkEvent {
         sequence: row.get(0)?,
         workspace_id: row.get(1)?,

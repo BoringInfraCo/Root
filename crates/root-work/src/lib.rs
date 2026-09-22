@@ -12,15 +12,24 @@ pub mod db;
 pub mod id;
 pub mod model;
 pub mod paths;
+pub mod pointer;
 pub mod registry;
 pub mod repository;
 pub mod secrets;
 pub mod store;
 pub mod time;
+pub mod transfer;
 
 pub use model::*;
+pub use pointer::WorkspacePointer;
 pub use repository::Repository;
-pub use store::{NewArtifact, NewCheckpoint, ProvenanceContext, WorkStore};
+pub use store::{
+    lookup_workspace, NewArtifact, NewCheckpoint, ProvenanceContext, WorkStore, WorkspaceLookup,
+};
+pub use transfer::{
+    export_workspace, import_workspace, ExportReport, ImportReport, WorkspaceTransfer,
+    MAX_TRANSFER_BYTES, ROOTWS_VERSION,
+};
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -48,7 +57,27 @@ fn resolve_artifact_path(cwd: &Path, input: &str) -> PathBuf {
 
 pub fn workspace_init(cwd: &Path) -> Result<WorkspaceInitReport> {
     let repository = Repository::discover(cwd)?;
-    WorkStore::init(repository)
+    workspace_init_with(&repository, false)
+}
+
+/// Initialize a workspace for `repository`. When `write_pointer` is set, also
+/// write the opt-in project pointer `<repo>/.root/workspace.json` (id + Root-dir
+/// hint only). The pointer is a hint; canonical state stays under `~/.root`.
+pub fn workspace_init_with(
+    repository: &Repository,
+    write_pointer: bool,
+) -> Result<WorkspaceInitReport> {
+    let report = WorkStore::init(repository.clone())?;
+    if write_pointer {
+        let pointer = WorkspacePointer {
+            workspace_id: report.workspace.id.clone(),
+            root_dir_hint: root_lockfile::get_root_dir()
+                .ok()
+                .map(|dir| dir.display().to_string()),
+        };
+        pointer::save(&repository.root, &pointer)?;
+    }
+    Ok(report)
 }
 
 pub fn workspace_status(cwd: &Path) -> Result<WorkspaceStatusReport> {
@@ -171,6 +200,36 @@ pub fn artifact_list(cwd: &Path) -> Result<ArtifactListReport> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsString;
+    use std::sync::{Mutex, MutexGuard};
+
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    struct RootDirGuard {
+        previous: Option<OsString>,
+        _lock: MutexGuard<'static, ()>,
+    }
+
+    impl RootDirGuard {
+        fn set(dir: &Path) -> Self {
+            let lock = TEST_MUTEX.lock().unwrap_or_else(|error| error.into_inner());
+            let previous = std::env::var_os("ROOT_DIR");
+            std::env::set_var("ROOT_DIR", dir);
+            Self {
+                previous,
+                _lock: lock,
+            }
+        }
+    }
+
+    impl Drop for RootDirGuard {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("ROOT_DIR", value),
+                None => std::env::remove_var("ROOT_DIR"),
+            }
+        }
+    }
 
     struct Fixture {
         root_dir: PathBuf,
@@ -389,6 +448,7 @@ mod tests {
                 environment_status: model::ENV_OBSERVED,
                 continuation_summary: "summary",
                 snapshot: "{}",
+                agent_env_ref: None,
             })
             .unwrap();
         assert!(checkpoint.id.starts_with("root_cp_"));
@@ -412,6 +472,278 @@ mod tests {
             .unwrap()
             .iter()
             .any(|e| e.event_type == "checkpoint.created"));
+    }
+
+    #[test]
+    fn checkpoint_round_trips_agent_env_ref() {
+        let fixture = Fixture::new("agent_env_ref");
+        WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        let mut store = WorkStore::open_at(&fixture.root_dir, fixture.repo()).unwrap();
+        let revision = store.work_revision().unwrap();
+        let agent_env_ref = r#"{"adapter":"codex","skills":["docs-writer"]}"#;
+        let checkpoint = store
+            .create_checkpoint(NewCheckpoint {
+                message: Some("with agent env"),
+                work_revision: revision,
+                git_head: None,
+                git_branch: None,
+                git_dirty: false,
+                git_dirty_fingerprint: None,
+                rootfile_digest: None,
+                root_lock_digest: None,
+                profile_reference: None,
+                environment_status: model::ENV_MISSING,
+                continuation_summary: "summary",
+                snapshot: "{}",
+                agent_env_ref: Some(agent_env_ref),
+            })
+            .unwrap();
+        assert_eq!(checkpoint.agent_env_ref.as_deref(), Some(agent_env_ref));
+        drop(store);
+
+        let store = WorkStore::open_at(&fixture.root_dir, fixture.repo()).unwrap();
+        let fetched = store.show_checkpoint(&checkpoint.id).unwrap();
+        assert_eq!(fetched.agent_env_ref.as_deref(), Some(agent_env_ref));
+        assert_eq!(
+            store
+                .latest_checkpoint()
+                .unwrap()
+                .unwrap()
+                .agent_env_ref
+                .as_deref(),
+            Some(agent_env_ref)
+        );
+        let summaries = store.list_checkpoints().unwrap();
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].agent_env_ref.as_deref(), Some(agent_env_ref));
+    }
+
+    #[test]
+    fn checkpoint_refuses_secret_shaped_agent_env_ref() {
+        let fixture = Fixture::new("agent_env_ref_secret");
+        WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        let mut store = WorkStore::open_at(&fixture.root_dir, fixture.repo()).unwrap();
+        let revision = store.work_revision().unwrap();
+        let errors_before = store.events().unwrap().len();
+
+        let error = store
+            .create_checkpoint(NewCheckpoint {
+                message: Some("with secret agent env"),
+                work_revision: revision,
+                git_head: None,
+                git_branch: None,
+                git_dirty: false,
+                git_dirty_fingerprint: None,
+                rootfile_digest: None,
+                root_lock_digest: None,
+                profile_reference: None,
+                environment_status: model::ENV_MISSING,
+                continuation_summary: "summary",
+                snapshot: "{}",
+                agent_env_ref: Some("password = hunter2"),
+            })
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("secret"), "{error}");
+        assert!(store.list_checkpoints().unwrap().is_empty());
+        assert_eq!(store.events().unwrap().len(), errors_before);
+    }
+
+    #[test]
+    fn pointer_present_resolves_workspace() {
+        let fixture = Fixture::new("pointer_resolve");
+        let report = WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        pointer::save(
+            &fixture.repo_dir,
+            &WorkspacePointer {
+                workspace_id: report.workspace.id.clone(),
+                root_dir_hint: None,
+            },
+        )
+        .unwrap();
+
+        let store = WorkStore::open_at(&fixture.root_dir, fixture.repo()).unwrap();
+        assert_eq!(store.workspace().id, report.workspace.id);
+    }
+
+    #[test]
+    fn stale_pointer_fails_closed_without_creating_workspace() {
+        let fixture = Fixture::new("pointer_stale");
+        WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        pointer::save(
+            &fixture.repo_dir,
+            &WorkspacePointer {
+                workspace_id: "root_ws_UNKNOWN".to_string(),
+                root_dir_hint: None,
+            },
+        )
+        .unwrap();
+
+        let error = WorkStore::open_at(&fixture.root_dir, fixture.repo())
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Unknown workspace id"), "{error}");
+        assert!(error.contains("root restore"), "{error}");
+
+        let index = registry::WorkIndex::load(&fixture.root_dir).unwrap();
+        assert_eq!(index.workspaces.len(), 1, "no divergent workspace created");
+    }
+
+    #[test]
+    fn malformed_pointer_is_an_error() {
+        let fixture = Fixture::new("pointer_malformed");
+        WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        let path = paths::workspace_pointer_path(&fixture.repo_dir);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "{ not json").unwrap();
+
+        let error = WorkStore::open_at(&fixture.root_dir, fixture.repo())
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("Workspace pointer"), "{error}");
+    }
+
+    #[test]
+    fn workspace_init_with_writes_pointer() {
+        let fixture = Fixture::new("init_pointer");
+        let _guard = RootDirGuard::set(&fixture.root_dir);
+        let report = workspace_init_with(&fixture.repo(), true).unwrap();
+        assert!(report.created);
+
+        let pointer = pointer::load(&fixture.repo_dir).unwrap().unwrap();
+        assert_eq!(pointer.workspace_id, report.workspace.id);
+        assert_eq!(
+            pointer.root_dir_hint.as_deref(),
+            Some(fixture.root_dir.display().to_string().as_str())
+        );
+
+        let store = WorkStore::open_at(&fixture.root_dir, fixture.repo()).unwrap();
+        assert_eq!(store.workspace().id, report.workspace.id);
+    }
+
+    #[test]
+    fn workspace_init_without_pointer_leaves_no_file() {
+        let fixture = Fixture::new("init_no_pointer");
+        let _guard = RootDirGuard::set(&fixture.root_dir);
+        workspace_init_with(&fixture.repo(), false).unwrap();
+        assert_eq!(pointer::load(&fixture.repo_dir).unwrap(), None);
+        assert!(!paths::workspace_pointer_path(&fixture.repo_dir).exists());
+    }
+
+    #[test]
+    fn read_only_store_reads_work_state() {
+        let fixture = Fixture::new("ro_read");
+        WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        {
+            let mut store = WorkStore::open_at(&fixture.root_dir, fixture.repo()).unwrap();
+            store.set_goal("Ship read-only inspection").unwrap();
+            store
+                .add_decision("Reads must never migrate", None)
+                .unwrap();
+        }
+
+        let store = WorkStore::open_at_read_only(&fixture.root_dir, fixture.repo()).unwrap();
+        assert_eq!(
+            store.active_goal().unwrap().unwrap().statement,
+            "Ship read-only inspection"
+        );
+        assert_eq!(store.list_decisions().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn read_only_store_does_not_migrate_v2() {
+        let fixture = Fixture::new("ro_v2");
+        let workspace_id = seed_v2_workspace(&fixture.root_dir, &fixture.repo());
+        let db_path = paths::database_path(&fixture.root_dir, &workspace_id);
+        let before = std::fs::read(&db_path).unwrap();
+
+        let error = WorkStore::open_at_read_only(&fixture.root_dir, fixture.repo())
+            .map(|_| ())
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("requires migration"), "{error}");
+        assert_eq!(std::fs::read(&db_path).unwrap(), before);
+        assert!(!db_path.with_extension("db-wal").exists());
+        assert!(!db_path.with_extension("db-shm").exists());
+        assert!(!db_path
+            .parent()
+            .unwrap()
+            .join("state.db.backup-v2")
+            .exists());
+    }
+
+    #[test]
+    fn lookup_workspace_classifies_bound_absent_and_invalid() {
+        let fixture = Fixture::new("lookup");
+        assert_eq!(
+            store::lookup_workspace(&fixture.root_dir, &fixture.repo()).unwrap(),
+            store::WorkspaceLookup::Absent
+        );
+
+        let report = WorkStore::init_at(&fixture.root_dir, fixture.repo()).unwrap();
+        assert_eq!(
+            store::lookup_workspace(&fixture.root_dir, &fixture.repo()).unwrap(),
+            store::WorkspaceLookup::Bound(report.workspace.id.clone())
+        );
+
+        pointer::save(
+            &fixture.repo_dir,
+            &WorkspacePointer {
+                workspace_id: "root_ws_UNKNOWN".to_string(),
+                root_dir_hint: None,
+            },
+        )
+        .unwrap();
+        match store::lookup_workspace(&fixture.root_dir, &fixture.repo()).unwrap() {
+            store::WorkspaceLookup::PointerInvalid(message) => {
+                assert!(message.contains("root restore --rebind"), "{message}");
+                assert!(
+                    message.contains("workspace init --write-pointer"),
+                    "{message}"
+                );
+            }
+            other => panic!("expected PointerInvalid, got {other:?}"),
+        }
+    }
+
+    fn seed_v2_workspace(root_dir: &Path, repository: &Repository) -> String {
+        let workspace_id = "root_ws_V2RO".to_string();
+        let db_path = paths::database_path(root_dir, &workspace_id);
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+        let conn = rusqlite::Connection::open(&db_path).unwrap();
+        conn.execute_batch(db::MIGRATION_V1).unwrap();
+        conn.execute_batch(db::MIGRATION_V2).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE work_schema_migrations (
+                 version INTEGER PRIMARY KEY,
+                 applied_at TEXT NOT NULL
+             );
+             INSERT INTO work_schema_migrations (version, applied_at) VALUES (1, 'now');
+             INSERT INTO work_schema_migrations (version, applied_at) VALUES (2, 'now');",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO workspaces (id, name, repo_path, repo_identity, created_at, updated_at)
+             VALUES (?1, 'seed', ?2, ?3, 'now', 'now')",
+            rusqlite::params![
+                workspace_id,
+                repository.root.display().to_string(),
+                repository.identity()
+            ],
+        )
+        .unwrap();
+        drop(conn);
+
+        let mut index = registry::WorkIndex::load(root_dir).unwrap();
+        index.upsert(registry::WorkspaceEntry {
+            id: workspace_id.clone(),
+            repo_path: repository.root.display().to_string(),
+            repo_identity: repository.identity(),
+        });
+        index.save(root_dir).unwrap();
+        workspace_id
     }
 
     fn report_database(root_dir: &Path, store: &WorkStore) -> PathBuf {

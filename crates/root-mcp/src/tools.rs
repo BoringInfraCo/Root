@@ -109,7 +109,12 @@ pub fn definitions() -> Vec<ToolDef> {
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "checkpoint_id": { "type": "string" }
+                    "checkpoint_id": { "type": "string" },
+                    "with": {
+                        "type": "string",
+                        "enum": ["codex", "opencode", "claude"],
+                        "description": "Optional harness-aware target. When set, assembles a read-only continuation package for that agent."
+                    }
                 }
             }),
         },
@@ -295,6 +300,13 @@ fn continuity_checkpoint(state: &mut ServerState, arguments: &Value) -> Result<V
 
 fn continuity_resume(state: &ServerState, arguments: &Value) -> Result<Value, ToolError> {
     let checkpoint_id = optional_string(arguments, "checkpoint_id")?;
+    let target = optional_string(arguments, "with")?;
+    if let Some(target) = target.as_deref() {
+        let report =
+            root_continuity::resume_with(&state.repository.root, checkpoint_id.as_deref(), target)
+                .map_err(|error| ToolError::Invalid(error.to_string()))?;
+        return to_value(report);
+    }
     let report = root_continuity::resume(&state.repository.root, checkpoint_id.as_deref())
         .map_err(|error| ToolError::Invalid(error.to_string()))?;
     let rendered = render_resume(&report);

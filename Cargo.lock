@@ -581,7 +581,7 @@ dependencies = [
 
 [[package]]
 name = "root-adapters"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -590,7 +590,7 @@ dependencies = [
 
 [[package]]
 name = "root-agent"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -598,7 +598,7 @@ dependencies = [
 
 [[package]]
 name = "root-agent-bundle"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -613,7 +613,7 @@ dependencies = [
 
 [[package]]
 name = "root-cli"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -622,6 +622,7 @@ dependencies = [
  "root-continuity",
  "root-core",
  "root-doctor",
+ "root-lockfile",
  "root-mcp",
  "root-nix",
  "root-sandbox",
@@ -632,12 +633,13 @@ dependencies = [
 
 [[package]]
 name = "root-continuity"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
  "hex",
  "root-adapters",
+ "root-agent-bundle",
  "root-lockfile",
  "root-work",
  "serde",
@@ -647,7 +649,7 @@ dependencies = [
 
 [[package]]
 name = "root-core"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -664,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "root-doctor"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "root-lockfile",
@@ -675,7 +677,7 @@ dependencies = [
 
 [[package]]
 name = "root-lockfile"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -689,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "root-mcp"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "root-continuity",
@@ -701,7 +703,7 @@ dependencies = [
 
 [[package]]
 name = "root-nix"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "dirs",
@@ -710,7 +712,7 @@ dependencies = [
 
 [[package]]
 name = "root-sandbox"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -722,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "root-snapshot"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -733,7 +735,7 @@ dependencies = [
 
 [[package]]
 name = "root-verify"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "root-lockfile",
@@ -743,7 +745,7 @@ dependencies = [
 
 [[package]]
 name = "root-work"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "chrono",

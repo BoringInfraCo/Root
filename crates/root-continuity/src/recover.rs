@@ -364,6 +364,7 @@ mod tests {
                     environment_status: ENV_MISSING,
                     continuation_summary: "summary",
                     snapshot: &snapshot_json,
+                    agent_env_ref: None,
                 },
                 ProvenanceContext::default(),
             )

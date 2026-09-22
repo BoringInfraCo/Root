@@ -21,6 +21,9 @@
 
 pub mod apply;
 pub mod blob;
+pub mod canonical;
+pub mod canonical_apply;
+pub mod capture;
 pub mod claude;
 pub mod codex;
 pub mod export;
@@ -29,8 +32,10 @@ pub mod lock;
 pub mod manifest;
 pub mod opencode;
 pub mod plan;
+pub mod project;
 pub mod scope;
 pub mod snapshot;
+pub mod translate;
 pub mod verify;
 
 pub use manifest::{
@@ -38,3 +43,11 @@ pub use manifest::{
     SECRET_DISCLOSURE, SUPPORTED_CLAUDE_VERSIONS, SUPPORTED_CODEX_VERSIONS,
     SUPPORTED_OPENCODE_VERSIONS,
 };
+
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+pub(crate) fn lock_env() -> std::sync::MutexGuard<'static, ()> {
+    ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}

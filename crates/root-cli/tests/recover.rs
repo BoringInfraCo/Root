@@ -223,3 +223,85 @@ fn recover_human_output_is_inspectable() {
     }
     assert!(stdout.contains("commands not observed by Root"));
 }
+
+/// §7.3/§7.6: recover surfaces drift, recommends inspecting it, keeps the fixed
+/// `not_recoverable` triple, and mutates nothing.
+#[test]
+fn recover_surfaces_drift_and_recommended_action() {
+    let fixture = Fixture::new("drift_action");
+    let init = fixture.json(&["workspace", "init", "--json"]);
+    let workspace_id = init["workspace"]["id"].as_str().unwrap().to_string();
+    fixture.json(&["goal", "set", "Keep recovery honest", "--json"]);
+    fixture.json(&["decision", "add", "Record only observed facts", "--json"]);
+    fixture.json(&["checkpoint", "create", "--json"]);
+
+    let database = fixture
+        .root_dir
+        .join("work")
+        .join(&workspace_id)
+        .join("state.db");
+    let before_bytes = root_work::fingerprint_file(&database).unwrap();
+    let before_mtime = std::fs::metadata(&database).unwrap().modified().unwrap();
+
+    // HEAD change after the checkpoint.
+    std::fs::write(fixture.repo.join("work.ts"), b"export {}\n").unwrap();
+    git(&fixture.repo, &["add", "-A"]);
+    git(
+        &fixture.repo,
+        &[
+            "-c",
+            "user.email=root@example.com",
+            "-c",
+            "user.name=Root",
+            "commit",
+            "-q",
+            "-m",
+            "more work",
+        ],
+    );
+
+    let report = fixture.json(&["recover", "--json"]);
+    assert_eq!(report["drift"]["level"], "warning", "json={report}");
+    assert!(
+        report["drift"]["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["kind"] == "repository.head"),
+        "json={report}"
+    );
+    assert_eq!(
+        report["recommended_action"],
+        "Inspect drift before resuming."
+    );
+
+    let recoverable: Vec<String> = report["recoverable"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| item.as_str().unwrap().to_string())
+        .collect();
+    assert!(recoverable.contains(&"goal".to_string()), "json={report}");
+
+    let mut not_recoverable = not_recoverable_items(&report);
+    let mut expected = vec![
+        "commands not observed by Root".to_string(),
+        "unrecorded agent conversation".to_string(),
+        "unsaved editor state".to_string(),
+    ];
+    not_recoverable.sort();
+    expected.sort();
+    assert_eq!(not_recoverable, expected, "the triple is fixed: {report}");
+
+    // Inspection only: DB bytes and mtime unchanged.
+    assert_eq!(
+        root_work::fingerprint_file(&database).unwrap(),
+        before_bytes,
+        "recover must not write to state.db"
+    );
+    assert_eq!(
+        std::fs::metadata(&database).unwrap().modified().unwrap(),
+        before_mtime,
+        "recover must not touch state.db"
+    );
+}

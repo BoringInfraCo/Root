@@ -99,7 +99,14 @@ fn detect_openai(text: &str) -> Option<&'static str> {
     while let Some(offset) = text[search..].find("sk-") {
         let start = search + offset;
         let body = start + 3;
-        if boundary_before(text.as_bytes(), start) && alnum_run(&text[body..]) >= 20 {
+        let candidate: Vec<u8> = text[body..]
+            .bytes()
+            .take_while(|byte| byte.is_ascii_alphanumeric() || *byte == b'-' || *byte == b'_')
+            .collect();
+        if boundary_before(text.as_bytes(), start)
+            && candidate.len() >= 10
+            && candidate.iter().any(u8::is_ascii_digit)
+        {
             return Some(OPENAI_LABEL);
         }
         search = body;
@@ -256,6 +263,11 @@ mod tests {
             detect("sk-abcdefghijklmnopqrstuvwxyz0123456789"),
             Some(OPENAI_LABEL)
         );
+        assert_eq!(
+            detect("client secret is sk-live-abc123, use it"),
+            Some(OPENAI_LABEL)
+        );
+        assert_eq!(detect("sk-proj-example1234567890"), Some(OPENAI_LABEL));
     }
 
     #[test]

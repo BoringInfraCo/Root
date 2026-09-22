@@ -257,3 +257,237 @@ fn resume_without_checkpoint_errors_clearly() {
         .unwrap()
         .contains("root checkpoint create"));
 }
+
+fn drift_level(resume: &serde_json::Value, kind: &str) -> Option<String> {
+    resume["drift"]["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["kind"] == kind)
+        .map(|item| item["level"].as_str().unwrap().to_string())
+}
+
+fn assert_sorted_newest_first(value: &serde_json::Value) {
+    let items = value.as_array().unwrap();
+    for pair in items.windows(2) {
+        let a_time = pair[0]["created_at"].as_str().unwrap();
+        let a_id = pair[0]["id"].as_str().unwrap();
+        let b_time = pair[1]["created_at"].as_str().unwrap();
+        let b_id = pair[1]["id"].as_str().unwrap();
+        assert!(
+            a_time > b_time || (a_time == b_time && a_id < b_id),
+            "items not newest-first (created_at desc, id asc): ({a_time},{a_id}) then ({b_time},{b_id})"
+        );
+    }
+}
+
+/// §7.2: a long-running workspace is projected within the 10/10/20 caps, with
+/// omitted counts, full `current_state` counts, newest-first order, superseded
+/// entries excluded, and byte-identical output across two runs.
+///
+/// `SessionRecord` is provenance-only and has no CLI surface, so the two
+/// sessions in the fixture are seeded through the durable `WorkStore` API. The
+/// same API seeds the bulk records to keep the test fast; `root resume` (the
+/// unit under test) is always a separate process.
+#[test]
+fn long_running_resume_is_bounded_and_deterministic() {
+    let fixture = Fixture::new("long_running");
+    let repository = root_work::Repository::discover(&fixture.repo).unwrap();
+    let init = root_work::WorkStore::init_at(&fixture.root_dir, repository.clone()).unwrap();
+    let workspace_id = init.workspace.id.clone();
+
+    let (superseded_decision, superseded_finding) = {
+        let mut store =
+            root_work::WorkStore::open_at(&fixture.root_dir, repository.clone()).unwrap();
+        store.set_goal("Ship bounded resume").unwrap();
+        for index in 0..26 {
+            store
+                .add_decision(&format!("Decision {index:02}"), None)
+                .unwrap();
+        }
+        for index in 0..51 {
+            store
+                .add_finding(&format!("Finding {index:02}"), None)
+                .unwrap();
+        }
+        for index in 0..100 {
+            let relative = format!("src/artifact_{index:03}.ts");
+            fixture.write_artifact(&relative);
+            let fingerprint = root_work::fingerprint_file(&fixture.repo.join(&relative)).unwrap();
+            store
+                .add_artifact(root_work::NewArtifact {
+                    kind: "file",
+                    uri: &relative,
+                    fingerprint: Some(&fingerprint),
+                    evidence_ref: None,
+                })
+                .unwrap();
+        }
+        store
+            .start_session(Some("codex"), Some("agent-one"))
+            .unwrap();
+        store
+            .start_session(Some("claude"), Some("agent-two"))
+            .unwrap();
+        // `list_*` is newest-first, so the last entry is the earliest record.
+        let decision = store.list_decisions().unwrap().last().unwrap().id.clone();
+        let finding = store.list_findings().unwrap().last().unwrap().id.clone();
+        (decision, finding)
+    };
+
+    // No public API supersedes decisions/findings; flip one of each directly so
+    // the projection proves it excludes superseded rows.
+    {
+        let database = root_work::paths::database_path(&fixture.root_dir, &workspace_id);
+        let connection = root_work::db::open(&database).unwrap();
+        connection
+            .execute(
+                "UPDATE decisions SET status = 'superseded' WHERE id = ?1",
+                (superseded_decision.as_str(),),
+            )
+            .unwrap();
+        connection
+            .execute(
+                "UPDATE findings SET status = 'superseded' WHERE id = ?1",
+                (superseded_finding.as_str(),),
+            )
+            .unwrap();
+    }
+
+    {
+        let mut store =
+            root_work::WorkStore::open_at(&fixture.root_dir, repository.clone()).unwrap();
+        for index in 0..20 {
+            root_continuity::create_on_store(
+                &mut store,
+                &repository,
+                &fixture.root_dir,
+                Some(&format!("checkpoint {index:02}")),
+                root_work::ProvenanceContext::default(),
+            )
+            .unwrap();
+        }
+    }
+
+    let report = fixture.json(&["resume", "--json"]);
+
+    assert_eq!(report["decisions"].as_array().unwrap().len(), 10);
+    assert_eq!(report["findings"].as_array().unwrap().len(), 10);
+    assert_eq!(report["artifacts"].as_array().unwrap().len(), 20);
+    assert_eq!(report["decisions_omitted"], 15);
+    assert_eq!(report["findings_omitted"], 40);
+    assert_eq!(report["artifacts_omitted"], 80);
+    assert_eq!(report["current_state"]["active_decisions"], 25);
+    assert_eq!(report["current_state"]["active_findings"], 50);
+    assert_eq!(report["current_state"]["artifacts"], 100);
+
+    let decisions = report["decisions"].as_array().unwrap();
+    let findings = report["findings"].as_array().unwrap();
+    assert!(decisions.iter().all(|entry| entry["status"] == "active"));
+    assert!(findings.iter().all(|entry| entry["status"] == "active"));
+    assert!(!decisions
+        .iter()
+        .any(|entry| entry["id"] == superseded_decision.as_str()));
+    assert!(!findings
+        .iter()
+        .any(|entry| entry["id"] == superseded_finding.as_str()));
+
+    assert_sorted_newest_first(&report["decisions"]);
+    assert_sorted_newest_first(&report["findings"]);
+    assert_sorted_newest_first(&report["artifacts"]);
+
+    let first = fixture.run(&["resume", "--json"]);
+    let second = fixture.run(&["resume", "--json"]);
+    assert!(first.status.success() && second.status.success());
+    assert_eq!(
+        first.stdout, second.stdout,
+        "two resume runs must be byte-identical"
+    );
+}
+
+/// §7.3: resume names every drift branch with its level; the report level is the
+/// max of its items; a clean checkpoint reports none.
+#[test]
+fn drift_branches_surface_in_resume() {
+    let fixture = Fixture::new("drift_branches");
+    fixture.json(&["workspace", "init", "--json"]);
+    fixture.json(&["goal", "set", "Keep the tree honest", "--json"]);
+    fixture.write_artifact("src/tracked.ts");
+    fixture.json(&["artifact", "add", "src/tracked.ts", "--json"]);
+    git(&fixture.repo, &["add", "-A"]);
+    git(
+        &fixture.repo,
+        &[
+            "-c",
+            "user.email=root@example.com",
+            "-c",
+            "user.name=Root",
+            "commit",
+            "-q",
+            "-m",
+            "track artifact",
+        ],
+    );
+    fixture.json(&["checkpoint", "create", "--json"]);
+
+    let clean = fixture.json(&["resume", "--json"]);
+    assert_eq!(clean["drift"]["level"], "none", "json={clean}");
+    assert!(clean["drift"]["items"].as_array().unwrap().is_empty());
+
+    // HEAD change -> warning.
+    git(
+        &fixture.repo,
+        &[
+            "-c",
+            "user.email=root@example.com",
+            "-c",
+            "user.name=Root",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "head change",
+        ],
+    );
+    let head = fixture.json(&["resume", "--json"]);
+    assert_eq!(
+        drift_level(&head, "repository.head").as_deref(),
+        Some("warning")
+    );
+    assert_eq!(head["drift"]["level"], "warning");
+
+    // Dirty working tree -> informational (HEAD change still a warning).
+    std::fs::write(fixture.repo.join("README.md"), b"# campfire changed\n").unwrap();
+    let dirty = fixture.json(&["resume", "--json"]);
+    assert_eq!(
+        drift_level(&dirty, "repository.dirty").as_deref(),
+        Some("informational")
+    );
+    assert_eq!(
+        drift_level(&dirty, "repository.head").as_deref(),
+        Some("warning")
+    );
+
+    // Missing artifact -> warning; overall level is the max.
+    std::fs::remove_file(fixture.repo.join("src/tracked.ts")).unwrap();
+    let missing = fixture.json(&["resume", "--json"]);
+    assert_eq!(
+        drift_level(&missing, "artifact.missing").as_deref(),
+        Some("warning")
+    );
+    assert_eq!(
+        drift_level(&missing, "repository.dirty").as_deref(),
+        Some("informational")
+    );
+    assert_eq!(
+        drift_level(&missing, "repository.head").as_deref(),
+        Some("warning")
+    );
+    assert_eq!(missing["drift"]["level"], "warning");
+
+    // Human output names each branch.
+    let human = fixture.run(&["resume"]);
+    assert!(human.status.success());
+    let stdout = String::from_utf8_lossy(&human.stdout);
+    assert!(stdout.contains("HEAD changed"), "{stdout}");
+}

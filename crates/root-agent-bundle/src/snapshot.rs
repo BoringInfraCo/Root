@@ -716,9 +716,6 @@ pub fn list_snapshots() -> Result<Vec<AgentSnapshot>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     struct EnvGuard {
         root_dir: Option<std::ffi::OsString>,
@@ -779,7 +776,7 @@ mod tests {
 
     #[test]
     fn load_rejects_manifest_digest_mismatch() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _env = crate::lock_env();
         let tmp = unique_tmp("manifest_tamper");
         let _env = EnvGuard::isolate(&tmp);
         let snap = take_snapshot(
@@ -800,7 +797,7 @@ mod tests {
 
     #[test]
     fn load_rejects_tampered_blob() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _env = crate::lock_env();
         let tmp = unique_tmp("blob_tamper");
         let _env = EnvGuard::isolate(&tmp);
         std::fs::write(tmp.join("codex").join("existing.txt"), b"original").unwrap();
@@ -824,7 +821,7 @@ mod tests {
 
     #[test]
     fn created_directories_are_scope_relative_and_cannot_be_redirected() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _env = crate::lock_env();
         let tmp = unique_tmp("created_dirs");
         let _env = EnvGuard::isolate(&tmp);
         let snap = take_snapshot(
@@ -850,7 +847,7 @@ mod tests {
 
     #[test]
     fn snapshot_rejects_non_regular_targets() {
-        let _lock = ENV_MUTEX.lock().unwrap();
+        let _env = crate::lock_env();
         let tmp = unique_tmp("non_regular");
         let _env = EnvGuard::isolate(&tmp);
         std::fs::create_dir(tmp.join("codex").join("directory-target")).unwrap();

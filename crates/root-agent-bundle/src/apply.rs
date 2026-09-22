@@ -226,7 +226,7 @@ pub fn apply_bundle(
 /// journal is marked `Failed` (NOT `RolledBack`) and the error preserves
 /// rollback-failed semantics so recovery remains required. Always returns an
 /// `Err` carrying the combined message.
-fn auto_rollback(
+pub(crate) fn auto_rollback(
     snap: &AgentSnapshot,
     journal: &mut ApplyJournal,
     op_name: &str,
@@ -453,7 +453,7 @@ fn prepare_config_opencode(manifest: &Manifest) -> Result<PreparedConfig> {
 
 /// Existing file mode masked to permission bits, or `None` when unknown.
 #[cfg(unix)]
-fn existing_file_mode(path: &Path) -> Option<u32> {
+pub(crate) fn existing_file_mode(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::symlink_metadata(path)
         .ok()
@@ -461,7 +461,7 @@ fn existing_file_mode(path: &Path) -> Option<u32> {
 }
 
 #[cfg(not(unix))]
-fn existing_file_mode(_path: &Path) -> Option<u32> {
+pub(crate) fn existing_file_mode(_path: &Path) -> Option<u32> {
     None
 }
 

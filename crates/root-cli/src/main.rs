@@ -91,14 +91,25 @@ enum Commands {
     Lock,
     /// Reconcile Nix profile with root.lock
     Sync,
-    /// Restore the Root profile from a lockfile
+    /// Restore the Root profile from a lockfile, then bind durable work state
+    ///
+    /// Ordering: the deterministic environment (Rootfile, root.lock, Nix
+    /// profile) is restored first; the durable work state is then bound
+    /// (read-only) and reported. A genuinely absent workspace is reported as
+    /// unavailable; a malformed or stale project pointer fails closed so a
+    /// divergent workspace is never bound by accident. `--rebind` repairs the
+    /// pointer only after environment restoration succeeds; under `--dry-run`
+    /// the repair is only reported, never written.
     Restore {
         /// Lockfile to restore from. Defaults to ~/.root/root.lock
         #[arg(long, value_name = "PATH")]
         lock: Option<std::path::PathBuf>,
-        /// Show restore plan without mutating anything
+        /// Show the restore plan and work bind without mutating anything
         #[arg(long)]
         dry_run: bool,
+        /// Repair the project pointer from the Root index (dry-run reports the proposal without writing; a real restore writes it only after env restore succeeds)
+        #[arg(long)]
+        rebind: bool,
     },
     /// Run a Rootfile task, workflow file, or command
     Run {
@@ -131,6 +142,12 @@ enum Commands {
     AgentBundle {
         #[command(subcommand)]
         subcommand: AgentBundleSubcommands,
+    },
+    /// Inspect canonical agent environment and cross-harness plan/diff (read-only, no writes)
+    #[command(name = "agent")]
+    Agent {
+        #[command(subcommand)]
+        subcommand: AgentSubcommands,
     },
     /// Initialize and inspect the durable Root workspace for this repository
     Workspace {
@@ -167,12 +184,17 @@ enum Commands {
         /// Resume from a specific checkpoint ID instead of the latest
         #[arg(long, value_name = "ID")]
         checkpoint: Option<String>,
+        /// Assemble a harness-aware package for an agent. Without a value,
+        /// resolves the repo Rootfile [agents].default_target.
+        #[arg(long, value_name = "AGENT", num_args = 0..=1)]
+        with: Option<Option<String>>,
     },
     /// Produce a portable handoff package for another agent or human
     Handoff {
-        /// Target adapter id (codex or claude)
-        #[arg(long, value_name = "AGENT")]
-        to: Option<String>,
+        /// Target adapter id. Without a value, resolves the repo Rootfile
+        /// [agents].default_target.
+        #[arg(long, value_name = "AGENT", num_args = 0..=1)]
+        to: Option<Option<String>>,
     },
     /// Report durable state after an interruption and what Root can continue from
     Recover,
@@ -308,6 +330,103 @@ enum AgentBundleSubcommands {
 }
 
 #[derive(Subcommand, Debug)]
+enum AgentSubcommands {
+    /// Read-only inspection of the canonical agent environment (no writes)
+    Inspect {
+        /// Agent id (codex, opencode, or claude)
+        #[arg(value_name = "AGENT")]
+        agent: String,
+    },
+    /// Read-only translation plan from one harness to another (no writes)
+    Plan {
+        /// Source agent id (defaults to the loaded --env's source_agent)
+        #[arg(long, value_name = "AGENT")]
+        from: Option<String>,
+        /// Target agent id (defaults to the repo Rootfile [agents].default_target)
+        #[arg(long, value_name = "AGENT")]
+        to: Option<String>,
+        /// Canonical environment JSON/TOML file (instead of live --from state)
+        #[arg(long, value_name = "FILE")]
+        env: Option<PathBuf>,
+    },
+    /// Read-only symmetric diff between two harnesses (no writes)
+    Diff {
+        /// First agent id
+        #[arg(value_name = "AGENT_A")]
+        a: String,
+        /// Second agent id
+        #[arg(value_name = "AGENT_B")]
+        b: String,
+    },
+    /// Plan and apply a canonical agent environment to a harness.
+    ///
+    /// Without --apply this is a read-only preflight (exit 2, no writes).
+    /// With --apply --plan-hash <hash> --approve <sha256>... it mutates the
+    /// target harness. MCP servers always apply disabled; enable them
+    /// afterwards with the existing per-harness `root agent-bundle enable`
+    /// flow (no canonical `enable` command exists).
+    Apply {
+        /// Target agent id (defaults to the repo Rootfile [agents].default_target)
+        #[arg(long, value_name = "AGENT")]
+        to: Option<String>,
+        /// Plan hash from a current preflight output (required with --apply)
+        #[arg(long, value_name = "HASH")]
+        plan_hash: Option<String>,
+        /// Exact sha256 approval per MCP/executable item (repeatable; no global approval)
+        #[arg(long, value_name = "SHA256")]
+        approve: Vec<String>,
+        /// Confirm mutation (preflight is default-safe; this flag is required to write)
+        #[arg(long)]
+        apply: bool,
+        /// Canonical environment file (.json or .toml; else repo .root/agent.toml discovery)
+        #[arg(long, value_name = "FILE")]
+        env: Option<PathBuf>,
+    },
+    /// Post-apply verification for one harness (read-only, secret-safe)
+    Verify {
+        /// Agent id (codex, opencode, or claude)
+        #[arg(long, value_name = "AGENT")]
+        agent: String,
+    },
+    /// Propose or write a checked-in canonical agent.toml for a repo
+    Capture {
+        /// Source agent id (codex, opencode, or claude)
+        #[arg(long, value_name = "AGENT")]
+        from: String,
+        /// Output agent.toml path (required with --apply; defaults inside .root/)
+        #[arg(long, value_name = "FILE")]
+        out: Option<PathBuf>,
+        /// Confirm write (proposal is default-safe; this flag is required to write)
+        #[arg(long)]
+        apply: bool,
+        /// Overwrite an existing agent.toml
+        #[arg(long)]
+        force: bool,
+        /// Allow writing outside a .root/ directory
+        #[arg(long)]
+        allow_outside_repo: bool,
+    },
+    /// Roll back the most recent agent snapshot
+    Rollback {
+        /// Roll back the most recent snapshot (required)
+        #[arg(long)]
+        last: bool,
+    },
+    /// Delete agent snapshots (requires --yes; --id XOR --all)
+    Purge {
+        /// Snapshot id to delete (mutually exclusive with --all)
+        #[arg(long, value_name = "ID")]
+        id: Option<String>,
+        /// Delete all agent snapshots (mutually exclusive with --id)
+        #[arg(long)]
+        all: bool,
+        /// Explicit confirmation (required; no deletion without it)
+        #[arg(long)]
+        yes: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum PolicySubcommands {
     /// Validate and activate a policy file
     Apply {
@@ -357,9 +476,38 @@ enum SandboxSubcommands {
 #[derive(Subcommand, Debug)]
 enum WorkspaceSubcommands {
     /// Initialize a durable Root workspace inside the current Git repository
-    Init,
+    Init {
+        /// Also write the opt-in project pointer <repo>/.root/workspace.json
+        /// (workspace id + Root directory hint only; no work data, no secrets)
+        #[arg(long)]
+        write_pointer: bool,
+    },
     /// Show workspace identity, active goal, and work counts
     Status,
+    /// Export this workspace's recorded work state to a portable document
+    Export {
+        /// Export the state as of a specific checkpoint ID
+        #[arg(long, value_name = "ID")]
+        checkpoint: Option<String>,
+        /// Output workspace transfer document
+        #[arg(long, short = 'o', value_name = "PATH")]
+        out: PathBuf,
+        /// Overwrite an existing output file
+        #[arg(long)]
+        force: bool,
+    },
+    /// Import a workspace transfer document into a fresh Root directory
+    Import {
+        /// Workspace transfer document
+        #[arg(value_name = "FILE")]
+        file: PathBuf,
+        /// Project directory to bind (defaults to the current directory)
+        #[arg(long, value_name = "PATH")]
+        project: Option<PathBuf>,
+        /// Also write the opt-in project pointer in the project
+        #[arg(long)]
+        write_pointer: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -483,6 +631,682 @@ struct AdapterInspectReport {
     instructions: String,
 }
 
+#[derive(Serialize)]
+struct AgentInspectOutput {
+    agent: String,
+    present: bool,
+    version: Option<String>,
+    version_supported: bool,
+    warnings: Vec<String>,
+    report: serde_json::Value,
+    canonical: root_agent_bundle::canonical::CanonicalEnv,
+    mutated: bool,
+}
+
+fn agent_exit_code(e: &anyhow::Error) -> i32 {
+    let dbg = format!("{:?}", e);
+    if dbg.contains("unsupported bundle adapter") || dbg.contains("invalid canonical env") {
+        return 2;
+    }
+    match exit_code_for_error(e) {
+        4 | 5 | 6 | 0 => 1,
+        c => c,
+    }
+}
+
+fn handle_agent_structured<T: Serialize>(
+    json: bool,
+    res: anyhow::Result<T>,
+    human_fn: impl FnOnce(&T) -> String,
+) -> Option<T> {
+    match res {
+        Ok(val) => {
+            if json {
+                print_json(&val);
+            } else {
+                println!("{}", human_fn(&val));
+            }
+            Some(val)
+        }
+        Err(e) => {
+            let code = agent_exit_code(&e);
+            if json {
+                print_json(&json_error_output(&e));
+            } else {
+                eprintln!("Error: {}", format_user_error(&e));
+            }
+            process::exit(code);
+        }
+    }
+}
+
+fn agent_inspect_report(agent: &str) -> anyhow::Result<AgentInspectOutput> {
+    let norm = root_agent_bundle::canonical::canonical_adapter_id(agent)?;
+    let canonical = root_agent_bundle::translate::build_canonical_from_inspect(norm)?;
+    let (present, version, report) = match norm {
+        root_agent_bundle::manifest::ADAPTER_ID => {
+            let r = root_agent_bundle::codex::inspect()?;
+            let v = serde_json::to_value(&r).unwrap_or(serde_json::Value::Null);
+            (r.present, r.version, v)
+        }
+        root_agent_bundle::manifest::OPENCODE_ADAPTER_ID => {
+            let r = root_agent_bundle::opencode::inspect()?;
+            let v = serde_json::to_value(&r).unwrap_or(serde_json::Value::Null);
+            (r.present, r.version, v)
+        }
+        root_agent_bundle::manifest::CLAUDE_ADAPTER_ID => {
+            let r = root_agent_bundle::claude::inspect()?;
+            let v = serde_json::to_value(&r).unwrap_or(serde_json::Value::Null);
+            (r.present, r.version, v)
+        }
+        other => {
+            return Err(root_agent_bundle::manifest::unsupported_adapter_error(
+                other,
+            ))
+        }
+    };
+    let version_supported = match &version {
+        Some(v) => root_agent_bundle::canonical::version_supported(norm, v),
+        None => false,
+    };
+    let mut warnings = Vec::new();
+    if present {
+        match &version {
+            Some(v) if !version_supported => {
+                let supported = root_agent_bundle::manifest::supported_versions_for(norm)
+                    .map(|s| s.join(", "))
+                    .unwrap_or_default();
+                warnings.push(format!(
+                    "unsupported version '{}'; supported versions: [{}], live: {}",
+                    v, supported, v
+                ));
+            }
+            None => warnings.push("version probe failed; version_supported=false".to_string()),
+            _ => {}
+        }
+    }
+    Ok(AgentInspectOutput {
+        agent: norm.to_string(),
+        present,
+        version,
+        version_supported,
+        warnings,
+        report,
+        canonical,
+        mutated: false,
+    })
+}
+
+fn report_str(report: &serde_json::Value, key: &str) -> Option<String> {
+    report
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
+fn report_bool(report: &serde_json::Value, key: &str) -> Option<bool> {
+    report.get(key).and_then(|v| v.as_bool())
+}
+
+fn report_str_list(report: &serde_json::Value, key: &str) -> Vec<String> {
+    report
+        .get(key)
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn format_agent_inspect(r: &AgentInspectOutput) -> String {
+    let label = match r.agent.as_str() {
+        "codex" => "Codex",
+        "opencode" => "OpenCode",
+        "claude" => "Claude",
+        other => other,
+    };
+    let mut msg = format!("{} present: {}\n", label, r.present);
+    msg.push_str(&format!(
+        "Version: {}\n",
+        r.version.as_deref().unwrap_or("(absent)")
+    ));
+    msg.push_str(&format!("Supported: {}\n", r.version_supported));
+    msg.push_str(&format!(
+        "Instructions: {}\n",
+        r.canonical.instructions.main
+    ));
+    let skills: Vec<&str> = r.canonical.skills.iter().map(|s| s.name.as_str()).collect();
+    msg.push_str(&format!(
+        "Skills: {}\n",
+        if skills.is_empty() {
+            "(none)".to_string()
+        } else {
+            skills.join(", ")
+        }
+    ));
+    let mut mcp: Vec<&str> = r.canonical.mcp_servers.keys().map(|s| s.as_str()).collect();
+    mcp.sort();
+    msg.push_str(&format!(
+        "MCP servers: {}\n",
+        if mcp.is_empty() {
+            "(none)".to_string()
+        } else {
+            mcp.join(", ")
+        }
+    ));
+    // Adapter-native report fields (mirrored verbatim under JSON `report`).
+    if let Some(path) =
+        report_str(&r.report, "codex_home").or_else(|| report_str(&r.report, "config_dir"))
+    {
+        msg.push_str(&format!("Config path: {}\n", path));
+    }
+    if let Some(dir) = report_str(&r.report, "global_state_dir") {
+        msg.push_str(&format!("Global state dir: {}\n", dir));
+    }
+    let mut presence: Vec<String> = Vec::new();
+    for key in [
+        "config_present",
+        "agents_md_present",
+        "settings_present",
+        "claude_md_present",
+    ] {
+        if let Some(b) = report_bool(&r.report, key) {
+            presence.push(format!("{}: {}", key, b));
+        }
+    }
+    if !presence.is_empty() {
+        msg.push_str(&format!("Config presence: {}\n", presence.join(", ")));
+    }
+    let adapter_mcp = report_str_list(&r.report, "mcp_servers");
+    msg.push_str(&format!(
+        "Adapter MCP servers: {}\n",
+        if adapter_mcp.is_empty() {
+            "(none)".to_string()
+        } else {
+            adapter_mcp.join(", ")
+        }
+    ));
+    if let Some(held) = r.report.get("held").and_then(|v| v.as_array()) {
+        if held.is_empty() {
+            msg.push_str("Adapter held: (none)\n");
+        } else {
+            msg.push_str(&format!("Adapter held ({})\n", held.len()));
+            for h in held {
+                let source = h.get("source").and_then(|s| s.as_str()).unwrap_or("?");
+                let reason = h.get("reason").and_then(|s| s.as_str()).unwrap_or("");
+                if reason.is_empty() {
+                    msg.push_str(&format!("  {}\n", source));
+                } else {
+                    msg.push_str(&format!("  {} ({})\n", source, reason));
+                }
+            }
+        }
+    }
+    if !r.warnings.is_empty() {
+        msg.push_str("\nWarnings\n");
+        for w in &r.warnings {
+            msg.push_str(&format!("  {}\n", w));
+        }
+    }
+    if !r.canonical.policies.is_empty() {
+        msg.push_str("\nHeld\n");
+        for p in &r.canonical.policies {
+            msg.push_str(&format!("  {} ({})\n", p.key, p.disposition));
+        }
+    }
+    msg.push_str(&format!(
+        "\n{}\n",
+        root_agent_bundle::manifest::SECRET_DISCLOSURE
+    ));
+    msg.push_str("No changes made.");
+    msg
+}
+
+fn format_agent_plan(r: &root_agent_bundle::translate::TranslationPlan) -> String {
+    let mut msg = format!("Agent plan {} -> {} (dry-run, no writes)\n", r.from, r.to);
+    msg.push_str(&format!("\nPlan hash: {}\n", r.plan_hash));
+    msg.push_str(&format!("\nPortable ({})\n", r.portable.len()));
+    for item in &r.portable {
+        msg.push_str(&format!("  {}\n", item));
+    }
+    msg.push_str(&format!(
+        "\nRequires review ({})\n",
+        r.requires_review.len()
+    ));
+    for item in &r.requires_review {
+        msg.push_str(&format!("  {}: {}\n", item.item, item.reason));
+    }
+    msg.push_str(&format!("\nUnsupported ({})\n", r.unsupported.len()));
+    for item in &r.unsupported {
+        msg.push_str(&format!("  {}: {}\n", item.item, item.reason));
+    }
+    msg.push_str(&format!(
+        "\nSecrets required ({})\n",
+        r.secrets_required.len()
+    ));
+    if r.secrets_required.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for s in &r.secrets_required {
+            msg.push_str(&format!("  {}\n", s));
+        }
+    }
+    msg.push_str(&format!("\nNeeds approval ({})\n", r.needs_approval.len()));
+    if r.needs_approval.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for a in &r.needs_approval {
+            msg.push_str(&format!("  {} {} ({})\n", a.sha256, a.target, a.reason));
+        }
+    }
+    msg.push_str(&format!("\nHeld ({})\n", r.held.len()));
+    for h in &r.held {
+        msg.push_str(&format!("  {} ({})\n", h.source, h.reason));
+    }
+    if !r.warnings.is_empty() {
+        msg.push_str(&format!("\nWarnings ({})\n", r.warnings.len()));
+        for w in &r.warnings {
+            msg.push_str(&format!("  {}\n", w));
+        }
+    }
+    msg.push_str(&format!(
+        "\n{}\n",
+        root_agent_bundle::manifest::SECRET_DISCLOSURE
+    ));
+    msg.push_str("No changes made.");
+    msg
+}
+
+fn format_agent_diff(r: &root_agent_bundle::translate::TranslationDiff) -> String {
+    let mut msg = format!("Agent diff {} <-> {} (dry-run, no writes)\n", r.a, r.b);
+    msg.push_str(&format!("\nPortable ({})\n", r.portable.len()));
+    for item in &r.portable {
+        msg.push_str(&format!("  {}\n", item));
+    }
+    msg.push_str(&format!(
+        "\nRequires review ({})\n",
+        r.requires_review.len()
+    ));
+    for item in &r.requires_review {
+        msg.push_str(&format!("  {}: {}\n", item.item, item.reason));
+    }
+    msg.push_str(&format!("\nUnsupported ({})\n", r.unsupported.len()));
+    for item in &r.unsupported {
+        msg.push_str(&format!("  {}: {}\n", item.item, item.reason));
+    }
+    msg.push_str(&format!(
+        "\nSecrets required ({})\n",
+        r.secrets_required.len()
+    ));
+    if r.secrets_required.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for s in &r.secrets_required {
+            msg.push_str(&format!("  {}\n", s));
+        }
+    }
+    msg.push_str(&format!("\nHeld ({})\n", r.held.len()));
+    for h in &r.held {
+        msg.push_str(&format!("  {} ({})\n", h.source, h.reason));
+    }
+    if !r.warnings.is_empty() {
+        msg.push_str(&format!("\nWarnings ({})\n", r.warnings.len()));
+        for w in &r.warnings {
+            msg.push_str(&format!("  {}\n", w));
+        }
+    }
+    msg.push_str(&format!(
+        "\n{}\n",
+        root_agent_bundle::manifest::SECRET_DISCLOSURE
+    ));
+    msg.push_str("No changes made.");
+    msg
+}
+
+fn load_env_explicit(
+    path: &std::path::Path,
+) -> anyhow::Result<root_agent_bundle::canonical::CanonicalEnv> {
+    let ext_is_toml = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("toml"))
+        .unwrap_or(false);
+    if ext_is_toml {
+        let meta = std::fs::symlink_metadata(path).map_err(|e| {
+            anyhow::anyhow!(
+                "invalid canonical env: cannot stat {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+        if meta.file_type().is_symlink() {
+            anyhow::bail!("invalid canonical env: symlinks are rejected");
+        }
+        if !meta.is_file() {
+            anyhow::bail!("invalid canonical env: path must be a regular file");
+        }
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("invalid canonical env: failed to read file: {}", e))?;
+        root_agent_bundle::project::parse_agent_toml(&text)
+    } else {
+        root_agent_bundle::canonical::load_canonical_file(path)
+    }
+}
+
+fn resolve_agent_env(
+    explicit: Option<&std::path::Path>,
+) -> anyhow::Result<(PathBuf, root_agent_bundle::canonical::CanonicalEnv)> {
+    if let Some(p) = explicit {
+        let env = load_env_explicit(p)?;
+        return Ok((p.to_path_buf(), env));
+    }
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    root_agent_bundle::project::resolve_env_source(None, &cwd)
+}
+
+/// Resolve the target harness id: explicit `--to` (normalized), else the repo
+/// Rootfile `[agents].default_target`, else an error naming supported targets.
+fn resolve_agent_target(to: Option<&str>) -> anyhow::Result<String> {
+    match to {
+        Some(t) => Ok(root_agent_bundle::canonical::canonical_adapter_id(t)?.to_string()),
+        None => {
+            let cwd = current_dir();
+            match root_agent_bundle::project::resolve_default_target(&cwd)? {
+                Some(t) => Ok(t),
+                None => anyhow::bail!(
+                    "no target agent available: pass --to <codex|opencode|claude> or set [agents].default_target in the repo Rootfile"
+                ),
+            }
+        }
+    }
+}
+
+/// Invalid CLI arguments for `root agent` exit 2 (JSON-aware). Used for
+/// argument-resolution failures that have no library error sentinel.
+fn fail_agent_args(cli_json: bool, e: &anyhow::Error) -> ! {
+    if cli_json {
+        print_json(&json_error_output(e));
+    } else {
+        eprintln!("Error: {}", format_user_error(e));
+    }
+    process::exit(2);
+}
+
+/// Resolve an optional-value target flag (Sprint 013). `Some(value)` uses the
+/// explicit value; `None` (flag present without a value) resolves the repo
+/// Rootfile `[agents].default_target` and fails closed when none is set.
+fn resolve_optional_target(
+    explicit: Option<String>,
+    cwd: &std::path::Path,
+    flag: &str,
+) -> anyhow::Result<String> {
+    match explicit {
+        Some(target) => Ok(target),
+        None => match root_agent_bundle::project::resolve_default_target(cwd)? {
+            Some(target) => Ok(target),
+            None => anyhow::bail!(
+                "no {flag} target available: set [agents].default_target in the repo Rootfile \
+                 or pass {flag} <codex|opencode|claude>"
+            ),
+        },
+    }
+}
+
+fn format_agent_apply_preflight(
+    plan: &root_agent_bundle::canonical_apply::CanonicalApplyPlan,
+    translation: &root_agent_bundle::translate::TranslationPlan,
+) -> String {
+    let mut msg = format!(
+        "Agent apply {} -> {} (dry-run, no writes)\n",
+        translation.from, plan.to
+    );
+    msg.push_str(&format!("\nPlan hash: {}\n", plan.plan_hash));
+    msg.push_str(&format!("\nPortable ({})\n", translation.portable.len()));
+    for item in &translation.portable {
+        msg.push_str(&format!("  {}\n", item));
+    }
+    msg.push_str(&format!(
+        "\nRequires review ({})\n",
+        translation.requires_review.len()
+    ));
+    for item in &translation.requires_review {
+        msg.push_str(&format!("  {}: {}\n", item.item, item.reason));
+    }
+    msg.push_str(&format!(
+        "\nUnsupported ({})\n",
+        translation.unsupported.len()
+    ));
+    for item in &translation.unsupported {
+        msg.push_str(&format!("  {}: {}\n", item.item, item.reason));
+    }
+    msg.push_str(&format!(
+        "\nSecrets required ({})\n",
+        translation.secrets_required.len()
+    ));
+    if translation.secrets_required.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for s in &translation.secrets_required {
+            msg.push_str(&format!("  {}\n", s));
+        }
+    }
+    if !plan.will_create.is_empty() {
+        msg.push_str(&format!(
+            "\nWill create:\n  {}\n",
+            plan.will_create.join("\n  ")
+        ));
+    }
+    if !plan.will_update.is_empty() {
+        msg.push_str(&format!(
+            "\nWill update:\n  {}\n",
+            plan.will_update.join("\n  ")
+        ));
+    }
+    if !plan.will_keep.is_empty() {
+        msg.push_str(&format!(
+            "\nWill keep:\n  {}\n",
+            plan.will_keep.join("\n  ")
+        ));
+    }
+    if plan.will_create.is_empty() && plan.will_update.is_empty() && plan.will_keep.is_empty() {
+        msg.push_str("\nNo changes needed.\n");
+    }
+    if !plan.needs_env.is_empty() {
+        msg.push_str(&format!(
+            "\nNeeds env on target: {}\n",
+            plan.needs_env.join(", ")
+        ));
+    }
+    msg.push_str(&format!(
+        "\nNeeds approval ({})\n",
+        plan.needs_approval.len()
+    ));
+    if plan.needs_approval.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for a in &plan.needs_approval {
+            msg.push_str(&format!("  {} {} ({})\n", a.sha256, a.target, a.reason));
+        }
+    }
+    msg.push_str(&format!("\nHeld ({})\n", plan.held.len()));
+    for h in &plan.held {
+        msg.push_str(&format!("  {} ({})\n", h.source, h.reason));
+    }
+    if plan
+        .held
+        .iter()
+        .any(|h| h.reason.contains("absent on source"))
+    {
+        msg.push_str(
+            "\nNote: source content is not available on this machine; apply will refuse (Sprint 012 is same-machine). Cross-machine transfer is Sprint 013.\n",
+        );
+    }
+    let mut warnings = translation.warnings.clone();
+    for w in &plan.warnings {
+        if !warnings.contains(w) {
+            warnings.push(w.clone());
+        }
+    }
+    if !warnings.is_empty() {
+        msg.push_str(&format!("\nWarnings ({})\n", warnings.len()));
+        for w in &warnings {
+            msg.push_str(&format!("  {}\n", w));
+        }
+    }
+    msg.push_str(&format!(
+        "\n{}\n",
+        root_agent_bundle::manifest::SECRET_DISCLOSURE
+    ));
+    msg.push_str(
+        "MCP servers apply disabled; enable afterwards with `root agent-bundle enable --agent ",
+    );
+    msg.push_str(&plan.to);
+    msg.push_str(" --server <id>` after providing secrets.\n");
+    msg.push_str(&format!(
+        "Plan only: no writes performed. Re-run with --apply --plan-hash {} to mutate.",
+        plan.plan_hash
+    ));
+    msg
+}
+
+fn format_agent_apply_report(r: &root_agent_bundle::apply::ApplyReport) -> String {
+    let mut msg = format!(
+        "Applied canonical environment.\nSnapshot: {}\n",
+        r.snapshot_id
+    );
+    msg.push_str(&format!(
+        "Applied: {}\n",
+        if r.applied.is_empty() {
+            "(none)".to_string()
+        } else {
+            r.applied.join(", ")
+        }
+    ));
+    msg.push_str(&format!(
+        "Skipped identical: {}\n",
+        if r.skipped_identical.is_empty() {
+            "(none)".to_string()
+        } else {
+            r.skipped_identical.join(", ")
+        }
+    ));
+    msg.push_str(&format!(
+        "MCP imported (disabled): {}\n",
+        if r.mcp_imported.is_empty() {
+            "(none)".to_string()
+        } else {
+            r.mcp_imported.join(", ")
+        }
+    ));
+    msg.push_str(&format!("Plan hash: {}\n", r.plan_hash));
+    msg.push_str("Rollback available with: root agent rollback --last\n");
+    msg.push_str("MCP servers apply disabled; enable afterwards with the existing per-harness `root agent-bundle enable` flow after providing secrets.");
+    msg
+}
+
+fn format_agent_verify_report(r: &root_agent_bundle::verify::VerifyReport) -> String {
+    let label = match r.agent.as_str() {
+        "codex" => "Codex verification",
+        "opencode" => "OpenCode verification",
+        "claude" => "Claude verification",
+        other => other,
+    };
+    let mut msg = format!("{}\n", label);
+    for c in &r.checks {
+        msg.push_str(&format!(
+            "  {} {}: {}\n",
+            if c.passed { "✓" } else { "✗" },
+            c.name,
+            c.detail
+        ));
+    }
+    if r.success {
+        msg.push_str("Verification passed.");
+    } else {
+        msg.push_str("Verification failed.");
+    }
+    msg
+}
+
+fn format_capture_proposal(r: &root_agent_bundle::capture::CaptureProposal) -> String {
+    let mut msg = format!("Capture proposal from {} (dry-run, no writes)\n", r.from);
+    msg.push_str(&format!(
+        "Version: {}\nSupported: {}\n",
+        r.version.as_deref().unwrap_or("(unknown)"),
+        r.supported
+    ));
+    msg.push_str(&format!("\nSkills ({})\n", r.skills.len()));
+    if r.skills.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for s in &r.skills {
+            msg.push_str(&format!("  {}\n", s));
+        }
+    }
+    msg.push_str(&format!("\nMCP servers ({})\n", r.mcp_servers.len()));
+    if r.mcp_servers.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for s in &r.mcp_servers {
+            msg.push_str(&format!("  {}\n", s));
+        }
+    }
+    msg.push_str("\nInstructions\n");
+    match &r.instructions {
+        Some(i) => msg.push_str(&format!(
+            "  role={} size={} sha256={}\n",
+            i.role, i.size, i.sha256
+        )),
+        None => msg.push_str("  (absent)\n"),
+    }
+    msg.push_str(&format!("\nEnv vars ({})\n", r.env_vars.len()));
+    if r.env_vars.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for e in &r.env_vars {
+            msg.push_str(&format!("  {}\n", e));
+        }
+    }
+    msg.push_str(&format!("\nPolicies ({})\n", r.policies.len()));
+    if r.policies.is_empty() {
+        msg.push_str("  (none)\n");
+    } else {
+        for p in &r.policies {
+            msg.push_str(&format!("  {}\n", p));
+        }
+    }
+    msg.push_str(&format!("\nHeld ({})\n", r.held.len()));
+    for h in &r.held {
+        msg.push_str(&format!("  {} ({})\n", h.source, h.reason));
+    }
+    if !r.warnings.is_empty() {
+        msg.push_str(&format!("\nWarnings ({})\n", r.warnings.len()));
+        for w in &r.warnings {
+            msg.push_str(&format!("  {}\n", w));
+        }
+    }
+    msg.push_str(&format!(
+        "\n{}\n",
+        root_agent_bundle::manifest::SECRET_DISCLOSURE
+    ));
+    msg.push_str("No changes made. Re-run with --apply --out <file> to write.");
+    msg
+}
+
+fn format_capture_applied(
+    out: &std::path::Path,
+    env: &root_agent_bundle::canonical::CanonicalEnv,
+) -> String {
+    format!(
+        "Wrote canonical agent environment to {}.\nSource: {} {}\nNames only (no secret values); review before committing.",
+        out.display(),
+        env.source_agent,
+        env.source_agent_version
+    )
+}
+
 fn adapters_list() -> anyhow::Result<AdaptersListReport> {
     let mut adapters = Vec::new();
     for id in root_adapters::list() {
@@ -579,11 +1403,17 @@ fn current_dir() -> PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
-fn format_workspace_init(r: &root_work::WorkspaceInitReport) -> String {
-    format!(
+fn format_workspace_init(r: &root_work::WorkspaceInitReport, write_pointer: bool) -> String {
+    let mut msg = format!(
         "Root workspace initialized.\n\nWorkspace\n  {}\n  {}\n\nRepository\n  {}\n\nState\n  {}",
         r.workspace.name, r.workspace.id, r.workspace.repo_path, r.database,
-    )
+    );
+    if write_pointer {
+        msg.push_str(
+            "\n\nPointer\n  .root/workspace.json written (workspace id + Root directory hint only)",
+        );
+    }
+    msg
 }
 
 fn format_workspace_status(r: &root_work::WorkspaceStatusReport) -> String {
@@ -607,6 +1437,46 @@ fn format_workspace_status(r: &root_work::WorkspaceStatusReport) -> String {
             "\nLast activity\n  {} {}\n",
             activity.description, activity.age_human
         ));
+    }
+    msg
+}
+
+fn format_workspace_export(r: &root_work::ExportReport) -> String {
+    format!(
+        "Workspace exported.\n\nDocument\n  {}\n  {} bytes\n  payload sha256: {}\n\nWorkspace\n  {}\n\nIncluded\n  Goals        {}\n  Decisions    {}\n  Findings     {}\n  Artifacts    {}\n  Checkpoints  {}\n  Events       {}\n",
+        r.path,
+        r.bytes,
+        r.payload_sha256,
+        r.workspace_id,
+        r.goals,
+        r.decisions,
+        r.findings,
+        r.artifacts,
+        r.checkpoints,
+        r.events
+    )
+}
+
+fn format_workspace_import(r: &root_work::ImportReport, write_pointer: bool) -> String {
+    let mut msg = format!(
+        "Workspace imported.\n\nWorkspace\n  {} ({})\n\nImported\n  Goals        {}\n  Decisions    {}\n  Findings     {}\n  Artifacts    {}\n  Checkpoints  {}\n  Events       {}\n",
+        r.workspace_name,
+        r.workspace_id,
+        r.goals,
+        r.decisions,
+        r.findings,
+        r.artifacts,
+        r.checkpoints,
+        r.events
+    );
+    match &r.latest_checkpoint_id {
+        Some(id) => msg.push_str(&format!("\nLatest checkpoint\n  {id}\n")),
+        None => msg.push_str("\nLatest checkpoint\n  (none)\n"),
+    }
+    if write_pointer {
+        msg.push_str(
+            "\nPointer\n  .root/workspace.json written (workspace id + Root directory hint only)\n",
+        );
     }
     msg
 }
@@ -727,6 +1597,54 @@ fn format_checkpoint(checkpoint: &root_work::CheckpointRecord) -> String {
             msg.push_str(&format!("  {}\n", line));
         }
     }
+    if let Some(raw) = &checkpoint.agent_env_ref {
+        match parse_agent_env_summary(raw) {
+            Some(summary) if !summary.summary_is_empty() => {
+                msg.push_str(&format_agent_environment(&summary));
+            }
+            Some(_) => {}
+            None => msg.push_str("\nAgent environment\n  (unreadable agent environment summary)\n"),
+        }
+    }
+    msg
+}
+
+/// Parse the names-only `AgentEnvSummary` JSON stored on a checkpoint. Secret
+/// values are never present in this projection, so nothing sensitive is read.
+fn parse_agent_env_summary(raw: &str) -> Option<root_continuity::AgentEnvSummary> {
+    serde_json::from_str::<root_continuity::AgentEnvSummary>(raw).ok()
+}
+
+fn format_agent_environment(summary: &root_continuity::AgentEnvSummary) -> String {
+    let mut msg = String::from("\nAgent environment\n");
+    match (&summary.adapter, &summary.source_agent_version) {
+        (Some(adapter), Some(version)) => {
+            msg.push_str(&format!("  adapter: {adapter} ({version})\n"))
+        }
+        (Some(adapter), None) => msg.push_str(&format!("  adapter: {adapter}\n")),
+        _ => msg.push_str("  adapter: (none)\n"),
+    }
+    if let Some(instructions) = &summary.instructions {
+        msg.push_str(&format!("  instructions: {instructions}\n"));
+    }
+    if !summary.skills.is_empty() {
+        msg.push_str(&format!("  skills: {}\n", summary.skills.join(", ")));
+    }
+    if !summary.mcp_servers.is_empty() {
+        msg.push_str(&format!(
+            "  mcp servers: {}\n",
+            summary.mcp_servers.join(", ")
+        ));
+    }
+    if !summary.credential_refs.is_empty() {
+        msg.push_str(&format!(
+            "  credential refs: {} (names only)\n",
+            summary.credential_refs.join(", ")
+        ));
+    }
+    if !summary.policies.is_empty() {
+        msg.push_str(&format!("  policies: {}\n", summary.policies.join(", ")));
+    }
     msg
 }
 
@@ -742,9 +1660,21 @@ fn format_checkpoint_list(r: &root_work::CheckpointListReport) -> String {
             "clean"
         };
         msg.push_str(&format!(
-            "  {}  rev {}  {}  {}\n",
+            "  {}  rev {}  {}  {}",
             checkpoint.id, checkpoint.work_revision, dirty, checkpoint.created_at
         ));
+        if let Some(agent) = &checkpoint.provenance_agent {
+            msg.push_str(&format!("  from={agent}"));
+        }
+        let environment_adapter = checkpoint
+            .agent_env_ref
+            .as_deref()
+            .and_then(parse_agent_env_summary)
+            .and_then(|summary| summary.adapter);
+        if let Some(adapter) = environment_adapter {
+            msg.push_str(&format!("  env={adapter}"));
+        }
+        msg.push('\n');
         if let Some(message) = &checkpoint.message {
             msg.push_str(&format!("    {}\n", message));
         }
@@ -841,6 +1771,470 @@ fn format_resume(r: &root_continuity::ResumeReport) -> String {
         msg.push_str(&format!("  Suggestion (not verified): {}\n", suggestion));
     }
 
+    msg
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageWorkspaceView {
+    id: String,
+    name: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageGoalView {
+    statement: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageCheckpointView {
+    id: String,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageStatementView {
+    statement: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageArtifactView {
+    uri: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageEnvironmentView {
+    status: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageDriftItemView {
+    level: String,
+    detail: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageDriftView {
+    #[serde(default)]
+    items: Vec<ResumePackageDriftItemView>,
+}
+
+#[derive(serde::Deserialize)]
+struct ResumePackageView {
+    #[serde(default)]
+    workspace: Option<ResumePackageWorkspaceView>,
+    #[serde(default)]
+    goal: Option<ResumePackageGoalView>,
+    checkpoint: ResumePackageCheckpointView,
+    #[serde(default)]
+    decisions: Vec<ResumePackageStatementView>,
+    #[serde(default)]
+    decisions_omitted: usize,
+    #[serde(default)]
+    findings: Vec<ResumePackageStatementView>,
+    #[serde(default)]
+    findings_omitted: usize,
+    #[serde(default)]
+    artifacts: Vec<ResumePackageArtifactView>,
+    #[serde(default)]
+    artifacts_omitted: usize,
+    environment_state: ResumePackageEnvironmentView,
+    drift: ResumePackageDriftView,
+    #[serde(default)]
+    suggested_continuation: Vec<String>,
+}
+
+fn resume_target_label(target: &str) -> String {
+    match target {
+        "codex" => "Codex".to_string(),
+        "claude" => "Claude Code".to_string(),
+        "opencode" => "OpenCode".to_string(),
+        other => other.to_string(),
+    }
+}
+
+/// Render the harness-aware `resume --with` package: the seven observable
+/// steps followed by the same continuation sections as `format_resume`, plus
+/// the target `Instructions` and `Next` commands.
+fn format_resume_with(report: &root_continuity::ResumeWithReport) -> String {
+    let label = resume_target_label(&report.target);
+    let mut msg = format!("Root Resume --with {label}\n");
+    let view = serde_json::from_value::<ResumePackageView>(report.package.clone()).ok();
+    if let Some(view) = &view {
+        match &view.workspace {
+            Some(workspace) => msg.push_str(&format!(
+                "Workspace {} ({}) · checkpoint {}\n",
+                workspace.name, workspace.id, view.checkpoint.id
+            )),
+            None => msg.push_str(&format!("Checkpoint {}\n", view.checkpoint.id)),
+        }
+    }
+
+    msg.push_str("\nSteps\n");
+    for (index, step) in report.steps.iter().enumerate() {
+        let status = if step.ok { "ok" } else { "failed" };
+        msg.push_str(&format!(
+            "  [{}/{}] {:<24} {} ({})\n",
+            index + 1,
+            report.steps.len(),
+            step.name,
+            status,
+            step.detail
+        ));
+    }
+
+    if !report.mapping_available {
+        let reason =
+            report.warnings.first().cloned().unwrap_or_else(|| {
+                "agent environment was not captured at this checkpoint".to_string()
+            });
+        msg.push_str(&format!("\nAgent mapping: unavailable — {reason}\n"));
+    }
+
+    if let Some(view) = &view {
+        msg.push_str("\nGoal\n");
+        match &view.goal {
+            Some(goal) => msg.push_str(&format!("  {}\n", goal.statement)),
+            None => msg.push_str("  (none)\n"),
+        }
+
+        msg.push_str("\nCheckpoint\n");
+        msg.push_str(&format!("  {}\n", view.checkpoint.id));
+        if let Some(message) = &view.checkpoint.message {
+            msg.push_str(&format!("  {message}\n"));
+        }
+
+        if !view.decisions.is_empty() {
+            msg.push_str("\nDecisions\n");
+            for decision in &view.decisions {
+                msg.push_str(&format!("  {}\n", decision.statement));
+            }
+            if view.decisions_omitted > 0 {
+                msg.push_str(&format!(
+                    "  ({} older decisions omitted)\n",
+                    view.decisions_omitted
+                ));
+            }
+        }
+
+        if !view.findings.is_empty() {
+            msg.push_str("\nFindings\n");
+            for finding in &view.findings {
+                msg.push_str(&format!("  {}\n", finding.statement));
+            }
+            if view.findings_omitted > 0 {
+                msg.push_str(&format!(
+                    "  ({} older findings omitted)\n",
+                    view.findings_omitted
+                ));
+            }
+        }
+
+        if !view.artifacts.is_empty() {
+            msg.push_str("\nRelevant artifacts\n");
+            for artifact in &view.artifacts {
+                msg.push_str(&format!("  {}\n", artifact.uri));
+            }
+            if view.artifacts_omitted > 0 {
+                msg.push_str(&format!(
+                    "  ({} older artifacts omitted)\n",
+                    view.artifacts_omitted
+                ));
+            }
+        }
+
+        msg.push_str("\nEnvironment\n");
+        msg.push_str(&format!(
+            "  {}\n",
+            environment_status_label(&view.environment_state.status)
+        ));
+
+        msg.push_str("\nDrift\n");
+        if view.drift.items.is_empty() {
+            msg.push_str("  None detected.\n");
+        } else {
+            for item in &view.drift.items {
+                msg.push_str(&format!("  [{}] {}\n", item.level, item.detail));
+            }
+        }
+
+        msg.push_str("\nSuggested continuation\n");
+        for suggestion in &view.suggested_continuation {
+            msg.push_str(&format!("  {suggestion}\n"));
+        }
+    }
+
+    if !report.instructions.is_empty() {
+        msg.push_str(&format!("\nInstructions ({label})\n"));
+        for line in &report.instructions {
+            msg.push_str(&format!("  {line}\n"));
+        }
+    }
+
+    if !report.next.is_empty() {
+        msg.push_str("\nNext\n");
+        for (index, command) in report.next.iter().enumerate() {
+            msg.push_str(&format!("  {}. {command}\n", index + 1));
+        }
+    }
+
+    if !report.warnings.is_empty() {
+        msg.push_str("\nWarnings\n");
+        for warning in &report.warnings {
+            msg.push_str(&format!("  {warning}\n"));
+        }
+    }
+
+    msg
+}
+
+#[derive(Serialize)]
+struct RestorePlanWithBind {
+    #[serde(flatten)]
+    restore: root_core::RestorePlanReport,
+    work_bind: root_continuity::WorkBindReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rebind: Option<RebindReport>,
+}
+
+#[derive(Serialize)]
+struct RestoreWithBind {
+    #[serde(flatten)]
+    restore: root_core::RestoreReport,
+    work_bind: root_continuity::WorkBindReport,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    rebind: Option<RebindReport>,
+}
+
+/// Proposed or applied project-pointer rebind, reported by `root restore
+/// --rebind`.
+///
+/// Under `--dry-run` this is a pure in-memory plan: `applied` stays false and
+/// the pointer file is never written. A real restore sets `applied` only after
+/// environment restoration has succeeded, so a failed environment restore
+/// leaves the pointer exactly as it was.
+#[derive(Debug, Clone, Serialize)]
+struct RebindReport {
+    /// Project pointer file this (re)bind targets (`<repo>/.root/workspace.json`).
+    pointer_path: String,
+    /// Pointer state observed before any write: `absent`, `malformed`,
+    /// `stale` (workspace id unknown to the Root index), `divergent` (points
+    /// at a different known workspace), or `bound`.
+    current_state: String,
+    /// Workspace id currently readable from the pointer, when it parses.
+    current_workspace_id: Option<String>,
+    /// Workspace id the pointer is (or would be) rebound to.
+    workspace_id: String,
+    /// Whether the pointer file was written. Always false under `--dry-run`.
+    applied: bool,
+}
+
+/// Plan the `--rebind` pointer repair read-only: resolve the target workspace
+/// from the Root index and classify the current project pointer. Writes
+/// nothing, so it is safe under `--dry-run` and can run before environment
+/// restoration.
+///
+/// No known workspace is a hard error raised before any mutation: the operator
+/// must initialize one explicitly.
+fn plan_rebind(cwd: &std::path::Path) -> anyhow::Result<RebindReport> {
+    let repository = root_work::Repository::discover(cwd)?;
+    let root_dir = root_lockfile::get_root_dir()?;
+    let index = root_work::registry::WorkIndex::load(&root_dir)?;
+    let repo_path = repository.root.display().to_string();
+    let entry = index
+        .find_by_identity(&repository.identity())
+        .or_else(|| index.find_by_path(&repo_path))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No known workspace for this repository; run `root workspace init --write-pointer`"
+            )
+        })?;
+    let (current_state, current_workspace_id) = match root_work::pointer::load(&repository.root) {
+        Err(_) => ("malformed".to_string(), None),
+        Ok(None) => ("absent".to_string(), None),
+        Ok(Some(pointer)) => {
+            let state = if pointer.workspace_id == entry.id {
+                "bound"
+            } else if index
+                .workspaces
+                .iter()
+                .any(|e| e.id == pointer.workspace_id)
+            {
+                "divergent"
+            } else {
+                "stale"
+            };
+            (state.to_string(), Some(pointer.workspace_id))
+        }
+    };
+    Ok(RebindReport {
+        pointer_path: root_work::paths::workspace_pointer_path(&repository.root)
+            .display()
+            .to_string(),
+        current_state,
+        current_workspace_id,
+        workspace_id: entry.id.clone(),
+        applied: false,
+    })
+}
+
+/// Persist a previously planned rebind by writing the project pointer.
+///
+/// Called only after environment restoration has succeeded, so a failed
+/// environment restore leaves the pointer unchanged (still valid-or-invalid as
+/// it was, never newly rewritten).
+fn persist_rebind(plan: &RebindReport, cwd: &std::path::Path) -> anyhow::Result<RebindReport> {
+    let repository = root_work::Repository::discover(cwd)?;
+    let root_dir = root_lockfile::get_root_dir()?;
+    let mut report = plan.clone();
+    report.workspace_id = match root_continuity::rebind_workspace(&root_dir, &repository)? {
+        Some(id) => id,
+        None => anyhow::bail!(
+            "No known workspace for this repository; run `root workspace init --write-pointer`"
+        ),
+    };
+    report.applied = true;
+    Ok(report)
+}
+
+/// Work bind for `restore --dry-run`: inspect normally, except when `--rebind`
+/// was requested and the pointer is invalid — exactly the state the repair
+/// targets. In that case report the pending repair instead of failing closed on
+/// the state the operator already asked to fix, still without writing anything.
+/// Without `--rebind`, invalid pointers keep failing closed (exit 2).
+fn dry_run_work_bind(
+    cwd: &std::path::Path,
+    rebind: Option<&RebindReport>,
+) -> anyhow::Result<root_continuity::WorkBindReport> {
+    if let Some(plan) = rebind {
+        let repository = root_work::Repository::discover(cwd)?;
+        let root_dir = root_lockfile::get_root_dir()?;
+        if let root_work::WorkspaceLookup::PointerInvalid(_) =
+            root_work::lookup_workspace(&root_dir, &repository)?
+        {
+            return Ok(root_continuity::WorkBindReport {
+                workspace_id: None,
+                workspace_name: None,
+                latest_checkpoint_id: None,
+                work_revision: None,
+                available: false,
+                drift: None,
+                notes: vec![format!(
+                    "project pointer is {}; a real `root restore --rebind` would repair it to {} (dry-run does not write)",
+                    plan.current_state, plan.workspace_id
+                )],
+            });
+        }
+    }
+    root_continuity::bind_workspace(cwd)
+}
+
+fn append_rebind_note(msg: &mut String, rebind: &Option<RebindReport>) {
+    let Some(rebind) = rebind else {
+        return;
+    };
+    if rebind.applied {
+        msg.push_str(&format!(
+            "\nRebind\n  project pointer repaired for workspace {} (was {})\n",
+            rebind.workspace_id, rebind.current_state
+        ));
+    } else {
+        msg.push_str(&format!(
+            "\nRebind (proposed, not written)\n  current pointer: {} ({})\n  proposed target: {}\n  change: rewrite the pointer to the proposed target\n",
+            rebind.current_state, rebind.pointer_path, rebind.workspace_id
+        ));
+    }
+}
+
+fn format_work_bind(bind: &root_continuity::WorkBindReport) -> String {
+    let mut msg = String::from("\nWork state\n");
+    match (&bind.workspace_id, &bind.workspace_name) {
+        (Some(id), Some(name)) => msg.push_str(&format!("  workspace {name} ({id})\n")),
+        (Some(id), None) => msg.push_str(&format!("  workspace {id}\n")),
+        _ => msg.push_str("  workspace (none)\n"),
+    }
+    match &bind.latest_checkpoint_id {
+        Some(id) => {
+            let revision = bind
+                .work_revision
+                .map(|revision| format!(" (revision {revision})"))
+                .unwrap_or_default();
+            msg.push_str(&format!("  latest checkpoint {id}{revision}\n"));
+        }
+        None => msg.push_str("  latest checkpoint (none)\n"),
+    }
+    if let Some(revision) = bind.work_revision {
+        msg.push_str(&format!("  work revision: {revision}\n"));
+    }
+    msg.push_str(&format!("  available: {}\n", bind.available));
+    if let Some(drift) = &bind.drift {
+        if drift.items.is_empty() {
+            msg.push_str("  drift: none\n");
+        } else {
+            for item in &drift.items {
+                msg.push_str(&format!("  drift [{}] {}\n", item.level, item.detail));
+            }
+        }
+    }
+    for note in &bind.notes {
+        msg.push_str(&format!("  note: {note}\n"));
+    }
+    msg
+}
+
+fn format_restore_plan_with_bind(report: &RestorePlanWithBind) -> String {
+    let r = &report.restore;
+    let mut msg = String::from("Restore plan\n");
+    if !r.will_install.is_empty() {
+        msg.push_str(&format!(
+            "\nWill install:\n  {}\n",
+            r.will_install.join("\n  ")
+        ));
+    }
+    if !r.will_remove.is_empty() {
+        msg.push_str(&format!(
+            "\nWill remove:\n  {}\n",
+            r.will_remove.join("\n  ")
+        ));
+    }
+    if !r.will_keep.is_empty() {
+        msg.push_str(&format!("\nWill keep:\n  {}\n", r.will_keep.join("\n  ")));
+    }
+    if !r.will_update.is_empty() {
+        msg.push_str(&format!(
+            "\nWill update:\n  {}\n",
+            r.will_update.join("\n  ")
+        ));
+    }
+    if r.will_install.is_empty() && r.will_remove.is_empty() && r.will_update.is_empty() {
+        msg.push_str("\nNo changes needed.");
+    }
+    if r.models_restored.is_some() {
+        msg.push_str("\nModels will not be pulled, restored, or deleted. Ollama weights will be left unchanged.");
+    }
+    append_rebind_note(&mut msg, &report.rebind);
+    msg.push_str(&format_work_bind(&report.work_bind));
+    msg
+}
+
+fn format_restore_with_bind(report: &RestoreWithBind) -> String {
+    let r = &report.restore;
+    let mut msg = format!("Restored Root profile from {}.", r.lock_path);
+    if r.models_restored.is_some() {
+        msg.push_str("\nModels were not restored. Any model lock entries were copied from the lockfile; Ollama weights were left unchanged.");
+    }
+    if !r.installed.is_empty() {
+        msg.push_str(&format!("\nInstalled: {}.", r.installed.join(", ")));
+    }
+    if !r.removed.is_empty() {
+        msg.push_str(&format!("\nRemoved: {}.", r.removed.join(", ")));
+    }
+    if !r.unchanged.is_empty() {
+        msg.push_str(&format!("\nUnchanged: {}.", r.unchanged.join(", ")));
+    }
+    msg.push_str(&format!("\nSnapshot saved: {}", r.snapshot_id));
+    append_rebind_note(&mut msg, &report.rebind);
+    msg.push_str(&format_work_bind(&report.work_bind));
     msg
 }
 
@@ -960,6 +2354,32 @@ fn exit_code_for_error(e: &anyhow::Error) -> i32 {
         || msg.contains("Choose either a task/workflow")
         || msg.contains("Provide a Rootfile task")
         || msg.contains("is not declared in Rootfile")
+        || msg.contains("Missing hash-bound approval")
+        || msg.contains("Unknown approval hash")
+        || msg.contains("unsupported target agent version")
+        || msg.contains("unsupported source agent version")
+        || msg.contains("MCP is held")
+        || msg.contains("invalid canonical env")
+        || msg.contains("no canonical environment found")
+        || msg.contains("refusing to write agent environment")
+        || msg.contains("refusing to overwrite existing agent environment")
+        || msg.contains("outside repo")
+        || msg.contains("without --force")
+        || msg.contains("--out is required")
+        || msg.contains("Currently only `root agent rollback --last` is supported")
+        || msg.contains("Currently only `root rollback --last` is supported")
+        || msg.contains("--id and --all are mutually exclusive")
+        || msg.contains("requires one of --id or --all")
+        || msg.contains("Unsupported --with target")
+        || msg.contains("no --with target available")
+        || msg.contains("no --to target available")
+        || msg.contains("Unsupported handoff target")
+        || msg.contains("invalid Rootfile [agents].default_target")
+        || msg.contains("project pointer")
+        || msg.contains("Workspace pointer")
+        || msg.contains("Unknown workspace id")
+        || msg.contains("No known workspace")
+        || msg.contains("capture agent environment")
     {
         2
     } else if msg.contains("Drift") || msg.contains("drift") {
@@ -989,6 +2409,8 @@ fn format_user_error(e: &anyhow::Error) -> String {
             "{}\n\nRun `root permissions` to inspect the active policy.",
             msg
         )
+    } else if msg.contains("Snapshot purge requires explicit confirmation") {
+        msg
     } else if msg.contains("No snapshots") {
         "No snapshots available for rollback.\n\n\
          Snapshots are created automatically before every install or remove.\n\
@@ -1637,71 +3059,55 @@ fn main() {
                 msg
             });
         }
-        Commands::Restore { lock, dry_run } => {
+        Commands::Restore {
+            lock,
+            dry_run,
+            rebind,
+        } => {
+            let cwd = current_dir();
             if dry_run {
-                let _ = handle_structured(
-                    cli.json,
-                    root_core::restore_dry_run(&adapter, lock.as_deref()),
-                    |r| {
-                        let mut msg = String::from("Restore plan\n");
-                        if !r.will_install.is_empty() {
-                            msg.push_str(&format!(
-                                "\nWill install:\n  {}\n",
-                                r.will_install.join("\n  ")
-                            ));
-                        }
-                        if !r.will_remove.is_empty() {
-                            msg.push_str(&format!(
-                                "\nWill remove:\n  {}\n",
-                                r.will_remove.join("\n  ")
-                            ));
-                        }
-                        if !r.will_keep.is_empty() {
-                            msg.push_str(&format!(
-                                "\nWill keep:\n  {}\n",
-                                r.will_keep.join("\n  ")
-                            ));
-                        }
-                        if !r.will_update.is_empty() {
-                            msg.push_str(&format!(
-                                "\nWill update:\n  {}\n",
-                                r.will_update.join("\n  ")
-                            ));
-                        }
-                        if r.will_install.is_empty()
-                            && r.will_remove.is_empty()
-                            && r.will_update.is_empty()
-                        {
-                            msg.push_str("\nNo changes needed.");
-                        }
-                        if r.models_restored.is_some() {
-                            msg.push_str("\nModels will not be pulled, restored, or deleted. Ollama weights will be left unchanged.");
-                        }
-                        msg
-                    },
-                );
+                let result = (|| -> anyhow::Result<RestorePlanWithBind> {
+                    // Plan the pointer repair read-only: --dry-run never
+                    // writes the pointer, it only reports the proposal.
+                    let rebind = if rebind {
+                        Some(plan_rebind(&cwd)?)
+                    } else {
+                        None
+                    };
+                    let restore = root_core::restore_dry_run(&adapter, lock.as_deref())?;
+                    let work_bind = dry_run_work_bind(&cwd, rebind.as_ref())?;
+                    Ok(RestorePlanWithBind {
+                        restore,
+                        work_bind,
+                        rebind,
+                    })
+                })();
+                let _ = handle_structured(cli.json, result, format_restore_plan_with_bind);
             } else {
-                let _ = handle_structured(
-                    cli.json,
-                    root_core::restore(&adapter, lock.as_deref()),
-                    |r| {
-                        let mut msg = format!("Restored Root profile from {}.", r.lock_path);
-                        if r.models_restored.is_some() {
-                            msg.push_str("\nModels were not restored. Any model lock entries were copied from the lockfile; Ollama weights were left unchanged.");
-                        }
-                        if !r.installed.is_empty() {
-                            msg.push_str(&format!("\nInstalled: {}.", r.installed.join(", ")));
-                        }
-                        if !r.removed.is_empty() {
-                            msg.push_str(&format!("\nRemoved: {}.", r.removed.join(", ")));
-                        }
-                        if !r.unchanged.is_empty() {
-                            msg.push_str(&format!("\nUnchanged: {}.", r.unchanged.join(", ")));
-                        }
-                        msg.push_str(&format!("\nSnapshot saved: {}", r.snapshot_id));
-                        msg
-                    },
-                );
+                let result = (|| -> anyhow::Result<RestoreWithBind> {
+                    // Resolve the rebind target read-only before mutating
+                    // anything; an unknown workspace fails here, before
+                    // environment restore.
+                    let plan = if rebind {
+                        Some(plan_rebind(&cwd)?)
+                    } else {
+                        None
+                    };
+                    // Environment restore resolves paths from ROOT_DIR, not
+                    // the project pointer, so it runs first; a failure here
+                    // leaves the pointer untouched.
+                    let restore = root_core::restore(&adapter, lock.as_deref())?;
+                    // Persist the pointer repair only after env restore
+                    // succeeded, then bind work state against it.
+                    let rebind = plan.map(|plan| persist_rebind(&plan, &cwd)).transpose()?;
+                    let work_bind = root_continuity::bind_workspace(&cwd)?;
+                    Ok(RestoreWithBind {
+                        restore,
+                        work_bind,
+                        rebind,
+                    })
+                })();
+                let _ = handle_structured(cli.json, result, format_restore_with_bind);
             }
         }
         Commands::Run { target, command } => {
@@ -2176,13 +3582,314 @@ fn main() {
                 );
             }
         },
-        Commands::Workspace { subcommand } => match subcommand {
-            WorkspaceSubcommands::Init => {
-                let _ = handle_structured(
+        Commands::Agent { subcommand } => match subcommand {
+            AgentSubcommands::Inspect { agent } => {
+                let _ = handle_agent_structured(
                     cli.json,
-                    root_work::workspace_init(&current_dir()),
-                    format_workspace_init,
+                    agent_inspect_report(&agent),
+                    format_agent_inspect,
                 );
+            }
+            AgentSubcommands::Plan { from, to, env } => {
+                let to_norm = match resolve_agent_target(to.as_deref()) {
+                    Ok(t) => t,
+                    Err(e) => fail_agent_args(cli.json, &e),
+                };
+                if env.is_none() && from.is_none() {
+                    let e = anyhow::anyhow!(
+                        "no source agent available: pass --from <codex|opencode|claude> or --env <file>"
+                    );
+                    fail_agent_args(cli.json, &e);
+                }
+                let res: anyhow::Result<root_agent_bundle::translate::TranslationPlan> = (|| {
+                    let env_loaded = match &env {
+                        Some(p) => load_env_explicit(p)?,
+                        None => {
+                            let from_norm = root_agent_bundle::canonical::canonical_adapter_id(
+                                from.as_deref().unwrap_or_default(),
+                            )?;
+                            root_agent_bundle::translate::build_canonical_from_inspect(from_norm)?
+                        }
+                    };
+                    let from_norm = match &from {
+                        Some(f) => root_agent_bundle::canonical::canonical_adapter_id(f)?,
+                        None => root_agent_bundle::canonical::canonical_adapter_id(
+                            &env_loaded.source_agent,
+                        )?,
+                    };
+                    root_agent_bundle::translate::plan_translation(from_norm, &env_loaded, &to_norm)
+                })(
+                );
+                let _ = handle_agent_structured(cli.json, res, format_agent_plan);
+            }
+            AgentSubcommands::Diff { a, b } => {
+                let res: anyhow::Result<root_agent_bundle::translate::TranslationDiff> = (|| {
+                    let a_norm = root_agent_bundle::canonical::canonical_adapter_id(&a)?;
+                    let b_norm = root_agent_bundle::canonical::canonical_adapter_id(&b)?;
+                    let a_env = root_agent_bundle::translate::build_canonical_from_inspect(a_norm)?;
+                    let b_env = root_agent_bundle::translate::build_canonical_from_inspect(b_norm)?;
+                    root_agent_bundle::translate::diff_canonical(a_norm, &a_env, b_norm, &b_env)
+                })(
+                );
+                let _ = handle_agent_structured(cli.json, res, format_agent_diff);
+            }
+            AgentSubcommands::Apply {
+                to,
+                plan_hash,
+                approve,
+                apply,
+                env,
+            } => {
+                let to_norm = match resolve_agent_target(to.as_deref()) {
+                    Ok(t) => t,
+                    Err(e) => fail_agent_args(cli.json, &e),
+                };
+                let env_res = resolve_agent_env(env.as_deref());
+                let (env_path, env_loaded) = match env_res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                };
+                let _ = env_path;
+                let preflight: anyhow::Result<(
+                    root_agent_bundle::canonical_apply::CanonicalApplyPlan,
+                    root_agent_bundle::translate::TranslationPlan,
+                )> = (|| {
+                    let plan = root_agent_bundle::canonical_apply::plan_canonical_apply(
+                        &env_loaded,
+                        &to_norm,
+                    )?;
+                    let translation = root_agent_bundle::translate::plan_translation(
+                        &env_loaded.source_agent,
+                        &env_loaded,
+                        &to_norm,
+                    )?;
+                    Ok((plan, translation))
+                })();
+                let (plan, translation) = match preflight {
+                    Ok(v) => v,
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                };
+                if !apply || plan_hash.is_none() {
+                    if cli.json {
+                        print_json(&plan);
+                    } else {
+                        println!("{}", format_agent_apply_preflight(&plan, &translation));
+                    }
+                    process::exit(2);
+                }
+                let plan_hash = plan_hash.unwrap();
+                let res = root_agent_bundle::canonical_apply::apply_canonical(
+                    &env_loaded,
+                    &to_norm,
+                    &plan_hash,
+                    &approve,
+                    true,
+                );
+                match res {
+                    Ok(report) => {
+                        if cli.json {
+                            print_json(&report);
+                        } else {
+                            println!("{}", format_agent_apply_report(&report));
+                        }
+                    }
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                }
+            }
+            AgentSubcommands::Verify { agent } => {
+                let res = root_agent_bundle::canonical_apply::verify_agent(&agent);
+                match res {
+                    Ok(report) => {
+                        if cli.json {
+                            print_json(&report);
+                        } else {
+                            println!("{}", format_agent_verify_report(&report));
+                        }
+                        if !report.success {
+                            process::exit(4);
+                        }
+                    }
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                }
+            }
+            AgentSubcommands::Capture {
+                from,
+                out,
+                apply,
+                force,
+                allow_outside_repo,
+            } => {
+                if !apply {
+                    let res = root_agent_bundle::capture::propose_capture(&from);
+                    match res {
+                        Ok(proposal) => {
+                            if cli.json {
+                                print_json(&proposal);
+                            } else {
+                                println!("{}", format_capture_proposal(&proposal));
+                            }
+                        }
+                        Err(e) => {
+                            let code = exit_code_for_error(&e);
+                            if cli.json {
+                                print_json(&json_error_output(&e));
+                            } else {
+                                eprintln!("Error: {}", format_user_error(&e));
+                            }
+                            process::exit(code);
+                        }
+                    }
+                } else {
+                    let out_path = match out {
+                        Some(p) => p,
+                        None => {
+                            let e = anyhow::anyhow!("--out is required with --apply");
+                            let code = exit_code_for_error(&e);
+                            if cli.json {
+                                print_json(&json_error_output(&e));
+                            } else {
+                                eprintln!("Error: {}", format_user_error(&e));
+                            }
+                            process::exit(code);
+                        }
+                    };
+                    match root_agent_bundle::capture::write_agent_toml(
+                        &from,
+                        &out_path,
+                        force,
+                        allow_outside_repo,
+                    ) {
+                        Ok(env_written) => {
+                            if cli.json {
+                                print_json(&env_written);
+                            } else {
+                                println!("{}", format_capture_applied(&out_path, &env_written));
+                            }
+                        }
+                        Err(e) => {
+                            let code = exit_code_for_error(&e);
+                            if cli.json {
+                                print_json(&json_error_output(&e));
+                            } else {
+                                eprintln!("Error: {}", format_user_error(&e));
+                            }
+                            process::exit(code);
+                        }
+                    }
+                }
+            }
+            AgentSubcommands::Rollback { last } => {
+                if !last {
+                    let e =
+                        anyhow::anyhow!("Currently only `root agent rollback --last` is supported");
+                    let code = exit_code_for_error(&e);
+                    if cli.json {
+                        print_json(&json_error_output(&e));
+                    } else {
+                        eprintln!("Error: {}", format_user_error(&e));
+                    }
+                    process::exit(code);
+                }
+                let res = root_agent_bundle::apply::rollback_last();
+                match res {
+                    Ok(report) => {
+                        if cli.json {
+                            print_json(&report);
+                        } else {
+                            println!("Rolled back snapshot {}.", report.snapshot_id);
+                        }
+                    }
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                }
+            }
+            AgentSubcommands::Purge { id, all, yes } => {
+                let id_is_some = id.is_some();
+                if id_is_some == all {
+                    let e = if id_is_some {
+                        anyhow::anyhow!("--id and --all are mutually exclusive")
+                    } else {
+                        anyhow::anyhow!("requires one of --id or --all")
+                    };
+                    let code = exit_code_for_error(&e);
+                    if cli.json {
+                        print_json(&json_error_output(&e));
+                    } else {
+                        eprintln!("Error: {}", format_user_error(&e));
+                    }
+                    process::exit(code);
+                }
+                let res = root_agent_bundle::apply::purge_snapshots(id.as_deref(), yes);
+                match res {
+                    Ok(deleted) => {
+                        if cli.json {
+                            print_json(&deleted);
+                        } else if deleted.is_empty() {
+                            println!("No agent snapshots deleted.");
+                        } else {
+                            println!("Deleted snapshots: {}.", deleted.join(", "));
+                        }
+                    }
+                    Err(e) => {
+                        let code = exit_code_for_error(&e);
+                        if cli.json {
+                            print_json(&json_error_output(&e));
+                        } else {
+                            eprintln!("Error: {}", format_user_error(&e));
+                        }
+                        process::exit(code);
+                    }
+                }
+            }
+        },
+        Commands::Workspace { subcommand } => match subcommand {
+            WorkspaceSubcommands::Init { write_pointer } => {
+                let result =
+                    root_work::Repository::discover(&current_dir()).and_then(|repository| {
+                        root_work::workspace_init_with(&repository, write_pointer)
+                    });
+                let _ = handle_structured(cli.json, result, |r| {
+                    format_workspace_init(r, write_pointer)
+                });
             }
             WorkspaceSubcommands::Status => {
                 let _ = handle_structured(
@@ -2190,6 +3897,38 @@ fn main() {
                     root_work::workspace_status(&current_dir()),
                     format_workspace_status,
                 );
+            }
+            WorkspaceSubcommands::Export {
+                checkpoint,
+                out,
+                force,
+            } => {
+                let result = (|| {
+                    let repository = root_work::Repository::discover(&current_dir())?;
+                    let root_dir = root_lockfile::get_root_dir()?;
+                    root_work::export_workspace(
+                        &root_dir,
+                        &repository,
+                        checkpoint.as_deref(),
+                        &out,
+                        force,
+                    )
+                })();
+                let _ = handle_structured(cli.json, result, format_workspace_export);
+            }
+            WorkspaceSubcommands::Import {
+                file,
+                project,
+                write_pointer,
+            } => {
+                let result = (|| {
+                    let project = project.unwrap_or_else(current_dir);
+                    let root_dir = root_lockfile::get_root_dir()?;
+                    root_work::import_workspace(&root_dir, &project, &file, write_pointer)
+                })();
+                let _ = handle_structured(cli.json, result, |r| {
+                    format_workspace_import(r, write_pointer)
+                });
             }
         },
         Commands::Goal { subcommand } => match subcommand {
@@ -2309,19 +4048,34 @@ fn main() {
                 }
             }
         },
-        Commands::Resume { checkpoint } => {
-            let _ = handle_structured(
-                cli.json,
-                root_continuity::resume(&current_dir(), checkpoint.as_deref()),
-                format_resume,
-            );
+        Commands::Resume { checkpoint, with } => {
+            let cwd = current_dir();
+            match with {
+                None => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_continuity::resume(&cwd, checkpoint.as_deref()),
+                        format_resume,
+                    );
+                }
+                Some(explicit) => {
+                    let resolved = resolve_optional_target(explicit, &cwd, "--with");
+                    let result = resolved.and_then(|target| {
+                        root_continuity::resume_with(&cwd, checkpoint.as_deref(), &target)
+                    });
+                    let _ = handle_structured(cli.json, result, format_resume_with);
+                }
+            }
         }
         Commands::Handoff { to } => {
-            let _ = handle_structured(
-                cli.json,
-                root_continuity::handoff(&current_dir(), to.as_deref()),
-                root_continuity::render_handoff,
-            );
+            let cwd = current_dir();
+            let resolved = match to {
+                None => Ok(None),
+                Some(explicit) => resolve_optional_target(explicit, &cwd, "--to").map(Some),
+            };
+            let result =
+                resolved.and_then(|target| root_continuity::handoff(&cwd, target.as_deref()));
+            let _ = handle_structured(cli.json, result, root_continuity::render_handoff);
         }
         Commands::Recover => {
             let _ = handle_structured(
@@ -2509,9 +4263,14 @@ mod tests {
 
         let restore = Cli::try_parse_from(["root", "restore", "--lock", "./root.lock"]).unwrap();
         match restore.command {
-            Commands::Restore { lock, dry_run } => {
+            Commands::Restore {
+                lock,
+                dry_run,
+                rebind,
+            } => {
                 assert_eq!(lock.unwrap(), std::path::PathBuf::from("./root.lock"));
                 assert!(!dry_run);
+                assert!(!rebind);
             }
             other => panic!("expected restore command, got {:?}", other),
         }
@@ -2519,11 +4278,76 @@ mod tests {
         let restore_dry =
             Cli::try_parse_from(["root", "restore", "--lock", "./root.lock", "--dry-run"]).unwrap();
         match restore_dry.command {
-            Commands::Restore { lock, dry_run } => {
+            Commands::Restore {
+                lock,
+                dry_run,
+                rebind,
+            } => {
                 assert_eq!(lock.unwrap(), std::path::PathBuf::from("./root.lock"));
                 assert!(dry_run);
+                assert!(!rebind);
             }
             other => panic!("expected restore command, got {:?}", other),
+        }
+
+        let restore_rebind =
+            Cli::try_parse_from(["root", "restore", "--rebind", "--dry-run"]).unwrap();
+        match restore_rebind.command {
+            Commands::Restore {
+                lock,
+                dry_run,
+                rebind,
+            } => {
+                assert!(lock.is_none());
+                assert!(dry_run);
+                assert!(rebind);
+            }
+            other => panic!("expected restore command, got {:?}", other),
+        }
+
+        let ws_export =
+            Cli::try_parse_from(["root", "workspace", "export", "--out", "out.rootws.json"])
+                .unwrap();
+        match ws_export.command {
+            Commands::Workspace {
+                subcommand:
+                    WorkspaceSubcommands::Export {
+                        checkpoint,
+                        out,
+                        force,
+                    },
+            } => {
+                assert!(checkpoint.is_none());
+                assert_eq!(out, PathBuf::from("out.rootws.json"));
+                assert!(!force);
+            }
+            other => panic!("expected workspace export, got {:?}", other),
+        }
+
+        let ws_import = Cli::try_parse_from([
+            "root",
+            "workspace",
+            "import",
+            "in.rootws.json",
+            "--project",
+            ".",
+            "--write-pointer",
+        ])
+        .unwrap();
+        match ws_import.command {
+            Commands::Workspace {
+                subcommand:
+                    WorkspaceSubcommands::Import {
+                        file,
+                        project,
+                        write_pointer,
+                    },
+            } => {
+                assert_eq!(file, PathBuf::from("in.rootws.json"));
+                assert_eq!(project, Some(PathBuf::from(".")));
+                assert!(write_pointer);
+            }
+            other => panic!("expected workspace import, got {:?}", other),
         }
 
         let run_task = Cli::try_parse_from(["root", "run", "build"]).unwrap();

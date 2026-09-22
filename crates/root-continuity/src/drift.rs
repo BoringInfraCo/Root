@@ -237,6 +237,7 @@ mod tests {
             snapshot: "{}".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
             provenance_id: None,
+            agent_env_ref: None,
         }
     }
 
@@ -265,6 +266,8 @@ mod tests {
             findings: Vec::new(),
             artifacts: Vec::new(),
             work_revision: 1,
+            agent_env: None,
+            agent_env_sha256: None,
         }
     }
 

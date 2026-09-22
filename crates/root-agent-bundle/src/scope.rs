@@ -324,6 +324,27 @@ pub fn check_duplicates(targets: &[(Scope, String)]) -> Result<()> {
 mod tests {
     use super::*;
 
+    struct ClaudeDirGuard {
+        saved: Option<std::ffi::OsString>,
+    }
+
+    impl ClaudeDirGuard {
+        fn set(dir: &std::path::Path) -> Self {
+            let saved = std::env::var_os("CLAUDE_CONFIG_DIR");
+            std::env::set_var("CLAUDE_CONFIG_DIR", dir);
+            Self { saved }
+        }
+    }
+
+    impl Drop for ClaudeDirGuard {
+        fn drop(&mut self) {
+            match self.saved.take() {
+                Some(v) => std::env::set_var("CLAUDE_CONFIG_DIR", v),
+                None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
+            }
+        }
+    }
+
     fn unique_tmp(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "root_scope_{}_{}_{}",
@@ -360,19 +381,15 @@ mod tests {
 
     #[test]
     fn claude_dirs_follow_claude_config_dir_or_default_home() {
+        let _env = crate::lock_env();
         let tmp = unique_tmp("claude_dirs");
         let isolated = tmp.join("cfg");
         std::fs::create_dir_all(&isolated).unwrap();
-        let saved = std::env::var_os("CLAUDE_CONFIG_DIR");
-        std::env::set_var("CLAUDE_CONFIG_DIR", &isolated);
+        let _guard = ClaudeDirGuard::set(&isolated);
         let home = claude_config_dir().unwrap();
         let state = claude_global_state_dir().unwrap();
         assert_eq!(home, isolated);
         assert_eq!(state, isolated);
-        match saved {
-            Some(v) => std::env::set_var("CLAUDE_CONFIG_DIR", v),
-            None => std::env::remove_var("CLAUDE_CONFIG_DIR"),
-        }
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -427,6 +444,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn descendant_symlink_is_rejected_but_scope_root_symlink_is_allowed() {
+        let _env = crate::lock_env();
         use std::os::unix::fs::symlink;
 
         let tmp = unique_tmp("symlink");
@@ -448,6 +466,7 @@ mod tests {
 
     #[test]
     fn file_in_middle_is_rejected() {
+        let _env = crate::lock_env();
         let tmp = unique_tmp("file_middle");
         std::fs::create_dir_all(&tmp).unwrap();
         std::fs::write(tmp.join("not-a-dir"), b"x").unwrap();

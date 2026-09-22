@@ -14,3 +14,4 @@ hex = "0.4"
 root-work = { path = "../root-work" }
 root-lockfile = { path = "../root-lockfile" }
 root-adapters = { path = "../root-adapters" }
+root-agent-bundle = { path = "../root-agent-bundle" }

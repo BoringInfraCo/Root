@@ -13,6 +13,7 @@ clap = { version = "4.4", features = ["derive"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 root-core = { path = "../root-core" }
+root-lockfile = { path = "../root-lockfile" }
 root-doctor = { path = "../root-doctor" }
 root-nix = { path = "../root-nix" }
 root-sandbox = { path = "../root-sandbox" }

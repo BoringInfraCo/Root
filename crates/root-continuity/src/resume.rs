@@ -109,7 +109,8 @@ pub fn resume(cwd: &Path, checkpoint_id: Option<&str>) -> Result<ResumeReport> {
     ))
 }
 
-fn current_work(store: &WorkStore) -> Result<ResumeCurrentState> {
+/// Bounded-projection current work counts (also reused by `resume --with`).
+pub fn current_work(store: &WorkStore) -> Result<ResumeCurrentState> {
     let decisions = store.list_decisions()?;
     let findings = store.list_findings()?;
     let artifacts = store.list_artifacts()?;
@@ -258,6 +259,7 @@ mod tests {
             snapshot: "{}".into(),
             created_at: "2026-01-01T00:00:00Z".into(),
             provenance_id: Some("root_prov_test".into()),
+            agent_env_ref: None,
         }
     }
 
@@ -334,6 +336,8 @@ mod tests {
             findings,
             artifacts,
             work_revision: 5,
+            agent_env: None,
+            agent_env_sha256: None,
         }
     }
 

@@ -1,4 +1,4 @@
-# Root v0.5.0
+# Root v0.6.0
 
 **Root is a persistent engineering environment for AI agents.**
 
@@ -14,6 +14,18 @@ v0.5 makes the **work** durable on top of that environment. Workspaces, goals, d
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [Docs](Docs/) · [Changelog](CHANGELOG.md) · [Smoke tests](Docs/Release/)
+
+## What v0.6 Changed
+
+v0.6 makes the workspace portable: durable work state moves through a verified workspace document, agent intent moves with the repository, and the deterministic environment is reconstructed from the carried `Rootfile` and `root.lock`. Another machine or supported harness can then resume without a transcript. Existing v0.4 environment management and v0.5 continuity commands are unchanged; the lock schema is still package-only emit 2 / max supported 3. Full history in `CHANGELOG.md`.
+
+- **Canonical agent environment** — `root agent inspect|plan|diff` are read-only; `root agent apply|verify|capture|rollback|purge` are plan-first, hash-bound (`--plan-hash` + per-item `--approve`), and reuse the existing lock/journal/snapshot/rollback engine.
+- **Project-scoped intent** — check in `<repo>/.root/agent.toml` and a `Rootfile` `[agents]` stanza (`env`, `default_target`); `root agent capture --from <agent> --apply --out .root/agent.toml` writes it with names and hashes only.
+- **Unified checkpoint** — `root checkpoint create` now stores an immutable, names-only agent-environment reference alongside work, Git, and environment digests.
+- **Environment-first restore** — `root restore [--dry-run] [--rebind]` reconciles the deterministic environment, then binds durable work state read-only and screens drift.
+- **Harness-aware resume** — `root resume [--checkpoint <id>] --with <agent>` assembles a seven-step continuation package for `codex`, `opencode`, or `claude`; MCP `continuity.resume` accepts `with`.
+- **Workspace transfer** — `root workspace export --out <file>` / `root workspace import <file> [--project <dir>]` move recorded work state as a versioned, hash-checked document. Git carries the repo and `.root/agent.toml`; the operator separately carries the Root environment files in v0.6.
+- **Secret hygiene** — credential names only, everywhere; values are never read, logged, stored, or transferred. Claude MCP stays held.
 
 ## What v0.5.0 Changed
 
@@ -84,9 +96,13 @@ root checkpoint create|list|show                 # immutable continuation points
 root resume / handoff --to <agent>               # continuation + cross-agent handoff
 root recover                                     # what survived an interruption
 root mcp serve|status / adapters list|inspect    # agent interface + setup
+root agent inspect|plan|diff                     # canonical env + cross-harness (read-only)
+root agent apply|verify|capture|rollback|purge   # hash-bound, plan-first translation
+root workspace export|import                     # portable workspace transfer document
+root restore [--dry-run] [--rebind] / resume --with <agent> # env-first restore + harness-aware resume
 ```
 
-> `root import brew` is experimental and not part of the v0.5.0 public surface — may change or break without notice.
+> `root import brew` is experimental and not part of the v0.6.0 public surface — may change or break without notice.
 
 <details>
 <summary>Exit codes & verify details</summary>
@@ -122,8 +138,10 @@ Patch on the Portable Agent-Bundle release. Full history in `CHANGELOG.md`.
 - **Never touches `.claude.json`** — apply/rollback snapshot `settings.json` only; stop Claude first.
 - **Codex 0.150.1 / OpenCode 1.18.27 unchanged**, including MCP disable-until-enable.
 
-## Limitations (v0.5.0)
+## Limitations (v0.6.0)
 
+- **Portable workspace, not sync** — the workspace transfer document (`root workspace export|import`) and Git are the only carriers across machines. No cloud sync, no team collaboration, no multi-writer conflict resolution; the registry is single-machine.
+- **Environment transfer is reconstructed, not copied** — `root restore` rebuilds the deterministic Nix profile from `root.lock`; digests and references are recorded, never bit-for-bit machine images (`observed` is the honesty ceiling). Agent-environment apply is plan-first and re-reads live source content on the machine where it runs.
 - **Curated catalog only** — 42 tools across 11 categories; arbitrary installs rejected. Run `root catalog`. `docker-client` is CLI only.
 - **Undo covers Root only** — rollback restores Root lock/profile state, not Homebrew/manual changes; restore recovery is best-effort.
 - **Agents + models are honest, not magic** — status inspects (never installs agents / pulls models); bundles are same-agent, credential-free; models are tag-pull verification records, digest drift needs re-pull.

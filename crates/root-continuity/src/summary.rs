@@ -84,6 +84,8 @@ mod tests {
             }],
             artifacts: Vec::new(),
             work_revision: 4,
+            agent_env: None,
+            agent_env_sha256: None,
         }
     }
 

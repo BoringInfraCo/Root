@@ -31,3 +31,11 @@ pub fn exports_dir(root_dir: &Path, workspace_id: &str) -> PathBuf {
 pub fn index_path(root_dir: &Path) -> PathBuf {
     work_dir(root_dir).join(INDEX_FILE)
 }
+
+/// `<repo>/.root/workspace.json` — opt-in project pointer.
+///
+/// Contains only `{ workspace_id, root_dir_hint }`: no work data, no secrets,
+/// no digests. Root's canonical state still lives under `~/.root/work/`.
+pub fn workspace_pointer_path(repo_root: &Path) -> PathBuf {
+    repo_root.join(".root").join("workspace.json")
+}

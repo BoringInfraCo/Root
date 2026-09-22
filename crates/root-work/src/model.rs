@@ -136,6 +136,8 @@ pub struct CheckpointRecord {
     pub snapshot: String,
     pub created_at: String,
     pub provenance_id: Option<String>,
+    /// Serialized `AgentEnvSummary` JSON (refs/names only, never values).
+    pub agent_env_ref: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -150,6 +152,10 @@ pub struct CheckpointSummary {
     pub git_dirty: bool,
     pub environment_status: String,
     pub created_at: String,
+    /// Agent that created the checkpoint, when provenance was agent-authored.
+    pub provenance_agent: Option<String>,
+    /// Serialized `AgentEnvSummary` JSON (refs/names only, never values).
+    pub agent_env_ref: Option<String>,
 }
 
 impl From<&CheckpointRecord> for CheckpointSummary {
@@ -165,6 +171,8 @@ impl From<&CheckpointRecord> for CheckpointSummary {
             git_dirty: record.git_dirty,
             environment_status: record.environment_status.clone(),
             created_at: record.created_at.clone(),
+            provenance_agent: None,
+            agent_env_ref: record.agent_env_ref.clone(),
         }
     }
 }

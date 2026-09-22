@@ -5,8 +5,10 @@ use crate::session::ServerState;
 use crate::Policy;
 use root_work::{Repository, WorkStore};
 use serde_json::{json, Value};
-use std::path::PathBuf;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::MutexGuard;
 
 fn temp(tag: &str) -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -50,6 +52,64 @@ impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.base);
     }
+}
+
+/// Serialize tests that mutate `ROOT_DIR` (see AGENTS.md testing quirks) and
+/// restore the previous value on drop.
+struct EnvGuard {
+    previous_root: Option<OsString>,
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl EnvGuard {
+    fn set(root_dir: &Path) -> Self {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let lock = LOCK.lock().unwrap_or_else(|error| error.into_inner());
+        let previous_root = std::env::var_os("ROOT_DIR");
+        std::env::set_var("ROOT_DIR", root_dir);
+        Self {
+            previous_root,
+            _lock: lock,
+        }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.previous_root {
+            Some(value) => std::env::set_var("ROOT_DIR", value),
+            None => std::env::remove_var("ROOT_DIR"),
+        }
+    }
+}
+
+/// List files under `dir`, ignoring SQLite sidecar files that opening a WAL
+/// database may touch.
+fn list_files(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("");
+            if name.ends_with("-wal") || name.ends_with("-shm") || name.ends_with("-journal") {
+                continue;
+            }
+            out.push(path.display().to_string());
+        }
+    }
+    out.sort();
+    out
 }
 
 fn request(state: &mut ServerState, id: i64, method: &str, params: Value) -> Value {
@@ -381,9 +441,7 @@ fn handoff_tool_projects_state_and_rejects_unknown_target() {
         Policy::default_allow(),
     );
     initialize(&mut state);
-
-    let previous = std::env::var_os("ROOT_DIR");
-    std::env::set_var("ROOT_DIR", &fixture.root_dir);
+    let _guard = EnvGuard::set(&fixture.root_dir);
 
     let decision = call(
         &mut state,
@@ -407,11 +465,6 @@ fn handoff_tool_projects_state_and_rejects_unknown_target() {
         "continuity.handoff",
         json!({ "to": "claude" }),
     );
-
-    match &previous {
-        Some(value) => std::env::set_var("ROOT_DIR", value),
-        None => std::env::remove_var("ROOT_DIR"),
-    }
 
     assert_eq!(result["isError"], false);
     assert_eq!(result["structuredContent"]["handoff"]["to"], "claude");
@@ -515,4 +568,132 @@ fn tools_call_requires_string_name() {
         json!({ "name": 42, "arguments": {} }),
     );
     assert_eq!(response["error"]["code"], -32602);
+}
+
+#[test]
+fn continuity_resume_with_target_returns_steps_without_mutation() {
+    let fixture = Fixture::new("resume_with");
+    let mut state = fixture.state(Policy::default_allow());
+    initialize(&mut state);
+    let _guard = EnvGuard::set(&fixture.root_dir);
+
+    let checkpoint = call(
+        &mut state,
+        2,
+        "continuity.checkpoint",
+        json!({ "message": "agent checkpoint" }),
+    );
+    assert_eq!(checkpoint["isError"], false);
+
+    let files_before = list_files(&fixture.root_dir);
+    let events_before = state.store().events().unwrap().len();
+
+    let result = call(
+        &mut state,
+        3,
+        "continuity.resume",
+        json!({ "with": "claude" }),
+    );
+
+    assert_eq!(result["isError"], false);
+    assert_eq!(result["structuredContent"]["target"], "claude");
+    let steps = result["structuredContent"]["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 7);
+    assert!(steps.iter().all(|step| step["ok"].is_boolean()));
+
+    assert_eq!(list_files(&fixture.root_dir), files_before);
+    assert_eq!(state.store().events().unwrap().len(), events_before);
+}
+
+#[test]
+fn continuity_resume_with_unknown_target_fails_closed() {
+    let fixture = Fixture::new("resume_bad_target");
+    let mut state = fixture.state(Policy::default_allow());
+    initialize(&mut state);
+    let _guard = EnvGuard::set(&fixture.root_dir);
+
+    let checkpoint = call(
+        &mut state,
+        2,
+        "continuity.checkpoint",
+        json!({ "message": "agent checkpoint" }),
+    );
+    assert_eq!(checkpoint["isError"], false);
+
+    let result = call(
+        &mut state,
+        3,
+        "continuity.resume",
+        json!({ "with": "gemini" }),
+    );
+
+    assert_eq!(result["isError"], true);
+    let text = result["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Unsupported --with target"), "{text}");
+    assert!(text.contains("codex, opencode, claude"), "{text}");
+}
+
+#[test]
+fn continuity_resume_with_non_string_target_is_invalid() {
+    let fixture = Fixture::new("resume_bad_with");
+    let mut state = fixture.state(Policy::default_allow());
+    initialize(&mut state);
+    let _guard = EnvGuard::set(&fixture.root_dir);
+
+    let result = call(&mut state, 2, "continuity.resume", json!({ "with": 42 }));
+
+    assert_eq!(result["isError"], true);
+    assert!(result["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("with"));
+}
+
+#[test]
+fn continuity_resume_without_target_is_unchanged() {
+    let fixture = Fixture::new("resume_plain");
+    let repository = Repository::discover(&fixture.repo).unwrap();
+    let mut store = WorkStore::open_at(&fixture.root_dir, repository.clone()).unwrap();
+    store.set_goal("Bound the package").unwrap();
+    for index in 0..12 {
+        store
+            .add_decision(&format!("Decision {index:02}"), None)
+            .unwrap();
+    }
+    for index in 0..12 {
+        store
+            .add_finding(&format!("Finding {index:02}"), None)
+            .unwrap();
+    }
+    let mut state = ServerState::new(
+        store,
+        fixture.root_dir.clone(),
+        repository,
+        Policy::default_allow(),
+    );
+    initialize(&mut state);
+    let _guard = EnvGuard::set(&fixture.root_dir);
+
+    let checkpoint = call(
+        &mut state,
+        2,
+        "continuity.checkpoint",
+        json!({ "message": "agent checkpoint" }),
+    );
+    assert_eq!(checkpoint["isError"], false);
+
+    let result = call(&mut state, 3, "continuity.resume", json!({}));
+    assert_eq!(result["isError"], false);
+    let resume = &result["structuredContent"]["resume"];
+    assert_eq!(resume["decisions"].as_array().unwrap().len(), 10);
+    assert_eq!(resume["decisions_omitted"], 2);
+    assert_eq!(resume["findings"].as_array().unwrap().len(), 10);
+    assert_eq!(resume["findings_omitted"], 2);
+    let rendered = result["structuredContent"]["rendered"].as_str().unwrap();
+    assert!(rendered.contains("Root Resume"));
+    assert!(rendered.contains("Suggestion (not verified):"));
+    assert!(resume["suggested_continuation"][0]
+        .as_str()
+        .unwrap()
+        .starts_with("Investigate:"));
 }
