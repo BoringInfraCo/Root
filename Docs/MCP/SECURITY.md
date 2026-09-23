@@ -102,7 +102,8 @@ MCP exposes no arbitrary shell or filesystem mutation.
   destructive tools do not run until `root approval approve`. Audit lines
   store hashes and statuses, not argument values.
 - Inbound events are ledger records. A route creates a delivery record and
-  does not start an agent. Unrouted events stay recorded. `email.local` is a
+  does not start an agent. `root event pull` returns only deliveries already
+  handed to the named harness. Unrouted events stay recorded. `email.local` is a
   fixture mailbox, not a provider connection. Sending is a destructive tool
   and waits for approval.
 - Checkpoint sync encrypts references with a workspace key. The folder relay

@@ -273,6 +273,64 @@ pub fn ingest(connector_id: &str) -> Result<IngestReport> {
     })
 }
 
+#[derive(Debug, Serialize)]
+pub struct Wake {
+    pub delivery_id: String,
+    pub event_id: String,
+    pub selector: String,
+    pub idempotency_key: String,
+    pub summary: String,
+    pub workspace: String,
+    pub harness: String,
+    pub capabilities: Vec<String>,
+    pub correlation_id: String,
+}
+
+/// Handed deliveries for one harness. Unrouted events are not included.
+/// This does not start a process.
+pub fn pull(harness: &str) -> Result<Vec<Wake>> {
+    if harness.is_empty()
+        || !harness
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    {
+        anyhow::bail!("harness must be a lowercase name");
+    }
+    let ledger = read()?;
+    let mut wakes = Vec::new();
+    for delivery in &ledger.deliveries {
+        if delivery.status != "handed" {
+            continue;
+        }
+        let Some(route) = ledger
+            .routes
+            .iter()
+            .find(|route| route.id == delivery.route_id && route.harness == harness)
+        else {
+            continue;
+        };
+        let Some(event) = ledger
+            .events
+            .iter()
+            .find(|event| event.id == delivery.event_id && event.status != "acked")
+        else {
+            continue;
+        };
+        wakes.push(Wake {
+            delivery_id: delivery.id.clone(),
+            event_id: event.id.clone(),
+            selector: event.selector.clone(),
+            idempotency_key: event.idempotency_key.clone(),
+            summary: event.summary.clone(),
+            workspace: route.workspace.clone(),
+            harness: route.harness.clone(),
+            capabilities: route.capabilities.clone(),
+            correlation_id: delivery.correlation_id.clone(),
+        });
+    }
+    Ok(wakes)
+}
+
 pub fn deliver() -> Result<DeliverReport> {
     let mut ledger = read()?;
     let mut handed = 0;

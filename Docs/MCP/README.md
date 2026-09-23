@@ -19,7 +19,7 @@ root capability inspect NAME
 root connector install|list|inspect|enable|disable|remove
 root connector auth plan|bind|revoke
 root approval list|approve|deny
-root event list|watch|ack|ingest|deliver
+root event list|watch|ack|ingest|deliver|pull
 root event route add|list
 root device list|pair|revoke
 root checkpoint-sync init|status|push|pull

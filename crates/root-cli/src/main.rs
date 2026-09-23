@@ -817,6 +817,11 @@ enum EventSubcommands {
     },
     /// Record a delivery attempt. Does not spawn an agent.
     Deliver,
+    /// Return handed deliveries for one harness. Does not spawn an agent.
+    Pull {
+        #[arg(long)]
+        harness: String,
+    },
     /// Manage explicit routes
     Route {
         #[command(subcommand)]
@@ -4668,6 +4673,18 @@ fn main() {
                         "Deliveries handed {}, skipped {}, dead {}\n",
                         item.handed, item.skipped, item.dead
                     )
+                });
+            }
+            EventSubcommands::Pull { harness } => {
+                let _ = handle_structured(cli.json, root_mcp::events::pull(&harness), |items| {
+                    let mut msg = format!("Wakes for {harness} ({})\n", items.len());
+                    for item in items {
+                        msg.push_str(&format!(
+                            "  {}  {}  {}\n",
+                            item.delivery_id, item.selector, item.idempotency_key
+                        ));
+                    }
+                    msg
                 });
             }
             EventSubcommands::Route { subcommand } => match subcommand {

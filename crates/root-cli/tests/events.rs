@@ -168,6 +168,55 @@ fn inbound_mail_does_not_invoke_without_a_route_and_send_waits() {
     );
     let _ = server.kill();
     let _ = server.wait();
+}
+
+#[test]
+fn pull_returns_a_handed_route_and_does_not_start_an_agent() {
+    let fixture = Fixture::new();
+    fixture.json(&["workspace", "init", "--json"]);
+    let package = email_dir();
+    fixture.json(&[
+        "connector",
+        "install",
+        package.join("manifest.json").to_str().unwrap(),
+        "--package",
+        package.to_str().unwrap(),
+        "--json",
+    ]);
+    fixture.json(&["connector", "enable", "email.local", "--json"]);
+    fixture.json(&["event", "ingest", "email.local", "--json"]);
+
+    let unrouted = fixture.json(&["event", "pull", "--harness", "codex", "--json"]);
+    assert!(unrouted.as_array().unwrap().is_empty(), "{unrouted}");
+
+    fixture.json(&[
+        "event",
+        "route",
+        "add",
+        "--selector",
+        "email.received",
+        "--workspace",
+        "campfire",
+        "--harness",
+        "codex",
+        "--capability",
+        "email.local.read",
+        "--json",
+    ]);
+    let pending = fixture.json(&["event", "pull", "--harness", "codex", "--json"]);
+    assert!(pending.as_array().unwrap().is_empty(), "{pending}");
+
+    fixture.json(&["event", "deliver", "--json"]);
+    let wakes = fixture.json(&["event", "pull", "--harness", "codex", "--json"]);
+    assert_eq!(wakes.as_array().unwrap().len(), 1, "{wakes}");
+    assert_eq!(wakes[0]["selector"], "email.received");
+    assert_eq!(wakes[0]["harness"], "codex");
+    assert_eq!(wakes[0]["workspace"], "campfire");
+    assert_eq!(wakes[0]["idempotency_key"], "m1");
+    assert_eq!(wakes[0]["capabilities"][0], "email.local.read");
+    let other = fixture.json(&["event", "pull", "--harness", "claude", "--json"]);
+    assert!(other.as_array().unwrap().is_empty(), "{other}");
+    assert!(!wakes.to_string().contains("spawn"), "{wakes}");
 
     let audit = std::fs::read_to_string(fixture.root_dir.join("events/audit.jsonl")).unwrap();
     assert!(audit.contains("event.ingest"), "{audit}");
