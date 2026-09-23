@@ -187,12 +187,13 @@ fn tool_error(message: impl Into<String>) -> Value {
     })
 }
 
-/// Serve newline-delimited JSON-RPC 2.0 over stdin/stdout until EOF.
-pub fn run_stdio(state: &mut ServerState) -> Result<()> {
-    let stdin = std::io::stdin();
-    let stdout = std::io::stdout();
-    let mut output = stdout.lock();
-    for line in stdin.lock().lines() {
+/// Serve newline-delimited JSON-RPC 2.0 over an already-bound session.
+pub fn run_lines<I, W>(state: &mut ServerState, lines: I, mut output: W) -> Result<()>
+where
+    I: Iterator<Item = std::io::Result<String>>,
+    W: Write,
+{
+    for line in lines {
         let line = line?;
         if line.trim().is_empty() {
             continue;
@@ -206,15 +207,64 @@ pub fn run_stdio(state: &mut ServerState) -> Result<()> {
     Ok(())
 }
 
-/// Bind to the workspace discovered from the current directory and serve.
+/// Serve newline-delimited JSON-RPC 2.0 over stdin/stdout until EOF.
+pub fn run_stdio(state: &mut ServerState) -> Result<()> {
+    let stdin = std::io::stdin();
+    let stdout = std::io::stdout();
+    run_lines(state, stdin.lock().lines(), stdout.lock())
+}
+
+/// Stdio compatibility shim. Confirms the workspace the way v0.6 did, then
+/// proxies newline-delimited JSON-RPC to rootd. A daemon is started for this
+/// Root directory when one is not already listening.
 pub fn serve() -> Result<()> {
     let cwd = std::env::current_dir()?;
     let repository = Repository::discover(&cwd)?;
-    let store = WorkStore::open(repository.clone())?;
-    let root_dir = policy::root_dir()?;
-    let policy = Policy::load_at(&root_dir);
-    let mut state = ServerState::new(store, root_dir, repository, policy);
-    run_stdio(&mut state)
+    // Fail closed before proxying, with the same errors as the in-process server.
+    drop(WorkStore::open(repository)?);
+
+    let stream = match crate::daemon::connect_stdio_shim() {
+        Ok(stream) => stream,
+        Err(error) => {
+            let response = jsonrpc::error(Value::Null, jsonrpc::INTERNAL_ERROR, error.to_string());
+            let mut stdout = std::io::stdout().lock();
+            serde_json::to_writer(&mut stdout, &response)?;
+            stdout.write_all(b"\n")?;
+            stdout.flush()?;
+            return Err(error);
+        }
+    };
+    let mut writer = stream.try_clone()?;
+    writeln!(writer, "{}", serde_json::json!({ "cwd": cwd }))?;
+    writer.flush()?;
+
+    let copy_in = std::thread::spawn(move || {
+        let stdin = std::io::stdin();
+        let mut stdin = stdin.lock();
+        let _ = std::io::copy(&mut stdin, &mut writer);
+        let _ = writer.shutdown(std::net::Shutdown::Write);
+    });
+
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+    let mut flushing = FlushOnWrite(&mut stdout);
+    let _ = std::io::copy(&mut &stream, &mut flushing);
+    drop(copy_in);
+    Ok(())
+}
+
+struct FlushOnWrite<W>(W);
+
+impl<W: Write> Write for FlushOnWrite<W> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let written = self.0.write(buf)?;
+        self.0.flush()?;
+        Ok(written)
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
 }
 
 pub fn status() -> Result<McpStatusReport> {
@@ -234,9 +284,9 @@ pub fn status() -> Result<McpStatusReport> {
         workspace,
         capabilities: policy.view(),
         policy_source: policy.source().to_string(),
-        tools: tools::definitions()
+        tools: crate::registry::registered()
             .into_iter()
-            .map(|tool| tool.name.to_string())
+            .map(|tool| tool.name)
             .collect(),
         protocol_version: protocol::PROTOCOL_VERSION.to_string(),
     })

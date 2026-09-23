@@ -1,13 +1,21 @@
 # Root MCP Interface
 
-Root exposes a local, stdio-only MCP server so coding agents can read and
-record engineering continuity state. MCP is an interface, not the product.
+Root exposes a local MCP interface so coding agents can read and record
+engineering continuity state. `rootd` listens on a Unix socket. The path is
+short (`/tmp/rootd-<hash>.sock`) because macOS limits socket paths to 104
+bytes; `$ROOT_DIR/rootd.path` records it. `root mcp serve` is the
+stdio shim agents already launch: it connects to that socket, starting `rootd`
+if it is not already running. MCP is an interface, not the product. There is
+no TCP listener and no bearer token yet.
 
 ## Commands
 
 ```bash
-root mcp serve    # newline-delimited JSON-RPC 2.0 over stdin/stdout
-root mcp status   # workspace, capabilities, policy source, and exposed tools
+root mcp serve              # stdio shim to rootd (newline-delimited JSON-RPC 2.0)
+root mcp daemon             # run rootd in the foreground
+root mcp status             # workspace, capabilities, policy source, and exposed tools
+root capability list        # registered capabilities and their namespaces
+root capability inspect NAME
 ```
 
 ## Agent setup

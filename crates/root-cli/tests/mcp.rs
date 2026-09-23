@@ -261,6 +261,81 @@ fn mcp_status_reports_workspace_capabilities_and_tools() {
 }
 
 #[test]
+fn capability_list_registers_namespaced_builtin_tools() {
+    let fixture = Fixture::new("capabilities");
+    let listed = fixture.json(&["capability", "list", "--json"]);
+    let tools = listed.as_array().expect("capability list is an array");
+    let decision = tools
+        .iter()
+        .find(|tool| tool["name"] == "work.record_decision")
+        .expect("work.record_decision is registered");
+    assert_eq!(decision["namespace"], "work");
+    assert_eq!(decision["capability"], "record");
+
+    let inspected = fixture.json(&["capability", "inspect", "continuity.resume", "--json"]);
+    assert_eq!(inspected["namespace"], "continuity");
+    assert_eq!(inspected["name"], "continuity.resume");
+
+    let missing = fixture.run(&["capability", "inspect", "email.send", "--json"]);
+    assert!(!missing.status.success());
+    let stdout = String::from_utf8_lossy(&missing.stdout);
+    assert!(stdout.contains("unknown capability"), "{stdout}");
+}
+
+#[test]
+fn mcp_serve_proxies_to_an_already_running_rootd() {
+    let fixture = Fixture::new("rootd");
+    fixture.json(&["workspace", "init", "--json"]);
+    fixture.json(&["goal", "set", "Proxy through rootd", "--json"]);
+
+    let mut daemon = Command::new(root_bin())
+        .args(["mcp", "daemon"])
+        .current_dir(&fixture.repo)
+        .env("ROOT_DIR", &fixture.root_dir)
+        .env_remove("ROOTD_IDLE_EXIT")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let socket = fixture.root_dir.join("rootd.path");
+    let started = std::time::Instant::now();
+    while !socket.exists() {
+        if started.elapsed() > std::time::Duration::from_secs(3) {
+            let _ = daemon.kill();
+            panic!("rootd socket did not appear");
+        }
+        if let Some(status) = daemon.try_wait().unwrap() {
+            panic!("rootd exited early: {status}");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+
+    let mut server = Server::start(&fixture);
+    let init = server.request(
+        1,
+        "initialize",
+        serde_json::json!({
+            "protocolVersion": "2024-11-05",
+            "clientInfo": { "name": "codex", "version": "1.0" },
+        }),
+    );
+    assert_eq!(init["result"]["serverInfo"]["name"], "root");
+    let record = server.request(
+        2,
+        "tools/call",
+        serde_json::json!({
+            "name": "work.record_decision",
+            "arguments": { "statement": "Recorded through rootd" },
+        }),
+    );
+    assert_eq!(record["result"]["isError"], false);
+    drop(server);
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+}
+
+#[test]
 fn mcp_status_without_workspace_is_null() {
     let fixture = Fixture::new("noworkspace");
     let status = fixture.json(&["mcp", "status", "--json"]);

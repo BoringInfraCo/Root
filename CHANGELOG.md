@@ -5,6 +5,12 @@ All notable changes to Root are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Local `rootd`.** `root mcp daemon` (and the `rootd` binary) listens on a mode `0600` Unix socket at `/tmp/rootd-<hash>.sock` (the hash names the Root directory; `$ROOT_DIR/rootd.path` records the path). `root mcp serve` is the stdio shim: it connects to that socket and starts an idle-exit daemon when one is not already running. The workspace, work, continuity, and environment tools are registered capabilities (`root capability list|inspect`). Still no TCP listener and no bearer token. The version stays 0.6.0 until this interface is complete.
+
 ## [0.6.0] - 2026-09-22
 
 v0.6.0 makes the workspace portable. It adds a canonical, cross-harness agent-environment track (`root agent inspect|plan|diff|apply|verify|capture|rollback|purge`), a project-scoped `.root/agent.toml` plus `Rootfile` `[agents]`, a unified checkpoint that carries an immutable names-only agent-environment reference, environment-first `restore` with work binding and `--rebind`, a seven-step harness-aware `resume --with`, and a versioned workspace export/import transfer document. It does **not** preserve conversations, sync to a cloud, or transfer secrets. Existing v0.4 environment management and v0.5 continuity commands are unchanged, and the lock schema remains package-only emit 2 / max supported 3.

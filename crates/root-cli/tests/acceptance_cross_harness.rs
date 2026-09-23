@@ -290,7 +290,7 @@ impl Mcp {
             },
         }));
         let init = server.read();
-        assert_eq!(init["result"]["serverInfo"]["name"], "root");
+        assert_eq!(init["result"]["serverInfo"]["name"], "root", "{init}");
         server.send(&json!({
             "jsonrpc": "2.0",
             "method": "notifications/initialized",

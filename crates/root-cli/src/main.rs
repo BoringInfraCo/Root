@@ -203,6 +203,11 @@ enum Commands {
         #[command(subcommand)]
         subcommand: McpSubcommands,
     },
+    /// List the capabilities registered with the local MCP interface
+    Capability {
+        #[command(subcommand)]
+        subcommand: CapabilitySubcommands,
+    },
     /// Inspect supported coding-agent adapters
     Adapters {
         #[command(subcommand)]
@@ -592,10 +597,23 @@ enum CheckpointSubcommands {
 
 #[derive(Subcommand, Debug)]
 enum McpSubcommands {
-    /// Serve MCP over stdio (newline-delimited JSON-RPC 2.0)
+    /// Proxy MCP stdio to the local rootd Unix socket
     Serve,
+    /// Run rootd, the local Unix-socket MCP daemon
+    Daemon,
     /// Show MCP workspace, capabilities, and exposed tools
     Status,
+}
+
+#[derive(Subcommand, Debug)]
+enum CapabilitySubcommands {
+    /// List registered capabilities
+    List,
+    /// Show one registered capability
+    Inspect {
+        #[arg(value_name = "NAME")]
+        name: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -2240,6 +2258,24 @@ fn format_restore_with_bind(report: &RestoreWithBind) -> String {
 
 fn format_recover(r: &root_continuity::RecoverReport) -> String {
     root_continuity::render_recover(r)
+}
+
+fn format_capabilities(tools: &Vec<root_mcp::RegisteredCapability>) -> String {
+    let mut msg = format!("Capabilities ({})\n", tools.len());
+    for tool in tools {
+        msg.push_str(&format!(
+            "  {}  [{}]  {}\n",
+            tool.name, tool.namespace, tool.capability
+        ));
+    }
+    msg
+}
+
+fn format_capability(tool: &root_mcp::RegisteredCapability) -> String {
+    format!(
+        "Capability\n  {}\n  namespace: {}\n  policy: {}\n  {}\n",
+        tool.name, tool.namespace, tool.capability, tool.description
+    )
 }
 
 fn format_mcp_status(r: &root_mcp::McpStatusReport) -> String {
@@ -4091,8 +4127,30 @@ fn main() {
                     process::exit(exit_code_for_error(&e));
                 }
             }
+            McpSubcommands::Daemon => {
+                if let Err(e) = root_mcp::run_daemon() {
+                    eprintln!("Error: {}", format_user_error(&e));
+                    process::exit(exit_code_for_error(&e));
+                }
+            }
             McpSubcommands::Status => {
                 let _ = handle_structured(cli.json, root_mcp::status(), format_mcp_status);
+            }
+        },
+        Commands::Capability { subcommand } => match subcommand {
+            CapabilitySubcommands::List => {
+                let _ = handle_structured(
+                    cli.json,
+                    Ok::<_, anyhow::Error>(root_mcp::capabilities()),
+                    format_capabilities,
+                );
+            }
+            CapabilitySubcommands::Inspect { name } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_mcp::require_capability(&name),
+                    format_capability,
+                );
             }
         },
         Commands::Adapters { subcommand } => match subcommand {

@@ -77,11 +77,13 @@ MCP exposes no arbitrary shell or filesystem mutation.
 ## Remaining limitations
 
 - No authentication or encryption: any local process that can run `root mcp
-  serve` with access to `ROOT_DIR` can use the workspace.
+  serve`, or connect to the socket named in `$ROOT_DIR/rootd.path`, can use
+  the workspace. The socket is mode `0600` and is not under a world-readable
+  name that includes workspace contents. There is no bearer token yet.
 - No OS sandbox around the MCP process; isolation is by convention and by the
   narrow tool surface, not by privilege separation.
 - Secret detection is heuristic and incomplete. Do not rely on it as a secrets
   manager.
 - Provenance and session identity are not cryptographically verified.
 - Denial is per capability, not per tool or per workspace; there is no RBAC.
-- MCP is local stdio only. There is no network transport in v0.5.
+- The daemon is a local Unix socket. There is no TCP listener.

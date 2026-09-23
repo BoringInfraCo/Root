@@ -35,7 +35,7 @@ v0.5.0 adds engineering continuity on top of the deterministic environment. Exis
 - **Checkpoints** — `root checkpoint create|list|show` capture immutable work + Git + environment references with a deterministic continuation summary.
 - **Continuity** — `root resume` and `root handoff --to <agent>` project a small, newest-first continuation package (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20) with drift detection.
 - **Recovery** — `root recover` reports what durable state exists after an interruption and what Root can and cannot continue from.
-- **MCP** — `root mcp serve|status` exposes a local stdio interface with server-side capability policy.
+- **MCP** — `root mcp serve` is a stdio shim to the local `rootd` Unix socket. `root mcp status` and `root capability list` show the registered tools and server-side policy.
 - **Adapters** — `root adapters list|inspect --agent codex|claude` for harness setup.
 - **Secret protection** — work-state mutations refuse obvious credentials; this is a guard rail, not a complete scanner.
 
@@ -95,7 +95,7 @@ root artifact add|list                           # reference existing files
 root checkpoint create|list|show                 # immutable continuation points
 root resume / handoff --to <agent>               # continuation + cross-agent handoff
 root recover                                     # what survived an interruption
-root mcp serve|status / adapters list|inspect    # agent interface + setup
+root mcp serve|daemon|status / capability list|inspect / adapters list|inspect
 root agent inspect|plan|diff                     # canonical env + cross-harness (read-only)
 root agent apply|verify|capture|rollback|purge   # hash-bound, plan-first translation
 root workspace export|import                     # portable workspace transfer document
