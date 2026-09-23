@@ -26,6 +26,7 @@ root checkpoint-sync init|status|push|pull
 root checkpoint-sync relay set|show
 root checkpoint create --sync
 root computer grant|session|revoke
+root finance intent|list|approve
 ```
 
 `messages.local` is the local messaging fixture: `messages.local.threads`,

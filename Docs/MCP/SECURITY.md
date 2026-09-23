@@ -127,3 +127,8 @@ MCP exposes no arbitrary shell or filesystem mutation.
   rows. A card number, a long digit run, or a secret-shaped ledger file is
   refused at install and is not copied into Root state. There is no payment
   tool.
+- `root finance intent` stores a payment intent: amount, recipient, purpose,
+  and an idempotency key. The fixture provider limit is 25000 cents. A card or
+  bank number is refused and not written. `root finance approve` changes the
+  intent to approved and does not move money. `root approval approve` does not
+  pay either. Intents are mode `0600` under `$ROOT_DIR/finance/intents.json`.

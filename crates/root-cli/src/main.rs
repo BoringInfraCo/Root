@@ -228,6 +228,11 @@ enum Commands {
         #[command(subcommand)]
         subcommand: ComputerSubcommands,
     },
+    /// Record a payment intent. Approval does not move money.
+    Finance {
+        #[command(subcommand)]
+        subcommand: FinanceSubcommands,
+    },
     /// Pair and revoke sync devices
     Device {
         #[command(subcommand)]
@@ -723,6 +728,28 @@ enum ComputerSubcommands {
     Session,
     /// Revoke a browser grant
     Revoke {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum FinanceSubcommands {
+    /// Record a pending payment intent. Nothing is executed.
+    Intent {
+        #[arg(long)]
+        amount_cents: u64,
+        #[arg(long)]
+        recipient: String,
+        #[arg(long)]
+        purpose: String,
+        #[arg(long)]
+        idempotency_key: String,
+    },
+    /// List payment intents
+    List,
+    /// Mark an intent approved. This does not execute it.
+    Approve {
         #[arg(value_name = "ID")]
         id: String,
     },
@@ -4480,6 +4507,48 @@ fn main() {
                 let _ = handle_structured(cli.json, root_mcp::computer::revoke(&id), |item| {
                     format!("Revoked browser grant {}\n", item.id)
                 });
+            }
+        },
+        Commands::Finance { subcommand } => match subcommand {
+            FinanceSubcommands::Intent {
+                amount_cents,
+                recipient,
+                purpose,
+                idempotency_key,
+            } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_mcp::finance::create_intent(
+                        amount_cents,
+                        &recipient,
+                        &purpose,
+                        &idempotency_key,
+                    ),
+                    |item| {
+                        format!(
+                            "Payment intent {} {} for {} cents. No money moved.\n",
+                            item.id, item.status, item.amount_cents
+                        )
+                    },
+                );
+            }
+            FinanceSubcommands::List => {
+                let _ = handle_structured(cli.json, root_mcp::finance::list_intents(), |items| {
+                    let mut msg = format!("Payment intents ({})\n", items.len());
+                    for item in items {
+                        msg.push_str(&format!(
+                            "  {}  {} cents  {}  {}\n",
+                            item.id, item.amount_cents, item.recipient, item.status
+                        ));
+                    }
+                    msg
+                });
+            }
+            FinanceSubcommands::Approve { id } => {
+                let _ =
+                    handle_structured(cli.json, root_mcp::finance::approve_intent(&id), |item| {
+                        format!("Payment intent {} approved. No money moved.\n", item.id)
+                    });
             }
         },
         Commands::Device { subcommand } => match subcommand {

@@ -2,6 +2,7 @@
 //! There is no transfer tool and no card number.
 
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -253,6 +254,153 @@ fn fixture_reconciles_without_a_transfer() {
     assert_eq!(unmatched_tx, ["t2", "t3"]);
     assert_eq!(report["unmatched_receipts"][0], "r2");
     assert!(!fixture.root_dir.join("finance").exists());
+}
+
+#[test]
+fn intent_is_idempotent_and_approval_does_not_execute() {
+    let fixture = Fixture::new();
+    fixture.json(&["workspace", "init", "--json"]);
+    let listed = fixture.json(&["finance", "list", "--json"]);
+    assert!(listed.as_array().unwrap().is_empty());
+    assert!(!fixture.root_dir.join("finance").exists());
+
+    let over = fixture.run(&[
+        "finance",
+        "intent",
+        "--amount-cents",
+        "25001",
+        "--recipient",
+        "ada market",
+        "--purpose",
+        "groceries",
+        "--idempotency-key",
+        "ada-groceries-1",
+        "--json",
+    ]);
+    assert!(!over.status.success(), "{over:?}");
+    let pan = fixture.run(&[
+        "finance",
+        "intent",
+        "--amount-cents",
+        "1840",
+        "--recipient",
+        "4111111111111111",
+        "--purpose",
+        "groceries",
+        "--idempotency-key",
+        "ada-groceries-1",
+        "--json",
+    ]);
+    assert!(!pan.status.success(), "{pan:?}");
+    let pan_text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&pan.stdout),
+        String::from_utf8_lossy(&pan.stderr)
+    );
+    assert!(pan_text.contains("card or bank"), "{pan_text}");
+    assert!(!pan_text.contains("4111111111111111"), "{pan_text}");
+    assert!(!fixture.root_dir.join("finance").exists());
+
+    let created = fixture.json(&[
+        "finance",
+        "intent",
+        "--amount-cents",
+        "1840",
+        "--recipient",
+        "ada market",
+        "--purpose",
+        "groceries",
+        "--idempotency-key",
+        "ada-groceries-1",
+        "--json",
+    ]);
+    assert_eq!(created["status"], "pending");
+    assert_eq!(created["currency"], "USD");
+    assert!(created["approved_at"].is_null(), "{created}");
+    assert_eq!(created["amount_cents"], 1840);
+    let id = created["id"].as_str().unwrap();
+    assert!(id.starts_with("root_fi_"), "{id}");
+
+    let again = fixture.json(&[
+        "finance",
+        "intent",
+        "--amount-cents",
+        "1840",
+        "--recipient",
+        "ada market",
+        "--purpose",
+        "groceries",
+        "--idempotency-key",
+        "ada-groceries-1",
+        "--json",
+    ]);
+    assert_eq!(again["id"], id);
+    let conflict = fixture.run(&[
+        "finance",
+        "intent",
+        "--amount-cents",
+        "250",
+        "--recipient",
+        "ada market",
+        "--purpose",
+        "groceries",
+        "--idempotency-key",
+        "ada-groceries-1",
+        "--json",
+    ]);
+    assert!(!conflict.status.success(), "{conflict:?}");
+    let intents = fixture.json(&["finance", "list", "--json"]);
+    assert_eq!(intents.as_array().unwrap().len(), 1);
+
+    let approved = fixture.json(&["finance", "approve", id, "--json"]);
+    assert_eq!(approved["status"], "approved");
+    assert!(approved["approved_at"].is_string(), "{approved}");
+    assert_eq!(approved["created_at"], created["created_at"]);
+    let text = approved.to_string();
+    assert!(!text.contains("transferred"), "{text}");
+    assert!(!text.contains("sent"), "{text}");
+    assert!(!text.contains("executed"), "{text}");
+    assert!(!text.contains("paid"), "{text}");
+    let stored = std::fs::read(fixture.root_dir.join("finance/intents.json")).unwrap();
+    let again = fixture.json(&["finance", "approve", id, "--json"]);
+    assert_eq!(again["status"], "approved");
+    assert_eq!(again["approved_at"], approved["approved_at"]);
+    assert_eq!(
+        std::fs::read(fixture.root_dir.join("finance/intents.json")).unwrap(),
+        stored
+    );
+    assert_eq!(
+        fixture
+            .json(&["finance", "list", "--json"])
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    let mode = std::fs::metadata(fixture.root_dir.join("finance/intents.json"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+
+    let package = package_dir();
+    fixture.json(&[
+        "connector",
+        "install",
+        package.join("manifest.json").to_str().unwrap(),
+        "--package",
+        package.to_str().unwrap(),
+        "--json",
+    ]);
+    fixture.json(&["connector", "enable", "finance.local", "--json"]);
+    let mut server = Server::start(&fixture);
+    let report = server.call("finance.local.reconcile");
+    assert!(!report.to_string().contains("root_appr_"), "{report}");
+    assert!(!report.to_string().contains("transfer"), "{report}");
+    let report = content(&report);
+    assert_eq!(report["matched"][0]["transaction_id"], "t1");
+    assert_eq!(report["matched"][0]["receipt_id"], "r1");
 }
 
 fn copy_dir(from: &std::path::Path, to: &std::path::Path) {
