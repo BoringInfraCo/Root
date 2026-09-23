@@ -16,6 +16,9 @@ root mcp daemon [--http 127.0.0.1:PORT]   # foreground rootd; HTTP is opt-in loo
 root mcp status             # workspace, capabilities, policy source, and exposed tools
 root capability list        # registered capabilities and their namespaces
 root capability inspect NAME
+root connector install|list|inspect|enable|disable|remove
+root connector auth plan|bind|revoke
+root approval list|approve|deny
 ```
 
 ## Agent setup

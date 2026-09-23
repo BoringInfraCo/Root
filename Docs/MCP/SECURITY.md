@@ -95,3 +95,9 @@ MCP exposes no arbitrary shell or filesystem mutation.
 - Denial is per capability, not per tool or per workspace; there is no RBAC.
 - There is no public TCP listener. Loopback HTTP is opt-in and does not speak
   the 2026-07-28 per-request protocol.
+- Connector manifests store credential names and scopes, never values. A
+  connector process is started with a scrubbed environment and an empty
+  working directory. Grants other than `none` are rejected. This is not a
+  kernel sandbox: the executable can still open its own sockets. Write and
+  destructive tools do not run until `root approval approve`. Audit lines
+  store hashes and statuses, not argument values.

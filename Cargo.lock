@@ -694,10 +694,13 @@ name = "root-mcp"
 version = "0.6.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "hex",
  "root-continuity",
  "root-work",
  "serde",
  "serde_json",
+ "sha2",
  "toml",
 ]
 

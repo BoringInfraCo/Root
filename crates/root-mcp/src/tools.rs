@@ -149,7 +149,7 @@ pub fn find(name: &str) -> Option<ToolDef> {
 }
 
 pub fn list() -> Value {
-    let tools: Vec<Value> = definitions()
+    let mut tools: Vec<Value> = definitions()
         .into_iter()
         .map(|tool| {
             json!({
@@ -159,6 +159,7 @@ pub fn list() -> Value {
             })
         })
         .collect();
+    tools.extend(crate::connector::mcp_tools());
     json!({ "tools": tools })
 }
 

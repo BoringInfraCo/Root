@@ -153,8 +153,16 @@ fn call_tool(state: &mut ServerState, params: &Value) -> Result<Value, DispatchE
         }
     };
 
-    let tool = tools::find(&name)
-        .ok_or_else(|| DispatchError::InvalidParams(format!("Unknown tool '{name}'.")))?;
+    let Some(tool) = tools::find(&name) else {
+        return match crate::connector::invoke(&name, &arguments) {
+            Some(Ok(payload)) => Ok(tool_success(payload)),
+            Some(Err(ToolError::Invalid(message))) => Ok(tool_error(message)),
+            Some(Err(ToolError::Internal(message))) => Err(DispatchError::Internal(message)),
+            None => Err(DispatchError::InvalidParams(format!(
+                "Unknown tool '{name}'."
+            ))),
+        };
+    };
 
     if !state.policy.allowed(tool.capability) {
         return Ok(tool_error(format!(

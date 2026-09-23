@@ -6,8 +6,11 @@ authors.workspace = true
 
 [dependencies]
 anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
 toml = "0.8"
 root-work = { path = "../root-work" }
 root-continuity = { path = "../root-continuity" }

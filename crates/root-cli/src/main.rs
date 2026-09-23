@@ -208,6 +208,16 @@ enum Commands {
         #[command(subcommand)]
         subcommand: CapabilitySubcommands,
     },
+    /// Install and inspect local connector packages
+    Connector {
+        #[command(subcommand)]
+        subcommand: ConnectorSubcommands,
+    },
+    /// Decide pending connector approvals
+    Approval {
+        #[command(subcommand)]
+        subcommand: ApprovalSubcommands,
+    },
     /// Inspect supported coding-agent adapters
     Adapters {
         #[command(subcommand)]
@@ -608,6 +618,85 @@ enum McpSubcommands {
     },
     /// Show MCP workspace, capabilities, and exposed tools
     Status,
+}
+
+#[derive(Subcommand, Debug)]
+enum ConnectorSubcommands {
+    /// Install a content-addressed connector package. It stays disabled.
+    Install {
+        /// Path to the manifest JSON
+        #[arg(value_name = "MANIFEST")]
+        manifest: std::path::PathBuf,
+        /// Directory that contains the executable named by the manifest
+        #[arg(long, value_name = "DIR")]
+        package: std::path::PathBuf,
+    },
+    /// List installed connectors
+    List,
+    /// Show one connector contract
+    Inspect {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Run the health check and enable the connector's tools
+    Enable {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Hide the connector's tools without removing the package
+    Disable {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Remove an installed connector
+    Remove {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Bind or revoke credential names
+    Auth {
+        #[command(subcommand)]
+        subcommand: ConnectorAuthSubcommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ConnectorAuthSubcommands {
+    /// Show required credential names and whether each is bound
+    Plan {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Record that a credential name is present. The value is not stored.
+    Bind {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_name = "NAME")]
+        name: String,
+    },
+    /// Forget that a credential name is bound
+    Revoke {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_name = "NAME")]
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ApprovalSubcommands {
+    /// List connector approvals
+    List,
+    /// Allow one pending write or destructive call
+    Approve {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Refuse one pending write or destructive call
+    Deny {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -4140,6 +4229,110 @@ fn main() {
             }
             McpSubcommands::Status => {
                 let _ = handle_structured(cli.json, root_mcp::status(), format_mcp_status);
+            }
+        },
+        Commands::Connector { subcommand } => match subcommand {
+            ConnectorSubcommands::Install { manifest, package } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_mcp::connector::install(&manifest, &package),
+                    |report| {
+                        format!(
+                            "Installed connector {} (disabled).\n  executable {}\n",
+                            report.id, report.executable_sha256
+                        )
+                    },
+                );
+            }
+            ConnectorSubcommands::List => {
+                let _ = handle_structured(cli.json, root_mcp::connector::list(), |items| {
+                    let mut msg = format!("Connectors ({})\n", items.len());
+                    for item in items {
+                        msg.push_str(&format!(
+                            "  {}  {}  enabled={}\n",
+                            item.id, item.version, item.enabled
+                        ));
+                    }
+                    msg
+                });
+            }
+            ConnectorSubcommands::Inspect { id } => {
+                let _ = handle_structured(cli.json, root_mcp::connector::inspect(&id), |item| {
+                    format!(
+                        "Connector {}\n  version: {}\n  enabled: {}\n  intact: {}\n  {}\n",
+                        item.id, item.version, item.enabled, item.intact, item.isolation
+                    )
+                });
+            }
+            ConnectorSubcommands::Enable { id } => {
+                let _ = handle_structured(cli.json, root_mcp::connector::enable(&id), |item| {
+                    format!("Enabled {}\n", item.id)
+                });
+            }
+            ConnectorSubcommands::Disable { id } => {
+                let _ = handle_structured(cli.json, root_mcp::connector::disable(&id), |item| {
+                    format!("Disabled {}\n", item.id)
+                });
+            }
+            ConnectorSubcommands::Remove { id } => {
+                let _ = handle_structured(cli.json, root_mcp::connector::remove(&id), |item| {
+                    format!("Removed {}\n", item.id)
+                });
+            }
+            ConnectorSubcommands::Auth { subcommand } => match subcommand {
+                ConnectorAuthSubcommands::Plan { id } => {
+                    let _ =
+                        handle_structured(cli.json, root_mcp::connector::auth_plan(&id), |plan| {
+                            let mut msg = format!("Credentials for {}\n", plan.id);
+                            for cred in &plan.credentials {
+                                msg.push_str(&format!("  {}  bound={}\n", cred.name, cred.bound));
+                            }
+                            msg
+                        });
+                }
+                ConnectorAuthSubcommands::Bind { id, name } => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_mcp::connector::auth_bind(&id, &name),
+                        |plan| format!("Bound credential name on {}\n", plan.id),
+                    );
+                }
+                ConnectorAuthSubcommands::Revoke { id, name } => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_mcp::connector::auth_revoke(&id, &name),
+                        |plan| format!("Revoked credential name on {}\n", plan.id),
+                    );
+                }
+            },
+        },
+        Commands::Approval { subcommand } => match subcommand {
+            ApprovalSubcommands::List => {
+                let _ =
+                    handle_structured(cli.json, root_mcp::connector::approval_list(), |items| {
+                        let mut msg = format!("Approvals ({})\n", items.len());
+                        for item in items {
+                            msg.push_str(&format!(
+                                "  {}  {}  {}  {}\n",
+                                item.id, item.tool, item.risk, item.status
+                            ));
+                        }
+                        msg
+                    });
+            }
+            ApprovalSubcommands::Approve { id } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_mcp::connector::approval_decide(&id, true),
+                    |item| format!("Approved {}\n", item.id),
+                );
+            }
+            ApprovalSubcommands::Deny { id } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_mcp::connector::approval_decide(&id, false),
+                    |item| format!("Denied {}\n", item.id),
+                );
             }
         },
         Commands::Capability { subcommand } => match subcommand {

@@ -1,0 +1,5 @@
+#!/bin/sh
+# Example connector. Reads one JSON request and writes one JSON result.
+# It does not use the network or the caller's environment.
+read -r _line
+printf '%s\n' '{"ok":true,"content":"echo"}'

@@ -18,7 +18,11 @@ pub struct RegisteredCapability {
 
 /// Capabilities currently registered for discovery and `tools/list`.
 pub fn registered() -> Vec<RegisteredCapability> {
-    tools::definitions().into_iter().map(register).collect()
+    let mut tools: Vec<_> = tools::definitions().into_iter().map(register).collect();
+    if let Ok(extra) = crate::connector::enabled_capabilities() {
+        tools.extend(extra);
+    }
+    tools
 }
 
 pub fn find(name: &str) -> Option<RegisteredCapability> {
