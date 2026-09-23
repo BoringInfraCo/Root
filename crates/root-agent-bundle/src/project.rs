@@ -419,15 +419,11 @@ pub fn discover_project_file(start: &Path) -> Option<PathBuf> {
                 return Some(candidate);
             }
         }
-        match dir.parent() {
-            Some(p) => {
-                if p == dir {
-                    return None;
-                }
-                dir = p.to_path_buf();
-            }
-            None => return None,
+        let parent = dir.parent()?;
+        if parent == dir {
+            return None;
         }
+        dir = parent.to_path_buf();
         // Stop at filesystem root (parent == self handled above).
         if dir.as_os_str().is_empty() {
             return None;
