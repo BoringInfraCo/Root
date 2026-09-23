@@ -1,4 +1,4 @@
-# Root v0.6.0
+# Root v0.7.0
 
 **Root is a persistent engineering environment for AI agents.**
 
@@ -14,6 +14,16 @@ v0.5 makes the **work** durable on top of that environment. Workspaces, goals, d
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [Docs](Docs/) · [Changelog](CHANGELOG.md) · [Smoke tests](Docs/Release/)
+
+## What v0.7 Changed
+
+v0.7 adds a local capability plane on the portable workspace. One `rootd` serves MCP, connectors carry tools, and events hand work to a harness only through an explicit route. Mail, browser, messages, and finance are local fixtures. `root sync` is still the Nix reconcile. The lock schema is still package-only emit 2 / max supported 3. Full history in `CHANGELOG.md`.
+
+- **Local interface** — `root mcp serve` shims to `rootd` on a mode `0600` Unix socket. Loopback HTTP is opt-in and bearer-authenticated. The protocol stays `2024-11-05`.
+- **Connectors** — `root connector` installs a content-addressed package. Credential records store names only. Write and destructive tools wait on `root approval`. Network and filesystem grants stay `none`.
+- **Events** — `root event` records inbound mail and messages. `root event pull --harness` returns a delivery already handed to that harness and does not start an agent.
+- **Checkpoint references** — `root device` and `root checkpoint-sync` exchange encrypted checkpoint references over a folder relay. Git still carries source.
+- **Browser, messages, finance** — `root computer grant` scopes one visible target until it expires. `messages.local` waits on approval to draft or send. `finance.local` reconciles a fixture ledger. `root finance intent` records a payment intent and does not move money.
 
 ## What v0.6 Changed
 
@@ -35,7 +45,7 @@ v0.5.0 adds engineering continuity on top of the deterministic environment. Exis
 - **Checkpoints** — `root checkpoint create|list|show` capture immutable work + Git + environment references with a deterministic continuation summary.
 - **Continuity** — `root resume` and `root handoff --to <agent>` project a small, newest-first continuation package (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20) with drift detection.
 - **Recovery** — `root recover` reports what durable state exists after an interruption and what Root can and cannot continue from.
-- **MCP** — `root mcp serve` is a stdio shim to the local `rootd` Unix socket. `root connector` installs local packages. `root event` records inbound mail without starting an agent. `root event pull` returns a handed route for one harness. `root checkpoint-sync` encrypts checkpoint references between paired installs. `root sync` still reconciles the Nix profile. `root computer grant` scopes the browser fixture to one visible target until it expires; the fixture does not attach to a desktop. `messages.local` lists and reads local threads immediately; draft and send wait for approval, and an unknown recipient is labeled on that approval. `finance.local` lists fixture transactions, receipts, and a reconcile match. `root finance intent` records a payment intent, and approving it does not move money.
+- **MCP** — `root mcp serve|status` exposes a local stdio interface with server-side capability policy.
 - **Adapters** — `root adapters list|inspect --agent codex|claude` for harness setup.
 - **Secret protection** — work-state mutations refuse obvious credentials; this is a guard rail, not a complete scanner.
 
@@ -95,14 +105,15 @@ root artifact add|list                           # reference existing files
 root checkpoint create|list|show                 # immutable continuation points
 root resume / handoff --to <agent>               # continuation + cross-agent handoff
 root recover                                     # what survived an interruption
-root mcp serve|daemon|status / capability list|inspect / adapters list|inspect
+root mcp serve|daemon|status / capability list|inspect / connector / approval / event pull
+root computer grant / device pair|list|revoke / checkpoint-sync push|pull / finance intent|approve
 root agent inspect|plan|diff                     # canonical env + cross-harness (read-only)
 root agent apply|verify|capture|rollback|purge   # hash-bound, plan-first translation
 root workspace export|import                     # portable workspace transfer document
 root restore [--dry-run] [--rebind] / resume --with <agent> # env-first restore + harness-aware resume
 ```
 
-> `root import brew` is experimental and not part of the v0.6.0 public surface — may change or break without notice.
+> `root import brew` is experimental and not part of the v0.7.0 public surface — may change or break without notice.
 
 <details>
 <summary>Exit codes & verify details</summary>
@@ -138,16 +149,16 @@ Patch on the Portable Agent-Bundle release. Full history in `CHANGELOG.md`.
 - **Never touches `.claude.json`** — apply/rollback snapshot `settings.json` only; stop Claude first.
 - **Codex 0.150.1 / OpenCode 1.18.27 unchanged**, including MCP disable-until-enable.
 
-## Limitations (v0.6.0)
+## Limitations (v0.7.0)
 
-- **Portable workspace, not sync** — the workspace transfer document (`root workspace export|import`) and Git are the only carriers across machines. No cloud sync, no team collaboration, no multi-writer conflict resolution; the registry is single-machine.
+- **Portable workspace, reference sync** — `root workspace export|import` and Git carry work and source. `root checkpoint-sync` exchanges encrypted checkpoint references over a folder you choose. No cloud account, no team collaboration, no multi-writer merge.
 - **Environment transfer is reconstructed, not copied** — `root restore` rebuilds the deterministic Nix profile from `root.lock`; digests and references are recorded, never bit-for-bit machine images (`observed` is the honesty ceiling). Agent-environment apply is plan-first and re-reads live source content on the machine where it runs.
 - **Curated catalog only** — 42 tools across 11 categories; arbitrary installs rejected. Run `root catalog`. `docker-client` is CLI only.
 - **Undo covers Root only** — rollback restores Root lock/profile state, not Homebrew/manual changes; restore recovery is best-effort.
 - **Agents + models are honest, not magic** — status inspects (never installs agents / pulls models); bundles are same-agent, credential-free; models are tag-pull verification records, digest drift needs re-pull.
 - **Strict gates** — Codex 0.150.1, OpenCode 1.18.27, Claude 2.1.260 exactly; local Ollama `127.0.0.1:11434` only; no digest pull, no endpoint field.
 - **Continuity is captured, not omniscient** — Root records goals/decisions/findings/artifact references and checkpoints. It cannot recover unrecorded conversations, unsaved editor state, or commands it did not observe. Secret detection is a conservative guard rail, not a complete scanner. Resume is capped (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20).
-- **MCP is local and unauthenticated** — stdio only, one workspace per process, server-side capability policy; see [Docs/MCP/SECURITY.md](Docs/MCP/SECURITY.md).
+- **MCP is local** — Unix socket plus opt-in loopback HTTP with a bearer token; connector tools are fixtures (no live browser, carrier, or bank). See [Docs/MCP/SECURITY.md](Docs/MCP/SECURITY.md).
 - **Online, serial, macOS-first** — network required, one mutation at a time (`root.lockfile` + `model-pull.json`), macOS tested / Linux best-effort / no Windows; Docker daemon needed for sandbox.
 - **Nix required** — Root manages its own profile but doesn't bundle Nix; if a crash leaves `~/.root/root.lockfile`, run `root doctor` then remove it.
 

@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-09-23
+
+v0.7.0 adds a local capability plane: one `rootd` MCP interface, connector packages, explicit event routes, encrypted checkpoint references, and local fixtures for mail, browser, messages, and finance. `root sync` remains the Nix profile reconcile. The lock schema remains package-only emit 2 / max supported 3.
+
 ### Added
 
-- **Local `rootd`.** `root mcp daemon` (and the `rootd` binary) listens on a mode `0600` Unix socket at `/tmp/rootd-<hash>.sock` (the hash names the Root directory; `$ROOT_DIR/rootd.path` records the path). `root mcp serve` is the stdio shim: it connects to that socket and starts an idle-exit daemon when one is not already running. The workspace, work, continuity, and environment tools are registered capabilities (`root capability list|inspect`). The version stays 0.6.0 until this interface is complete.
+- **Local `rootd`.** `root mcp daemon` (and the `rootd` binary) listens on a mode `0600` Unix socket at `/tmp/rootd-<hash>.sock` (the hash names the Root directory; `$ROOT_DIR/rootd.path` records the path). `root mcp serve` is the stdio shim: it connects to that socket and starts an idle-exit daemon when one is not already running. The workspace, work, continuity, and environment tools are registered capabilities (`root capability list|inspect`).
 - **Bearer and loopback HTTP.** Non-stdio clients must send `Authorization: Bearer` using `$ROOT_DIR/rootd.token` (mode `0600`). The shim attaches it, so existing stdio clients do not. `root mcp daemon --http 127.0.0.1:PORT` adds Streamable HTTP `POST /mcp` on loopback only; `initialize` returns `Mcp-Session-Id`. Tokens in the URL are refused. `2026-07-28` is rejected. Other bind addresses are refused.
 - **Connector packages.** `root connector install|list|inspect|enable|disable|remove` accepts a content-addressed manifest. Credential binding (`root connector auth plan|bind|revoke`) records names only. Write and destructive tools wait on `root approval list|approve|deny`. Enabled tools show up on the existing MCP surface. `connectors/example` is the reference package. Network and filesystem grants other than `none` are rejected.
 - **Events and local email.** `root event ingest` records inbound messages with idempotency keys. A route (`root event route add`) creates a delivery and does not spawn an agent. Unrouted events stay recorded. `root event deliver` records a wake attempt, with retries and a dead state. `email.local` exposes search, read, draft, and send on the connector contract. Send waits for approval. `connectors/email.local` is a fixture mailbox, not a provider.
