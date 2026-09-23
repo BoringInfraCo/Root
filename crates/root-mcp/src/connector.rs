@@ -194,9 +194,11 @@ pub struct ApprovalView {
 }
 
 pub fn install(manifest_path: &Path, package_dir: &Path) -> Result<InstallReport> {
-    let _lock = lock_host()?;
     let manifest = load_manifest(manifest_path)?;
     let source = package_dir.join(&manifest.executable);
+    if manifest.id.starts_with("finance.") {
+        crate::finance::screen_package(package_dir)?;
+    }
     let digest =
         sha256_file(&source).with_context(|| format!("could not hash {}", source.display()))?;
     if digest != manifest.executable_sha256 {
@@ -206,6 +208,7 @@ pub fn install(manifest_path: &Path, package_dir: &Path) -> Result<InstallReport
             manifest.executable_sha256
         );
     }
+    let _lock = lock_host()?;
     let mut index = read_index()?;
     if index.connectors.iter().any(|item| item.id == manifest.id) {
         anyhow::bail!("connector {} is already installed", manifest.id);
@@ -568,11 +571,12 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
         }
     }
 
+    let replay_key = format!("{name}:{args_hash}");
     if tool.idempotent {
         if let Some(content) = index.connectors[position]
             .results
             .iter()
-            .find(|item| item.key == args_hash)
+            .find(|item| item.key == replay_key)
             .map(|item| item.content.clone())
         {
             audit(&manifest.id, name, "call", &args_hash, "replay")?;
@@ -584,13 +588,28 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
     write_index(&index)?;
     drop(_lock);
 
-    let value = run_process(
-        &manifest,
-        &index.connectors[position],
-        "call",
-        name,
-        arguments,
-    )?;
+    // Finance tools are read-only projections of the installed fixture files.
+    // The child is not asked, so it cannot report a transfer.
+    let value = if manifest.id.starts_with("finance.") {
+        let content = match crate::finance::project(&manifest.id, name) {
+            Ok(content) => content,
+            Err(error) => {
+                let _lock = lock_host()?;
+                audit(&manifest.id, name, "call", &args_hash, "refused")?;
+                drop(_lock);
+                return Err(error);
+            }
+        };
+        serde_json::json!({"ok": true, "content": content})
+    } else {
+        run_process(
+            &manifest,
+            &index.connectors[position],
+            "call",
+            name,
+            arguments,
+        )?
+    };
     let content = redact_output(value.get("content").and_then(Value::as_str).unwrap_or(""));
 
     let _lock = lock_host()?;
@@ -602,7 +621,7 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
     {
         if tool.idempotent {
             item.results.push(StoredResult {
-                key: args_hash.clone(),
+                key: replay_key,
                 content: content.clone(),
             });
             if item.results.len() > 32 {
@@ -958,6 +977,9 @@ fn validate(manifest: &Manifest) -> Result<()> {
             }
         }
     }
+    if manifest.id.starts_with("finance.") {
+        require_read_only_finance(manifest)?;
+    }
     for credential in &manifest.credentials {
         if !credential
             .name
@@ -1062,6 +1084,37 @@ fn approval_view(item: &Approval) -> ApprovalView {
         args_sha256: item.args_sha256.clone(),
         created_at: item.created_at.clone(),
     }
+}
+
+fn require_read_only_finance(manifest: &Manifest) -> Result<()> {
+    let expected = [
+        format!("{}.transactions", manifest.id),
+        format!("{}.receipts", manifest.id),
+        format!("{}.reconcile", manifest.id),
+    ];
+    if manifest.tools.len() != expected.len() {
+        anyhow::bail!("finance connector must declare transactions, receipts, and reconcile");
+    }
+    for name in &expected {
+        if manifest
+            .tools
+            .iter()
+            .filter(|tool| &tool.name == name)
+            .count()
+            != 1
+        {
+            anyhow::bail!("finance connector must declare {name} once");
+        }
+    }
+    for tool in &manifest.tools {
+        if tool.risk != Risk::Read {
+            anyhow::bail!("finance tools are read-only");
+        }
+        if tool.grant.is_some() {
+            anyhow::bail!("finance tools do not take a session grant");
+        }
+    }
+    Ok(())
 }
 
 fn risk_name(risk: Risk) -> &'static str {

@@ -1,0 +1,4 @@
+#!/bin/sh
+# Local ledger fixture. It does not contact a bank or move money.
+read -r line
+printf '%s\n' '{"ok":true,"content":"ledger"}'

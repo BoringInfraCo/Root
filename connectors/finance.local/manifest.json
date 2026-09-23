@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "id": "finance.local",
+  "version": "0.1.0",
+  "publisher": "boring-infra",
+  "executable": "finance-connector",
+  "executable_sha256": "476b6e5ab25f990235365daab4d92eb485173bc69d4dc48d52446b8e83db7908",
+  "tools": [
+    {
+      "name": "finance.local.transactions",
+      "description": "List fixture transactions, including the category already on each row.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": {} },
+      "idempotent": true
+    },
+    {
+      "name": "finance.local.receipts",
+      "description": "List fixture receipts. This is not a payment.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": {} },
+      "idempotent": true
+    },
+    {
+      "name": "finance.local.reconcile",
+      "description": "Match one receipt to one transaction by payee and amount. Nothing is transferred.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": {} },
+      "idempotent": true
+    }
+  ],
+  "events": [],
+  "credentials": [],
+  "network": ["none"],
+  "filesystem": ["none"],
+  "limits": {
+    "timeout_ms": 2000,
+    "max_output_bytes": 4096,
+    "max_calls": 30,
+    "window_seconds": 60
+  }
+}

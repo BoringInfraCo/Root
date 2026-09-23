@@ -1,0 +1,6 @@
+{
+  "receipts": [
+    { "id": "r1", "payee": "ada market", "amount_cents": 1840 },
+    { "id": "r2", "payee": "north hardware", "amount_cents": 420 }
+  ]
+}

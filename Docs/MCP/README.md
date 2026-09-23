@@ -30,6 +30,8 @@ root computer grant|session|revoke
 
 `messages.local` is the local messaging fixture: `messages.local.threads`,
 `messages.local.read`, `messages.local.draft`, and `messages.local.send`.
+`finance.local` is the read-only ledger fixture: `finance.local.transactions`,
+`finance.local.receipts`, and `finance.local.reconcile`.
 
 ## Agent setup
 

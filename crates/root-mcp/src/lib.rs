@@ -10,6 +10,7 @@ pub mod computer;
 pub mod connector;
 pub mod daemon;
 pub mod events;
+pub mod finance;
 pub mod http;
 pub mod jsonrpc;
 pub mod policy;

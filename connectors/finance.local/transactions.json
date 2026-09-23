@@ -1,0 +1,26 @@
+{
+  "currency": "USD",
+  "transactions": [
+    {
+      "id": "t1",
+      "posted_on": "2026-01-15",
+      "payee": "ada market",
+      "amount_cents": 1840,
+      "category": "groceries"
+    },
+    {
+      "id": "t2",
+      "posted_on": "2026-01-16",
+      "payee": "grace transit",
+      "amount_cents": 250,
+      "category": "transit"
+    },
+    {
+      "id": "t3",
+      "posted_on": "2026-01-17",
+      "payee": "ada market",
+      "amount_cents": 990,
+      "category": "groceries"
+    }
+  ]
+}

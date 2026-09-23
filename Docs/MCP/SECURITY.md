@@ -121,3 +121,9 @@ MCP exposes no arbitrary shell or filesystem mutation.
   approval. Recipients are names in `contacts.txt`, and a phone number is
   refused. Inbound `message.received` stays recorded until a route exists.
   A route still does not start an agent. The fixture does not contact a carrier.
+- `connectors/finance.local` is a read-only ledger fixture. Its tools list
+  transactions, receipts, and a reconcile match. They do not enter the approval
+  queue and they do not transfer money. Categories are fields on the fixture
+  rows. A card number, a long digit run, or a secret-shaped ledger file is
+  refused at install and is not copied into Root state. There is no payment
+  tool.
