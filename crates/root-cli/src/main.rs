@@ -223,6 +223,18 @@ enum Commands {
         #[command(subcommand)]
         subcommand: EventSubcommands,
     },
+    /// Pair and revoke sync devices
+    Device {
+        #[command(subcommand)]
+        subcommand: DeviceSubcommands,
+    },
+    /// Push and pull encrypted checkpoint references.
+    /// `root sync` stays the Nix profile reconcile.
+    #[command(name = "checkpoint-sync")]
+    CheckpointSync {
+        #[command(subcommand)]
+        subcommand: SyncSubcommands,
+    },
     /// Inspect supported coding-agent adapters
     Adapters {
         #[command(subcommand)]
@@ -597,6 +609,9 @@ enum CheckpointSubcommands {
         /// Optional continuation message for the checkpoint
         #[arg(long, value_name = "MESSAGE")]
         message: Option<String>,
+        /// Also append this checkpoint to the encrypted sync log
+        #[arg(long)]
+        sync: bool,
     },
     /// List checkpoints
     List,
@@ -686,6 +701,50 @@ enum ConnectorAuthSubcommands {
         #[arg(long, value_name = "NAME")]
         name: String,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum DeviceSubcommands {
+    /// Show this installation and paired devices
+    List,
+    /// Trust another installation's public device file
+    Pair {
+        #[arg(long, value_name = "FILE")]
+        public: std::path::PathBuf,
+    },
+    /// Stop trusting a device. Later log entries from it are rejected.
+    Revoke {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SyncSubcommands {
+    /// Create this installation's device and the workspace sync key
+    Init,
+    /// Show device, relay, inbox, and conflicts
+    Status,
+    /// Encrypt and append local checkpoints to the relay
+    Push,
+    /// Verify, decrypt, and record checkpoint references from the relay
+    Pull,
+    /// Choose or show the folder relay
+    Relay {
+        #[command(subcommand)]
+        subcommand: SyncRelaySubcommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum SyncRelaySubcommands {
+    /// Use a directory as the air-gapped relay
+    Set {
+        #[arg(long, value_name = "DIR")]
+        folder: std::path::PathBuf,
+    },
+    /// Show the current relay
+    Show,
 }
 
 #[derive(Subcommand, Debug)]
@@ -4197,12 +4256,15 @@ fn main() {
             }
         },
         Commands::Checkpoint { subcommand } => match subcommand {
-            CheckpointSubcommands::Create { message } => {
-                let _ = handle_structured(
-                    cli.json,
-                    root_continuity::create(&current_dir(), message.as_deref()),
-                    |r| format_checkpoint(&r.checkpoint),
-                );
+            CheckpointSubcommands::Create { message, sync } => {
+                let cwd = current_dir();
+                let result = root_continuity::create(&cwd, message.as_deref()).and_then(|report| {
+                    if sync {
+                        root_continuity::sync::push(&cwd)?;
+                    }
+                    Ok(report)
+                });
+                let _ = handle_structured(cli.json, result, |r| format_checkpoint(&r.checkpoint));
             }
             CheckpointSubcommands::List => {
                 let _ = handle_structured(
@@ -4357,6 +4419,82 @@ fn main() {
                         root_mcp::connector::auth_revoke(&id, &name),
                         |plan| format!("Revoked credential name on {}\n", plan.id),
                     );
+                }
+            },
+        },
+        Commands::Device { subcommand } => match subcommand {
+            DeviceSubcommands::List => {
+                let _ = handle_structured(cli.json, root_continuity::sync::device_list(), |item| {
+                    format!(
+                        "Device {}\n  peers: {}\n",
+                        item.self_device.device_id,
+                        item.peers.len()
+                    )
+                });
+            }
+            DeviceSubcommands::Pair { public } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_continuity::sync::device_pair(&public),
+                    |item| format!("Paired {}\n", item.device_id),
+                );
+            }
+            DeviceSubcommands::Revoke { id } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_continuity::sync::device_revoke(&id),
+                    |item| format!("Revoked {}\n", item.device_id),
+                );
+            }
+        },
+        Commands::CheckpointSync { subcommand } => match subcommand {
+            SyncSubcommands::Init => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_continuity::sync::sync_init(&current_dir()),
+                    |item| format!("Sync device {}\n  {}\n", item.device_id, item.note),
+                );
+            }
+            SyncSubcommands::Status => {
+                let _ = handle_structured(cli.json, root_continuity::sync::status(), |item| {
+                    format!(
+                        "Sync {}\n  relay: {}\n  inbox: {}\n  conflicts: {}\n  {}\n",
+                        item.device_id,
+                        item.relay.as_deref().unwrap_or("(none)"),
+                        item.inbox,
+                        item.conflicts.len(),
+                        item.note
+                    )
+                });
+            }
+            SyncSubcommands::Push => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_continuity::sync::push(&current_dir()),
+                    |item| format!("Pushed {} checkpoint(s)\n", item.pushed),
+                );
+            }
+            SyncSubcommands::Pull => {
+                let _ = handle_structured(cli.json, root_continuity::sync::pull(), |item| {
+                    format!(
+                        "Applied {}, rejected {}, conflicts {}\n",
+                        item.applied, item.rejected, item.conflicts
+                    )
+                });
+            }
+            SyncSubcommands::Relay { subcommand } => match subcommand {
+                SyncRelaySubcommands::Set { folder } => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_continuity::sync::relay_set(&folder),
+                        |item| format!("Relay {}\n", item.relay.as_deref().unwrap_or("(none)")),
+                    );
+                }
+                SyncRelaySubcommands::Show => {
+                    let _ =
+                        handle_structured(cli.json, root_continuity::sync::relay_show(), |item| {
+                            format!("Relay {}\n", item.relay.as_deref().unwrap_or("(none)"))
+                        });
                 }
             },
         },

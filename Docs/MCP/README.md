@@ -21,6 +21,10 @@ root connector auth plan|bind|revoke
 root approval list|approve|deny
 root event list|watch|ack|ingest|deliver
 root event route add|list
+root device list|pair|revoke
+root checkpoint-sync init|status|push|pull
+root checkpoint-sync relay set|show
+root checkpoint create --sync
 ```
 
 ## Agent setup

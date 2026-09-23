@@ -15,6 +15,7 @@ pub mod restore;
 pub mod resume;
 pub mod snapshot;
 pub mod summary;
+pub mod sync;
 pub mod with;
 
 pub use agent_env::{capture as capture_agent_env, AgentEnvSummary, CaptureOutcome};

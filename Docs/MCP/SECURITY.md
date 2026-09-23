@@ -105,3 +105,7 @@ MCP exposes no arbitrary shell or filesystem mutation.
   does not start an agent. Unrouted events stay recorded. `email.local` is a
   fixture mailbox, not a provider connection. Sending is a destructive tool
   and waits for approval.
+- Checkpoint sync encrypts references with a workspace key. The folder relay
+  sees ciphertext, workspace ids, device ids, sizes, and timestamps. Credential
+  values are not written. `root sync` is still the Nix profile reconcile;
+  encrypted sync is `root checkpoint-sync`. Git still carries source code.
