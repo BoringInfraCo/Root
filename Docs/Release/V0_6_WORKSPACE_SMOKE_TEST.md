@@ -492,8 +492,10 @@ Release-hardware note: an earlier pass on this machine used deterministic
 shims because the installed harnesses were Codex 0.149.1, Claude 2.1.204, and
 OpenCode 0.4.26. Release builds for `aarch64-apple-darwin` and
 `x86_64-apple-darwin` had already passed locally. The local macOS runner still
-cannot link the Linux targets; that gate is the GitHub-hosted Linux release
-matrix.
+cannot link the Linux targets. The GitHub-hosted release cross-builds for
+`x86_64-unknown-linux-gnu` and `aarch64-unknown-linux-gnu` are the Linux gate;
+they passed on `main` (CI run 35801581784) together with formatting, strict
+Clippy, and `cargo test --all`.
 
 Real-binary sign-off: **PASS (2026-09-22).** The same 14 steps were rerun with
 `target/release/root` (`root 0.6.0`) and the exact supported binaries on
