@@ -1,136 +1,69 @@
-# Root v0.7.0
+# Root
 
-**Root is a persistent engineering environment for AI agents.**
+**A persistent engineering environment for AI agents.**
 
 Start in Codex. Continue in Claude. Pick it up tomorrow. The work stays where you left it.
 
-Root began as a deterministic package manager for developer CLI tools, backed by Nix. That foundation is unchanged: declare intent in a `Rootfile`, Root pins exact store paths in `root.lock`, snapshots before every mutation, and installs to an isolated profile at `~/.root/profiles/default`. Every install is verified and undoable.
-
-v0.5 makes the **work** durable on top of that environment. Workspaces, goals, decisions, findings, artifacts, provenance, and checkpoints persist independently of any agent, so another agent can resume without copying a transcript.
-
-*Built for developers, coding agents, and reproducible dev machines.*
+Root installs developer tools from a `Rootfile`, pins them in `root.lock`, and keeps the work so another agent can resume. v0.7 adds one local MCP interface for connectors, events, and fixtures.
 
 [![CI](https://github.com/BoringInfraCo/Root/actions/workflows/ci.yml/badge.svg)](https://github.com/BoringInfraCo/Root/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-[Docs](Docs/) · [Changelog](CHANGELOG.md) · [Smoke tests](Docs/Release/)
+[Docs](Docs/) · [Changelog](CHANGELOG.md) · [Smoke tests](Docs/Release/) · [MCP security](Docs/MCP/SECURITY.md)
 
-## What v0.7 Changed
+## Why Root
 
-v0.7 adds a local capability plane on the portable workspace. One `rootd` serves MCP, connectors carry tools, and events hand work to a harness only through an explicit route. Mail, browser, messages, and finance are local fixtures. `root sync` is still the Nix reconcile. The lock schema is still package-only emit 2 / max supported 3. Full history in `CHANGELOG.md`.
+Each harness wants its own setup, and a new chat does not remember the last one. Root keeps the machine and the work in one place.
 
-- **Local interface** — `root mcp serve` shims to `rootd` on a mode `0600` Unix socket. Loopback HTTP is opt-in and bearer-authenticated. The protocol stays `2024-11-05`.
-- **Connectors** — `root connector` installs a content-addressed package. Credential records store names only. Write and destructive tools wait on `root approval`. Network and filesystem grants stay `none`.
-- **Events** — `root event` records inbound mail and messages. `root event pull --harness` returns a delivery already handed to that harness and does not start an agent.
-- **Checkpoint references** — `root device` and `root checkpoint-sync` exchange encrypted checkpoint references over a folder relay. Git still carries source.
-- **Browser, messages, finance** — `root computer grant` scopes one visible target until it expires. `messages.local` waits on approval to draft or send. `finance.local` reconciles a fixture ledger. `root finance intent` records a payment intent and does not move money.
+- **Undo.** Every install snapshots first. `root rollback --last` restores the lock.
+- **Verified.** Binaries are checked in `~/.root/profiles/default`, not on the global PATH.
+- **Resumable.** `root checkpoint create` and `root resume --with` hand the next agent a continuation, not a transcript.
+- **One local interface.** `rootd` serves MCP. Connectors, approvals, and events are shared by Codex, Claude, and OpenCode.
 
-## What v0.6 Changed
+## How it works
 
-v0.6 makes the workspace portable: durable work state moves through a verified workspace document, agent intent moves with the repository, and the deterministic environment is reconstructed from the carried `Rootfile` and `root.lock`. Another machine or supported harness can then resume without a transcript. Existing v0.4 environment management and v0.5 continuity commands are unchanged; the lock schema is still package-only emit 2 / max supported 3. Full history in `CHANGELOG.md`.
-
-- **Canonical agent environment** — `root agent inspect|plan|diff` are read-only; `root agent apply|verify|capture|rollback|purge` are plan-first, hash-bound (`--plan-hash` + per-item `--approve`), and reuse the existing lock/journal/snapshot/rollback engine.
-- **Project-scoped intent** — check in `<repo>/.root/agent.toml` and a `Rootfile` `[agents]` stanza (`env`, `default_target`); `root agent capture --from <agent> --apply --out .root/agent.toml` writes it with names and hashes only.
-- **Unified checkpoint** — `root checkpoint create` now stores an immutable, names-only agent-environment reference alongside work, Git, and environment digests.
-- **Environment-first restore** — `root restore [--dry-run] [--rebind]` reconciles the deterministic environment, then binds durable work state read-only and screens drift.
-- **Harness-aware resume** — `root resume [--checkpoint <id>] --with <agent>` assembles a seven-step continuation package for `codex`, `opencode`, or `claude`; MCP `continuity.resume` accepts `with`.
-- **Workspace transfer** — `root workspace export --out <file>` / `root workspace import <file> [--project <dir>]` move recorded work state as a versioned, hash-checked document. Git carries the repo and `.root/agent.toml`; the operator separately carries the Root environment files in v0.6.
-- **Secret hygiene** — credential names only, everywhere; values are never read, logged, stored, or transferred. Claude MCP stays held.
-
-## What v0.5.0 Changed
-
-v0.5.0 adds engineering continuity on top of the deterministic environment. Existing v0.4 command behavior is unchanged; the lock schema is still package-only emit 2 / max supported 3. Full history in `CHANGELOG.md`.
-
-- **Work state** — `root workspace`, `goal`, `decision`, `finding`, `artifact` persist goal/decisions/findings/artifact references with provenance and an append-only event ledger (SQLite schema v2 under `~/.root/work/`).
-- **Checkpoints** — `root checkpoint create|list|show` capture immutable work + Git + environment references with a deterministic continuation summary.
-- **Continuity** — `root resume` and `root handoff --to <agent>` project a small, newest-first continuation package (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20) with drift detection.
-- **Recovery** — `root recover` reports what durable state exists after an interruption and what Root can and cannot continue from.
-- **MCP** — `root mcp serve|status` exposes a local stdio interface with server-side capability policy.
-- **Adapters** — `root adapters list|inspect --agent codex|claude` for harness setup.
-- **Secret protection** — work-state mutations refuse obvious credentials; this is a guard rail, not a complete scanner.
-
-## What is Root?
-
-One `Rootfile` per machine, undo anything.
-
-```bash
-root catalog              # browse 42 curated tools
-root plan install ripgrep # preview, no changes
-root install ripgrep      # install via Nix + lock + snapshot
-root verify ripgrep       # check ~/.root/profiles/default/bin
-root rollback --last      # undo it
-```
-
-Rootfile is intent, `root.lock` is truth (schema v2 packages, v3 models), snapshots are undo, the Nix profile is isolation. `root status`, `root history`, and `root doctor` tell you what drifted, what happened, and what's broken.
-
-## Why Root?
-
-- **Undo anything.** Every mutation snapshots first; `rollback --last` restores locked state.
-- **Verified installs.** Binaries are checked in the Root profile, never global PATH.
-- **Deterministic by default.** Curated Nix attributes + pinned store paths in `root.lock`.
-- **No Nix to learn.** Plan / install / verify / rollback — Root speaks Nix for you.
-- **Auditable.** Append-only event ledger + `--json` on every command.
-
-## How It Works
-
-1. **Declare** — packages in `~/.root/Rootfile` (`ripgrep = "latest"`).
-2. **Pin** — Root resolves Nix attributes to store paths in `~/.root/root.lock`.
-3. **Apply** — install into isolated `~/.root/profiles/default`, snapshot first, verify after.
-4. **Undo** — `root rollback --last` restores last locked state; `root status` shows drift.
+1. **Declare** packages in `~/.root/Rootfile`.
+2. **Pin** them to Nix store paths in `root.lock`.
+3. **Apply** into an isolated profile. Snapshot first, verify after.
+4. **Resume** from a checkpoint, or pull a handed route with `root event pull`.
 
 ## Install
 
-Root requires Nix (installer offers Determinate Nix if missing):
+Nix is required. The installer offers Determinate Nix if it is missing.
 
 ```bash
 curl -fsSL https://boringinfra.company/root/install.sh | sh
 root doctor
 ```
 
-## Commands
-
-Cheat-sheet — every command supports `--json`:
+## Quick start
 
 ```bash
-root catalog / search rg / plan install <pkg>  # discover + preview
-root install <pkg> / remove <pkg> / update [pkg] # mutate (snapshot first)
-root list / status / history / verify <pkg>     # inspect
-root sync / restore --lock ./root.lock / rollback --last # reconcile + undo
-root run <task> / sandbox create|run|list|destroy # execute + isolate
-root models pull / plan models                   # Ollama pull-and-verify (v3 record)
-root agent-bundle inspect|export|plan|apply|verify|rollback # explicit config transfer
-root workspace init|status / goal set|show       # durable work state
-root decision add|list|show / finding add|list|show # record + inspect work
-root artifact add|list                           # reference existing files
-root checkpoint create|list|show                 # immutable continuation points
-root resume / handoff --to <agent>               # continuation + cross-agent handoff
-root recover                                     # what survived an interruption
-root mcp serve|daemon|status / capability list|inspect / connector / approval / event pull
-root computer grant / device pair|list|revoke / checkpoint-sync push|pull / finance intent|approve
-root agent inspect|plan|diff                     # canonical env + cross-harness (read-only)
-root agent apply|verify|capture|rollback|purge   # hash-bound, plan-first translation
-root workspace export|import                     # portable workspace transfer document
-root restore [--dry-run] [--rebind] / resume --with <agent> # env-first restore + harness-aware resume
+root plan install ripgrep
+root install ripgrep
+root verify ripgrep
+root rollback --last
 ```
 
-> `root import brew` is experimental and not part of the v0.7.0 public surface — may change or break without notice.
+```bash
+root workspace init
+root checkpoint create
+root resume --with codex
+root mcp serve
+```
 
-<details>
-<summary>Exit codes & verify details</summary>
+Every command accepts `--json`. `root --help` lists the rest. v0.4 through v0.7 are in [CHANGELOG.md](CHANGELOG.md).
 
-0 success, 1 failure, 2 bad args, 3 not found, 4 verify failed, 5 drift, 6 rollback failed, 7 Nix missing, 8 platform missing. `verify` checks `~/.root/profiles/default/bin`, never PATH.
+## v0.7
 
-</details>
+- **MCP.** `root mcp serve` talks to `rootd` on a mode `0600` Unix socket. Loopback HTTP is opt-in and needs the bearer token.
+- **Connectors and events.** Packages install by digest. Writes wait on `root approval`. `root event pull` returns a handed route and does not start an agent.
+- **Checkpoint references.** `root checkpoint-sync` moves ciphertext over a folder you choose. `root sync` still reconciles the Nix profile. Git carries source.
+- **Fixtures.** Browser grants, `messages.local`, and `finance.local` stay on this machine. A payment intent does not move money.
 
-## Agent Bundles
+`root import brew` is experimental and outside the v0.7.0 public surface.
 
-`root agent-bundle` explicitly transfers Codex / OpenCode / Claude working config between machines (`manifest.json` + `blobs/`). Same-agent only, no credentials, MCP imported disabled (Codex/OpenCode enable separately; Claude MCP is held in v0.4.1). See `Docs/Release/V0_4_AGENT_BUNDLE_SMOKE_TEST.md` and `Docs/Release/V0_4_1_CLAUDE_SMOKE_TEST.md`.
-
-## Models
-
-Declared Ollama models (`[models."qwen3:8b"] runtime = "ollama"`) are pull-and-verify, not a bit-pin: `plan models` previews, `models pull` fetches by tag and writes a v3 verification record. Restore/rollback copy the record; they never pull or delete weights.
-
-## How Root Compares
+## Compare
 
 |  | Root | brew | curl \| sh | raw Nix |
 |---|---|---|---|---|
@@ -139,40 +72,16 @@ Declared Ollama models (`[models."qwen3:8b"] runtime = "ollama"`) are pull-and-v
 | Post-install verify | yes | no | no | no |
 | No Nix to learn | yes | yes | yes | no |
 
-## What v0.4.1 Changed
+## Limits
 
-Patch on the Portable Agent-Bundle release. Full history in `CHANGELOG.md`.
+- Curated catalog, 42 tools. Arbitrary packages are rejected.
+- Codex 0.150.1, OpenCode 1.18.27, and Claude Code 2.1.260 exactly.
+- No cloud account. Checkpoint sync is a folder of ciphertext.
+- Connector network and filesystem grants stay `none`.
 
-- **Claude adapter** — `--agent claude` on inspect/export/plan/apply/verify/rollback/purge, gated to **2.1.260** exactly.
-- **Held-subset transfer** — allowlist `CLAUDE.md` + `settings.json` `model` only; native `~/.claude/skills` then shared skills; executables need `--include-executable` + `--approve`.
-- **Claude MCP is held** — no disable-until-enable; `--include-mcp` / enable return `unsupported in v0.4.1 on Claude Code 2.1.260; MCP is held.`
-- **Never touches `.claude.json`** — apply/rollback snapshot `settings.json` only; stop Claude first.
-- **Codex 0.150.1 / OpenCode 1.18.27 unchanged**, including MCP disable-until-enable.
-
-## Limitations (v0.7.0)
-
-- **Portable workspace, reference sync** — `root workspace export|import` and Git carry work and source. `root checkpoint-sync` exchanges encrypted checkpoint references over a folder you choose. No cloud account, no team collaboration, no multi-writer merge.
-- **Environment transfer is reconstructed, not copied** — `root restore` rebuilds the deterministic Nix profile from `root.lock`; digests and references are recorded, never bit-for-bit machine images (`observed` is the honesty ceiling). Agent-environment apply is plan-first and re-reads live source content on the machine where it runs.
-- **Curated catalog only** — 42 tools across 11 categories; arbitrary installs rejected. Run `root catalog`. `docker-client` is CLI only.
-- **Undo covers Root only** — rollback restores Root lock/profile state, not Homebrew/manual changes; restore recovery is best-effort.
-- **Agents + models are honest, not magic** — status inspects (never installs agents / pulls models); bundles are same-agent, credential-free; models are tag-pull verification records, digest drift needs re-pull.
-- **Strict gates** — Codex 0.150.1, OpenCode 1.18.27, Claude 2.1.260 exactly; local Ollama `127.0.0.1:11434` only; no digest pull, no endpoint field.
-- **Continuity is captured, not omniscient** — Root records goals/decisions/findings/artifact references and checkpoints. It cannot recover unrecorded conversations, unsaved editor state, or commands it did not observe. Secret detection is a conservative guard rail, not a complete scanner. Resume is capped (decisions ≤ 10, findings ≤ 10, artifacts ≤ 20).
-- **MCP is local** — Unix socket plus opt-in loopback HTTP with a bearer token; connector tools are fixtures (no live browser, carrier, or bank). See [Docs/MCP/SECURITY.md](Docs/MCP/SECURITY.md).
-- **Online, serial, macOS-first** — network required, one mutation at a time (`root.lockfile` + `model-pull.json`), macOS tested / Linux best-effort / no Windows; Docker daemon needed for sandbox.
-- **Nix required** — Root manages its own profile but doesn't bundle Nix; if a crash leaves `~/.root/root.lockfile`, run `root doctor` then remove it.
-
-## Docs
-
-- [Docs/](Docs/) — restore, sandbox, Nix audits, platform notes
-- [Docs/Release/](Docs/Release/) — per-release smoke tests
-- [CHANGELOG.md](CHANGELOG.md) — full version history (replaces old "What vX.Y.Z Changed" sections)
-- [skills/](skills/) — agent packs (Codex / Claude / Cursor / generic)
-
-## Development
+## Develop
 
 ```bash
-cargo build
 cargo test --all
 cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- -D warnings
