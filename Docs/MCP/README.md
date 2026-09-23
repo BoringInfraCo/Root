@@ -25,6 +25,7 @@ root device list|pair|revoke
 root checkpoint-sync init|status|push|pull
 root checkpoint-sync relay set|show
 root checkpoint create --sync
+root computer grant|session|revoke
 ```
 
 ## Agent setup

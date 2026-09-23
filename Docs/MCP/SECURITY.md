@@ -109,3 +109,9 @@ MCP exposes no arbitrary shell or filesystem mutation.
   sees ciphertext, workspace ids, device ids, sizes, and timestamps. Credential
   values are not written. `root sync` is still the Nix profile reconcile;
   encrypted sync is `root checkpoint-sync`. Git still carries source code.
+- `connectors/computer.browser` is a fixture. It does not attach to a desktop
+  or a live browser, and its network and filesystem grants stay `none`.
+  Observe and act are separate session grants with a visible target and an
+  expiry. A screenshot is not a click. Downloads, credential entry, and
+  purchases still wait on `root approval approve`. A browser event is a ledger
+  record and does not start an agent.

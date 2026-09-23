@@ -1,0 +1,26 @@
+#!/bin/sh
+# Fixture browser. It does not attach to a desktop or open a network connection.
+read -r line
+case "$line" in
+  *'"tool":"computer.browser.screenshot"'*)
+    printf '%s\n' '{"ok":true,"content":"screenshot"}'
+    ;;
+  *'"tool":"computer.browser.click"'*)
+    printf '%s\n' '{"ok":true,"content":"clicked"}'
+    ;;
+  *'"tool":"computer.browser.type"'*)
+    printf '%s\n' '{"ok":true,"content":"typed"}'
+    ;;
+  *'"tool":"computer.browser.download"'*)
+    printf '%s\n' '{"ok":true,"content":"download recorded"}'
+    ;;
+  *'"tool":"computer.browser.credential"'*)
+    printf '%s\n' '{"ok":true,"content":"credential entry withheld"}'
+    ;;
+  *'"tool":"computer.browser.purchase"'*)
+    printf '%s\n' '{"ok":true,"content":"purchase withheld"}'
+    ;;
+  *)
+    printf '%s\n' '{"ok":true,"content":"observed"}'
+    ;;
+esac

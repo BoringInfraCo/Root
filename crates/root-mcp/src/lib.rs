@@ -6,6 +6,7 @@
 //! not the product.
 
 pub mod auth;
+pub mod computer;
 pub mod connector;
 pub mod daemon;
 pub mod events;

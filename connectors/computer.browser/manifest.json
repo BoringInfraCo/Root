@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "id": "computer.browser",
+  "version": "0.1.0",
+  "publisher": "boring-infra",
+  "executable": "browser-connector",
+  "executable_sha256": "3582de7e26e7369dfe62fc5e7eddde019e1dacc242bc6c5921d7e1a48d91d2ce",
+  "tools": [
+    {
+      "name": "computer.browser.observe",
+      "description": "Observe a page. Requires an observe grant. Does not click.",
+      "risk": "read",
+      "grant": "observe",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "computer.browser.screenshot",
+      "description": "Capture a screenshot. Distinct from click and type.",
+      "risk": "read",
+      "grant": "observe",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "computer.browser.click",
+      "description": "Click. Requires an act grant.",
+      "risk": "write",
+      "grant": "act",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "computer.browser.type",
+      "description": "Type. Requires an act grant.",
+      "risk": "write",
+      "grant": "act",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" }, "text": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "computer.browser.download",
+      "description": "Record a download request. Requires an act grant and elevated approval.",
+      "risk": "destructive",
+      "grant": "elevated",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "computer.browser.credential",
+      "description": "Credential entry is withheld until elevated approval. The value is not stored.",
+      "risk": "destructive",
+      "grant": "elevated",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "computer.browser.purchase",
+      "description": "Purchase is withheld until elevated approval. No money moves.",
+      "risk": "destructive",
+      "grant": "elevated",
+      "input_schema": { "type": "object", "properties": { "target": { "type": "string" } } },
+      "idempotent": false
+    }
+  ],
+  "events": ["computer.browser.observed", "computer.browser.acted", "computer.browser.elevated"],
+  "credentials": [],
+  "network": ["none"],
+  "filesystem": ["none"],
+  "limits": {
+    "timeout_ms": 2000,
+    "max_output_bytes": 4096,
+    "max_calls": 30,
+    "window_seconds": 60
+  }
+}

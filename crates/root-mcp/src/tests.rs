@@ -697,3 +697,67 @@ fn continuity_resume_without_target_is_unchanged() {
         .unwrap()
         .starts_with("Investigate:"));
 }
+
+#[test]
+fn browser_grant_is_scoped_and_reading_it_does_not_create_state() {
+    let root_dir = temp("browser_grant");
+    std::fs::create_dir_all(&root_dir).unwrap();
+    let _guard = EnvGuard::set(&root_dir);
+
+    let listed = crate::computer::session().unwrap();
+    assert!(listed.is_empty());
+    assert!(
+        !root_dir.join("computer").exists(),
+        "listing grants must not create computer/"
+    );
+    assert!(crate::computer::require("observe", "https://example.com/inbox").is_err());
+    assert!(!root_dir.join("computer").exists());
+
+    let bad_host = crate::computer::grant("observe", "http://localhost.evil.com", 15);
+    assert!(bad_host.is_err(), "{bad_host:?}");
+    assert!(crate::computer::grant("observe", "http://localhost:80@evil.com", 15).is_err());
+    assert!(crate::computer::grant("observe", "http://localhost:@evil.com", 15).is_err());
+    assert!(crate::computer::grant("observe", "http://localhost:3000.evil.com", 15).is_err());
+    assert!(crate::computer::grant("observe", "https://example.com/", 15).is_err());
+    assert!(crate::computer::grant("observe", "https://example.com", 0).is_err());
+    assert!(crate::computer::grant("observe", "https://example.com", 241).is_err());
+    assert!(!root_dir.join("computer").exists());
+
+    let observe = crate::computer::grant("observe", "https://example.com", 15).unwrap();
+    assert!(crate::computer::require("observe", "https://example.com/inbox").is_ok());
+    assert!(crate::computer::require("observe", "https://example.com").is_ok());
+    assert!(crate::computer::require("act", "https://example.com/inbox").is_err());
+    assert!(crate::computer::require("elevated", "https://example.com/file").is_err());
+    assert!(crate::computer::require("observe", "https://evil.test/inbox").is_err());
+    assert!(crate::computer::require("observe", "https://example.com.evil/inbox").is_err());
+
+    let local = crate::computer::grant("observe", "http://localhost:3000", 15).unwrap();
+    assert!(crate::computer::require("observe", "http://localhost:3000/page").is_ok());
+    assert!(crate::computer::require("observe", "http://localhost/page").is_err());
+    assert!(crate::computer::require("observe", "http://localhost.evil.com/page").is_err());
+
+    let path = root_dir.join("computer/grants.json");
+    let mut stored: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    for grant in stored["grants"].as_array_mut().unwrap() {
+        grant["expires_at"] = json!("2000-01-01T00:00:00Z");
+    }
+    std::fs::write(&path, serde_json::to_vec_pretty(&stored).unwrap()).unwrap();
+    let expired = crate::computer::require("observe", "https://example.com/inbox").unwrap_err();
+    assert!(expired.to_string().contains("grant required"), "{expired}");
+
+    let act = crate::computer::grant("act", "https://example.com", 15).unwrap();
+    assert!(crate::computer::require("observe", "https://example.com/inbox").is_ok());
+    assert!(crate::computer::require("act", "https://example.com/inbox").is_ok());
+    assert!(crate::computer::require("elevated", "https://example.com/file").is_ok());
+    crate::computer::revoke(&act.id).unwrap();
+    assert!(crate::computer::require("act", "https://example.com/inbox").is_err());
+    assert!(crate::computer::require("observe", "https://example.com/inbox").is_err());
+    assert!(observe.id.starts_with("root_cs_"));
+    assert!(local.id.starts_with("root_cs_"));
+    assert_ne!(observe.id, local.id);
+
+    std::fs::write(&path, b"{").unwrap();
+    assert!(crate::computer::grant("act", "https://example.com", 15).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), b"{");
+    assert!(crate::computer::require("observe", "https://example.com/inbox").is_err());
+}

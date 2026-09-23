@@ -107,6 +107,37 @@ pub struct DeliverReport {
     pub dead: usize,
 }
 
+pub fn record(source: &str, selector: &str, idempotency_key: &str, summary: &str) -> Result<()> {
+    if idempotency_key.is_empty() || selector.is_empty() {
+        anyhow::bail!("event selector and idempotency key are required");
+    }
+    let mut ledger = read()?;
+    if ledger
+        .events
+        .iter()
+        .any(|event| event.idempotency_key == idempotency_key)
+    {
+        return Ok(());
+    }
+    let correlation = auth::random_hex(8)?;
+    let event = Event {
+        id: format!("root_ev_{}", auth::random_hex(8)?),
+        selector: selector.to_string(),
+        source: source.to_string(),
+        idempotency_key: idempotency_key.to_string(),
+        summary: redact(summary),
+        correlation_id: correlation,
+        status: "recorded".to_string(),
+        created_at: Utc::now().to_rfc3339(),
+    };
+    audit("event.record", &event.id, &event.correlation_id, "recorded")?;
+    ledger.events.push(event);
+    let index = ledger.events.len() - 1;
+    let _ = open_deliveries(&mut ledger, index)?;
+    write(&ledger)?;
+    Ok(())
+}
+
 pub fn list_events() -> Result<Vec<EventView>> {
     Ok(read()?.events.iter().map(event_view).collect())
 }

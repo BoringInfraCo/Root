@@ -50,6 +50,9 @@ struct ToolSpec {
     risk: Risk,
     input_schema: Value,
     idempotent: bool,
+    /// Session grant this tool requires: observe, act, or elevated.
+    #[serde(default)]
+    grant: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -163,6 +166,7 @@ pub struct ToolView {
     pub risk: String,
     pub idempotent: bool,
     pub description: String,
+    pub grant: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -516,7 +520,24 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
     let args_hash = sha256_bytes(&canonical(arguments));
     let correlation = auth::random_hex(8)?;
 
-    if tool.risk != Risk::Read {
+    if let Some(kind) = tool.grant.clone() {
+        let target = arguments
+            .get("target")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if let Err(error) = crate::computer::require(&kind, target) {
+            audit(&manifest.id, name, "call", &args_hash, "grant_required")?;
+            drop(_lock);
+            anyhow::bail!("{error}");
+        }
+    }
+
+    let needs_queue = match tool.risk {
+        Risk::Read => false,
+        Risk::Write => tool.grant.as_deref() != Some("act"),
+        Risk::Destructive => true,
+    };
+    if needs_queue {
         let gate = gate_approval(&manifest.id, &tool, &args_hash)?;
         if let Some(message) = gate {
             let status = if message.starts_with("approval denied") {
@@ -574,6 +595,22 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
         }
     }
     audit(&manifest.id, name, "call", &args_hash, "ran")?;
+    drop(_lock);
+    if tool.grant.is_some() {
+        let selector = match tool.grant.as_deref() {
+            Some("observe") => "computer.browser.observed",
+            Some("elevated") => "computer.browser.elevated",
+            _ => "computer.browser.acted",
+        };
+        let summary = format!(
+            "{name} {target}",
+            target = arguments
+                .get("target")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+        );
+        crate::events::record(&manifest.id, selector, &correlation, &summary)?;
+    }
     Ok(Some(call_payload(&correlation, &content)))
 }
 
@@ -855,6 +892,11 @@ fn validate(manifest: &Manifest) -> Result<()> {
         if !tool.input_schema.is_object() {
             anyhow::bail!("tool {} input_schema must be an object", tool.name);
         }
+        if let Some(grant) = &tool.grant {
+            if !matches!(grant.as_str(), "observe" | "act" | "elevated") {
+                anyhow::bail!("tool {} grant must be observe, act, or elevated", tool.name);
+            }
+        }
     }
     for credential in &manifest.credentials {
         if !credential
@@ -927,6 +969,7 @@ fn detail(installed: &Installed) -> Result<ConnectorDetail> {
                 risk: risk_name(tool.risk).to_string(),
                 idempotent: tool.idempotent,
                 description: tool.description.clone(),
+                grant: tool.grant.clone(),
             })
             .collect(),
         events: manifest.events,

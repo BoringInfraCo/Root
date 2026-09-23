@@ -223,6 +223,11 @@ enum Commands {
         #[command(subcommand)]
         subcommand: EventSubcommands,
     },
+    /// Grant a browser session for one visible target
+    Computer {
+        #[command(subcommand)]
+        subcommand: ComputerSubcommands,
+    },
     /// Pair and revoke sync devices
     Device {
         #[command(subcommand)]
@@ -700,6 +705,26 @@ enum ConnectorAuthSubcommands {
         id: String,
         #[arg(long, value_name = "NAME")]
         name: String,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum ComputerSubcommands {
+    /// Allow observe or act on one https origin until it expires
+    Grant {
+        #[arg(value_name = "KIND")]
+        kind: String,
+        #[arg(long)]
+        target: String,
+        #[arg(long)]
+        minutes: u64,
+    },
+    /// List browser grants, including expired ones
+    Session,
+    /// Revoke a browser grant
+    Revoke {
+        #[arg(value_name = "ID")]
+        id: String,
     },
 }
 
@@ -4421,6 +4446,41 @@ fn main() {
                     );
                 }
             },
+        },
+        Commands::Computer { subcommand } => match subcommand {
+            ComputerSubcommands::Grant {
+                kind,
+                target,
+                minutes,
+            } => {
+                let _ = handle_structured(
+                    cli.json,
+                    root_mcp::computer::grant(&kind, &target, minutes),
+                    |item| {
+                        format!(
+                            "Grant {} {} until {}\n",
+                            item.kind, item.target, item.expires_at
+                        )
+                    },
+                );
+            }
+            ComputerSubcommands::Session => {
+                let _ = handle_structured(cli.json, root_mcp::computer::session(), |items| {
+                    let mut msg = format!("Browser grants ({})\n", items.len());
+                    for item in items {
+                        msg.push_str(&format!(
+                            "  {}  {}  {}  active={}\n",
+                            item.id, item.kind, item.target, item.active
+                        ));
+                    }
+                    msg
+                });
+            }
+            ComputerSubcommands::Revoke { id } => {
+                let _ = handle_structured(cli.json, root_mcp::computer::revoke(&id), |item| {
+                    format!("Revoked browser grant {}\n", item.id)
+                });
+            }
         },
         Commands::Device { subcommand } => match subcommand {
             DeviceSubcommands::List => {
