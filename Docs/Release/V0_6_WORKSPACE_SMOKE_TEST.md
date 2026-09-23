@@ -488,12 +488,29 @@ Sprint 014 §6 release checkboxes, restated for this smoke run:
 - [x] `cargo test --all`, `cargo fmt --all -- --check`,
       `cargo clippy --all-targets --all-features -- -D warnings` pass.
 
-Release-hardware note: the exact supported real harness versions were not
-installed on the review machine (Codex 0.149.1, Claude 2.1.204, OpenCode 0.4.26
-were present). The mutation gates were exercised with deterministic shims for
-Codex 0.150.1, Claude 2.1.260, and OpenCode 1.18.27, plus the full automated
-cross-harness suite. Release builds passed for `aarch64-apple-darwin` and
-`x86_64-apple-darwin`; the GitHub-hosted Linux release matrix remains the
-authoritative Linux gate because the local macOS runner lacks the cross-linker.
-A real-binary run on the exact supported harness versions and the remote Linux
-matrix remain the final operator sign-offs before tagging.
+Release-hardware note: an earlier pass on this machine used deterministic
+shims because the installed harnesses were Codex 0.149.1, Claude 2.1.204, and
+OpenCode 0.4.26. Release builds for `aarch64-apple-darwin` and
+`x86_64-apple-darwin` had already passed locally. The local macOS runner still
+cannot link the Linux targets; that gate is the GitHub-hosted Linux release
+matrix.
+
+Real-binary sign-off: **PASS (2026-09-22).** The same 14 steps were rerun with
+`target/release/root` (`root 0.6.0`) and the exact supported binaries on
+`PATH`, in isolated homes (no operator Claude/Codex/OpenCode config, no agent
+session started):
+
+| Binary | `root agent inspect` | Source |
+| --- | --- | --- |
+| Codex | `0.150.1`, `version_supported: true` | `~/.local/bin/codex` (`codex-cli 0.150.1`) |
+| Claude Code | `2.1.260`, `version_supported: true` | `~/.local/bin/claude` (`2.1.260 (Claude Code)`) |
+| OpenCode | `1.18.27`, `version_supported: true` | GitHub `anomalyco/opencode` `v1.18.27` `opencode-darwin-arm64` (the copy already on `PATH` was 1.18.32, so the pinned 1.18.27 binary was placed first) |
+
+`root adapters list` reported Codex `codex-cli 0.150.1` and Claude Code
+`2.1.260 (Claude Code)`, both supported. Claude MCP recorded decisions and the
+finding as `source_type=agent`, `agent=claude`. `agent capture --from claude`
+stored `source_agent_version` `2.1.260`. After import, `resume --with codex`
+ran all seven steps `ok` against Codex 0.150.1. The second checkpoint listed
+`from=codex` and `env=claude`. The `sk-live-abc123` decision was refused on
+the CLI and on MCP, and no row was written. Drift, recover, catalog, plan,
+history, handoff, and `mcp status` matched the expectations above.
