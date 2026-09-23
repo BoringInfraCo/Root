@@ -115,3 +115,9 @@ MCP exposes no arbitrary shell or filesystem mutation.
   expiry. A screenshot is not a click. Downloads, credential entry, and
   purchases still wait on `root approval approve`. A browser event is a ledger
   record and does not start an agent.
+- `connectors/messages.local` is a fixture. Network and filesystem grants stay
+  `none`. Threads and read run immediately. Draft and send wait on
+  `root approval approve`. An unknown display name is labeled on that same
+  approval. Recipients are names in `contacts.txt`, and a phone number is
+  refused. Inbound `message.received` stays recorded until a route exists.
+  A route still does not start an agent. The fixture does not contact a carrier.

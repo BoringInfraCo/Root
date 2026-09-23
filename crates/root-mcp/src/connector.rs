@@ -532,6 +532,15 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
         }
     }
 
+    let unknown = match messaging_unknown(&manifest.id, name, arguments) {
+        Ok(unknown) => unknown,
+        Err(error) => {
+            audit(&manifest.id, name, "call", &args_hash, "recipient_invalid")?;
+            drop(_lock);
+            return Err(error);
+        }
+    };
+
     let needs_queue = match tool.risk {
         Risk::Read => false,
         Risk::Write => tool.grant.as_deref() != Some("act"),
@@ -540,10 +549,18 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
     if needs_queue {
         let gate = gate_approval(&manifest.id, &tool, &args_hash)?;
         if let Some(message) = gate {
-            let status = if message.starts_with("approval denied") {
+            let denied = message.starts_with("approval denied");
+            let status = if denied {
                 "denied"
+            } else if unknown {
+                "unknown_recipient"
             } else {
                 "approval_required"
+            };
+            let message = if unknown && !denied {
+                format!("unknown recipient: {message}")
+            } else {
+                message
             };
             audit(&manifest.id, name, "call", &args_hash, status)?;
             drop(_lock);
@@ -620,6 +637,49 @@ fn call_payload(correlation: &str, content: &str) -> Value {
         "content": content,
         "correlation_id": correlation,
     })
+}
+
+/// Draft and send on `messages.local` name a display-name recipient.
+/// An unknown name stays on the existing approval queue.
+fn messaging_unknown(connector_id: &str, tool: &str, arguments: &Value) -> Result<bool> {
+    if connector_id != "messages.local" {
+        return Ok(false);
+    }
+    if tool != "messages.local.draft" && tool != "messages.local.send" {
+        return Ok(false);
+    }
+    let recipient = arguments
+        .get("recipient")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    if !display_name(recipient) {
+        anyhow::bail!("recipient must be a display name");
+    }
+    if root_work::secrets::detect(recipient).is_some() {
+        anyhow::bail!("refusing a recipient that looks like a secret");
+    }
+    Ok(!known_contact(connector_id, recipient)?)
+}
+
+fn display_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    first.is_ascii_lowercase()
+        && name.len() <= 32
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+}
+
+fn known_contact(connector_id: &str, name: &str) -> Result<bool> {
+    let path = package_dir_for(connector_id)?
+        .join("files")
+        .join("contacts.txt");
+    if !path.is_file() {
+        return Ok(false);
+    }
+    let text = fs::read_to_string(path)?;
+    Ok(text.lines().any(|line| line.trim() == name))
 }
 
 fn gate_approval(connector_id: &str, tool: &ToolSpec, args_hash: &str) -> Result<Option<String>> {

@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "id": "messages.local",
+  "version": "0.1.0",
+  "publisher": "boring-infra",
+  "executable": "messages-connector",
+  "executable_sha256": "029479de8fc46fa69422fadeeb60c9056a2100d78827357985727bd5f4682f8e",
+  "tools": [
+    {
+      "name": "messages.local.threads",
+      "description": "List local fixture threads. Does not contact a carrier.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": {} },
+      "idempotent": true
+    },
+    {
+      "name": "messages.local.read",
+      "description": "Read one local fixture thread.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": { "thread": { "type": "string" } } },
+      "idempotent": true
+    },
+    {
+      "name": "messages.local.draft",
+      "description": "Store a local draft. Write, so it waits for approval. An unknown recipient is labeled on that approval.",
+      "risk": "write",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "recipient": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      },
+      "idempotent": false
+    },
+    {
+      "name": "messages.local.send",
+      "description": "Record a local send. Destructive, so it waits for approval. Nothing is handed to a carrier.",
+      "risk": "destructive",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "recipient": { "type": "string" },
+          "body": { "type": "string" }
+        }
+      },
+      "idempotent": false
+    }
+  ],
+  "events": ["message.received"],
+  "credentials": [],
+  "network": ["none"],
+  "filesystem": ["none"],
+  "limits": {
+    "timeout_ms": 2000,
+    "max_output_bytes": 4096,
+    "max_calls": 30,
+    "window_seconds": 60
+  }
+}

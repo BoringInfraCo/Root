@@ -1,0 +1,20 @@
+#!/bin/sh
+# Local message fixture. It does not contact a carrier.
+read -r line
+case "$line" in
+  *'"op":"ingest"'*)
+    printf '%s\n' '{"ok":true,"messages":[{"idempotency_key":"t1","type":"message.received","summary":"Hello from ada"}]}'
+    ;;
+  *'"tool":"messages.local.read"'*)
+    printf '%s\n' '{"ok":true,"content":"t1 Hello from ada"}'
+    ;;
+  *'"tool":"messages.local.draft"'*)
+    printf '%s\n' '{"ok":true,"content":"draft stored"}'
+    ;;
+  *'"tool":"messages.local.send"'*)
+    printf '%s\n' '{"ok":true,"content":"send recorded locally"}'
+    ;;
+  *)
+    printf '%s\n' '{"ok":true,"content":"t1 ada"}'
+    ;;
+esac

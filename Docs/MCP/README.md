@@ -28,6 +28,9 @@ root checkpoint create --sync
 root computer grant|session|revoke
 ```
 
+`messages.local` is the local messaging fixture: `messages.local.threads`,
+`messages.local.read`, `messages.local.draft`, and `messages.local.send`.
+
 ## Agent setup
 
 Agents start the server with `root mcp serve` from inside the target repository
