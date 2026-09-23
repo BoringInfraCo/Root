@@ -218,6 +218,11 @@ enum Commands {
         #[command(subcommand)]
         subcommand: ApprovalSubcommands,
     },
+    /// Record inbound events and explicit delivery routes
+    Event {
+        #[command(subcommand)]
+        subcommand: EventSubcommands,
+    },
     /// Inspect supported coding-agent adapters
     Adapters {
         #[command(subcommand)]
@@ -681,6 +686,55 @@ enum ConnectorAuthSubcommands {
         #[arg(long, value_name = "NAME")]
         name: String,
     },
+}
+
+#[derive(Subcommand, Debug)]
+enum EventSubcommands {
+    /// List recorded events
+    List,
+    /// List events that are not acked
+    Watch,
+    /// Mark an event and its deliveries acked
+    Ack {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
+    /// Pull inbound messages from a connector into the ledger
+    Ingest {
+        #[arg(value_name = "CONNECTOR")]
+        connector: String,
+    },
+    /// Record a delivery attempt. Does not spawn an agent.
+    Deliver,
+    /// Manage explicit routes
+    Route {
+        #[command(subcommand)]
+        subcommand: EventRouteSubcommands,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum EventRouteSubcommands {
+    /// Add a route. Inbound events do not invoke an agent; they become deliveries.
+    Add {
+        #[arg(long)]
+        selector: String,
+        #[arg(long)]
+        workspace: String,
+        #[arg(long)]
+        harness: String,
+        #[arg(long)]
+        capability: Vec<String>,
+        #[arg(long, default_value_t = 1)]
+        concurrency: u64,
+        #[arg(long, default_value_t = 3)]
+        retries: u64,
+        /// Require an approval before a delivery can be handed off
+        #[arg(long)]
+        approve: bool,
+    },
+    /// List routes
+    List,
 }
 
 #[derive(Subcommand, Debug)]
@@ -4303,6 +4357,87 @@ fn main() {
                         root_mcp::connector::auth_revoke(&id, &name),
                         |plan| format!("Revoked credential name on {}\n", plan.id),
                     );
+                }
+            },
+        },
+        Commands::Event { subcommand } => match subcommand {
+            EventSubcommands::List => {
+                let _ = handle_structured(cli.json, root_mcp::events::list_events(), |items| {
+                    let mut msg = format!("Events ({})\n", items.len());
+                    for item in items {
+                        msg.push_str(&format!(
+                            "  {}  {}  {}  {}\n",
+                            item.id, item.selector, item.status, item.summary
+                        ));
+                    }
+                    msg
+                });
+            }
+            EventSubcommands::Watch => {
+                let _ = handle_structured(cli.json, root_mcp::events::watch(), |items| {
+                    format!("Watching {} unacked event(s)\n", items.len())
+                });
+            }
+            EventSubcommands::Ack { id } => {
+                let _ = handle_structured(cli.json, root_mcp::events::ack(&id), |item| {
+                    format!("Acked {}\n", item.id)
+                });
+            }
+            EventSubcommands::Ingest { connector } => {
+                let _ = handle_structured(cli.json, root_mcp::events::ingest(&connector), |item| {
+                    format!(
+                        "Ingested {} from {}: {} new, {} duplicate, {} deliveries\n",
+                        item.connector_id,
+                        item.connector_id,
+                        item.created,
+                        item.duplicate,
+                        item.deliveries
+                    )
+                });
+            }
+            EventSubcommands::Deliver => {
+                let _ = handle_structured(cli.json, root_mcp::events::deliver(), |item| {
+                    format!(
+                        "Deliveries handed {}, skipped {}, dead {}\n",
+                        item.handed, item.skipped, item.dead
+                    )
+                });
+            }
+            EventSubcommands::Route { subcommand } => match subcommand {
+                EventRouteSubcommands::Add {
+                    selector,
+                    workspace,
+                    harness,
+                    capability,
+                    concurrency,
+                    retries,
+                    approve,
+                } => {
+                    let _ = handle_structured(
+                        cli.json,
+                        root_mcp::events::add_route(
+                            &selector,
+                            &workspace,
+                            &harness,
+                            &capability,
+                            concurrency,
+                            retries,
+                            approve,
+                        ),
+                        |item| format!("Route {} for {}\n", item.id, item.selector),
+                    );
+                }
+                EventRouteSubcommands::List => {
+                    let _ = handle_structured(cli.json, root_mcp::events::list_routes(), |items| {
+                        let mut msg = format!("Routes ({})\n", items.len());
+                        for item in items {
+                            msg.push_str(&format!(
+                                "  {}  {}  harness={}  approval={}\n",
+                                item.id, item.selector, item.harness, item.approval_required
+                            ));
+                        }
+                        msg
+                    });
                 }
             },
         },

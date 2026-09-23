@@ -8,6 +8,7 @@
 pub mod auth;
 pub mod connector;
 pub mod daemon;
+pub mod events;
 pub mod http;
 pub mod jsonrpc;
 pub mod policy;

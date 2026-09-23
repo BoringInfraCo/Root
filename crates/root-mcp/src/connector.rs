@@ -212,6 +212,22 @@ pub fn install(manifest_path: &Path, package_dir: &Path) -> Result<InstallReport
     fs::copy(manifest_path, &stored_manifest)?;
     let stored_bin = dir.join("bin").join(&manifest.executable);
     fs::copy(&source, &stored_bin)?;
+    let files = dir.join("files");
+    fs::create_dir_all(&files)?;
+    for entry in fs::read_dir(package_dir).context("could not read connector package")? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = entry.file_name();
+        if name == std::ffi::OsStr::new("manifest.json")
+            || name == std::ffi::OsStr::new(&manifest.executable)
+        {
+            continue;
+        }
+        fs::copy(&path, files.join(name))?;
+    }
     let mut permissions = fs::metadata(&stored_bin)?.permissions();
     permissions.set_mode(0o700);
     fs::set_permissions(&stored_bin, permissions)?;
@@ -530,14 +546,14 @@ fn invoke_inner(name: &str, arguments: &Value) -> Result<Option<Value>> {
     write_index(&index)?;
     drop(_lock);
 
-    let content = run_process(
+    let value = run_process(
         &manifest,
         &index.connectors[position],
         "call",
         name,
         arguments,
     )?;
-    let content = redact_output(&content);
+    let content = redact_output(value.get("content").and_then(Value::as_str).unwrap_or(""));
 
     let _lock = lock_host()?;
     let mut index = read_index()?;
@@ -611,13 +627,70 @@ fn gate_approval(connector_id: &str, tool: &ToolSpec, args_hash: &str) -> Result
     Ok(Some(format!("approval required: {id}")))
 }
 
+pub(crate) fn exchange(id: &str, op: &str) -> Result<Value> {
+    let _lock = lock_host()?;
+    let index = read_index()?;
+    let installed = installed(&index, id)?.clone();
+    if !installed.enabled {
+        anyhow::bail!("connector {id} is disabled");
+    }
+    let manifest = load_installed(id)?;
+    ensure_intact(&installed, &manifest)?;
+    drop(_lock);
+    run_process(&manifest, &installed, op, "", &Value::Object(Map::new()))
+}
+
+pub(crate) fn queue_approval(
+    connector_id: &str,
+    tool: &str,
+    risk: &str,
+    args_sha256: &str,
+) -> Result<String> {
+    let _lock = lock_host()?;
+    let mut file = read_approvals()?;
+    if let Some(existing) = file.approvals.iter().find(|item| {
+        item.connector_id == connector_id
+            && item.tool == tool
+            && item.args_sha256 == args_sha256
+            && item.status == "pending"
+    }) {
+        return Ok(existing.id.clone());
+    }
+    let id = format!("root_appr_{}", auth::random_hex(8)?);
+    file.approvals.push(Approval {
+        id: id.clone(),
+        connector_id: connector_id.to_string(),
+        tool: tool.to_string(),
+        risk: risk.to_string(),
+        args_sha256: args_sha256.to_string(),
+        status: "pending".to_string(),
+        created_at: Utc::now().to_rfc3339(),
+    });
+    write_approvals(&file)?;
+    Ok(id)
+}
+
+pub(crate) fn consume_approval(id: &str) -> Result<bool> {
+    let _lock = lock_host()?;
+    let mut file = read_approvals()?;
+    let Some(item) = file.approvals.iter_mut().find(|item| item.id == id) else {
+        return Ok(false);
+    };
+    if item.status != "approved" {
+        return Ok(false);
+    }
+    item.status = "consumed".to_string();
+    write_approvals(&file)?;
+    Ok(true)
+}
+
 fn run_process(
     manifest: &Manifest,
     installed: &Installed,
     op: &str,
     tool: &str,
     arguments: &Value,
-) -> Result<String> {
+) -> Result<Value> {
     let dir = package_dir_for(&manifest.id)?;
     let exe = dir.join("bin").join(&manifest.executable);
     let run_dir = dir.join("run");
@@ -691,11 +764,7 @@ fn run_process(
             .unwrap_or("connector failed");
         anyhow::bail!("{message}");
     }
-    Ok(value
-        .get("content")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_string())
+    Ok(value)
 }
 
 fn health_check(installed: &Installed, manifest: &Manifest) -> Result<()> {

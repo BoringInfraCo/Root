@@ -1,0 +1,20 @@
+#!/bin/sh
+# Local mailbox fixture. It does not talk to a provider or the network.
+read -r line
+case "$line" in
+  *'"op":"ingest"'*)
+    printf '%s\n' '{"ok":true,"messages":[{"idempotency_key":"m1","type":"email.received","summary":"Hello from ada@example.com"}]}'
+    ;;
+  *'"tool":"email.local.read"'*)
+    printf '%s\n' '{"ok":true,"content":"m1 Hello from ada@example.com"}'
+    ;;
+  *'"tool":"email.local.draft"'*)
+    printf '%s\n' '{"ok":true,"content":"draft stored"}'
+    ;;
+  *'"tool":"email.local.send"'*)
+    printf '%s\n' '{"ok":true,"content":"sent"}'
+    ;;
+  *)
+    printf '%s\n' '{"ok":true,"content":"m1 Hello from ada@example.com"}'
+    ;;
+esac

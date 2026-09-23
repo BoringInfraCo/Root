@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "id": "email.local",
+  "version": "0.1.0",
+  "publisher": "boring-infra",
+  "executable": "email-connector",
+  "executable_sha256": "0c72e838791368725277f5d4929a930979cbda0e192ea9a720f13a642dbc573b",
+  "tools": [
+    {
+      "name": "email.local.search",
+      "description": "List messages in the local fixture mailbox.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": { "query": { "type": "string" } } },
+      "idempotent": true
+    },
+    {
+      "name": "email.local.read",
+      "description": "Read one local fixture message.",
+      "risk": "read",
+      "input_schema": { "type": "object", "properties": { "id": { "type": "string" } } },
+      "idempotent": true
+    },
+    {
+      "name": "email.local.draft",
+      "description": "Store a local draft. Classified write, so it waits for approval.",
+      "risk": "write",
+      "input_schema": { "type": "object", "properties": { "body": { "type": "string" } } },
+      "idempotent": false
+    },
+    {
+      "name": "email.local.send",
+      "description": "Send is destructive and waits for approval. The fixture does not contact a provider.",
+      "risk": "destructive",
+      "input_schema": { "type": "object", "properties": { "id": { "type": "string" } } },
+      "idempotent": false
+    }
+  ],
+  "events": ["email.received"],
+  "credentials": [],
+  "network": ["none"],
+  "filesystem": ["none"],
+  "limits": {
+    "timeout_ms": 2000,
+    "max_output_bytes": 4096,
+    "max_calls": 30,
+    "window_seconds": 60
+  }
+}

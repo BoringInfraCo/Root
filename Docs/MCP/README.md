@@ -19,6 +19,8 @@ root capability inspect NAME
 root connector install|list|inspect|enable|disable|remove
 root connector auth plan|bind|revoke
 root approval list|approve|deny
+root event list|watch|ack|ingest|deliver
+root event route add|list
 ```
 
 ## Agent setup
