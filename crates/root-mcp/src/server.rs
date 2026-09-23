@@ -5,7 +5,7 @@ use crate::policy::{self, Policy};
 use crate::protocol;
 use crate::session::ServerState;
 use crate::tools::{self, ToolError};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use root_work::{Repository, WorkStore};
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -214,6 +214,15 @@ pub fn run_stdio(state: &mut ServerState) -> Result<()> {
     run_lines(state, stdin.lock().lines(), stdout.lock())
 }
 
+pub(crate) fn open_session(cwd: &std::path::Path) -> Result<ServerState> {
+    let repository = Repository::discover(cwd)
+        .with_context(|| format!("not a git repository: {}", cwd.display()))?;
+    let store = WorkStore::open(repository.clone())?;
+    let root_dir = policy::root_dir()?;
+    let policy = Policy::load_at(&root_dir);
+    Ok(ServerState::new(store, root_dir, repository, policy))
+}
+
 /// Stdio compatibility shim. Confirms the workspace the way v0.6 did, then
 /// proxies newline-delimited JSON-RPC to rootd. A daemon is started for this
 /// Root directory when one is not already listening.
@@ -234,8 +243,17 @@ pub fn serve() -> Result<()> {
             return Err(error);
         }
     };
+    let root_dir = policy::root_dir()?;
+    let token = crate::auth::read_existing(&root_dir)?;
     let mut writer = stream.try_clone()?;
-    writeln!(writer, "{}", serde_json::json!({ "cwd": cwd }))?;
+    writeln!(
+        writer,
+        "{}",
+        serde_json::json!({
+            "cwd": cwd,
+            "authorization": format!("Bearer {token}"),
+        })
+    )?;
     writer.flush()?;
 
     let copy_in = std::thread::spawn(move || {

@@ -5,7 +5,9 @@
 //! workspace, work, continuity, and environment tools. MCP is an interface,
 //! not the product.
 
+pub mod auth;
 pub mod daemon;
+pub mod http;
 pub mod jsonrpc;
 pub mod policy;
 pub mod protocol;

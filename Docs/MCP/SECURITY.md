@@ -76,14 +76,22 @@ MCP exposes no arbitrary shell or filesystem mutation.
 
 ## Remaining limitations
 
-- No authentication or encryption: any local process that can run `root mcp
-  serve`, or connect to the socket named in `$ROOT_DIR/rootd.path`, can use
-  the workspace. The socket is mode `0600` and is not under a world-readable
-  name that includes workspace contents. There is no bearer token yet.
+- The stdio shim is still local and unauthenticated from the agent's point of
+  view. It reads `$ROOT_DIR/rootd.token` (mode `0600`) and sends
+  `Authorization: Bearer` on the Unix socket. A socket client that does not
+  present that token is rejected. The same token is required on HTTP.
+- HTTP is off unless `root mcp daemon --http 127.0.0.1:PORT` is set. Other
+  bind addresses are refused. A token in the URL is refused. A present
+  `Origin` must be `http://127.0.0.1:<port>` or `http://localhost:<port>`.
+- The token is a local shared secret, not an OAuth access token. A process
+  running as the same user can read the token file. This does not stop that
+  user. It stops other users and browser pages that can reach loopback but
+  cannot read the file.
 - No OS sandbox around the MCP process; isolation is by convention and by the
   narrow tool surface, not by privilege separation.
 - Secret detection is heuristic and incomplete. Do not rely on it as a secrets
   manager.
 - Provenance and session identity are not cryptographically verified.
 - Denial is per capability, not per tool or per workspace; there is no RBAC.
-- The daemon is a local Unix socket. There is no TCP listener.
+- There is no public TCP listener. Loopback HTTP is opt-in and does not speak
+  the 2026-07-28 per-request protocol.

@@ -599,8 +599,13 @@ enum CheckpointSubcommands {
 enum McpSubcommands {
     /// Proxy MCP stdio to the local rootd Unix socket
     Serve,
-    /// Run rootd, the local Unix-socket MCP daemon
-    Daemon,
+    /// Run rootd, the local MCP daemon
+    Daemon {
+        /// Also listen for Streamable HTTP on loopback, for example 127.0.0.1:8737.
+        /// Port 0 picks a free port. The bound address is written to $ROOT_DIR/rootd.http.
+        #[arg(long, value_name = "ADDR")]
+        http: Option<String>,
+    },
     /// Show MCP workspace, capabilities, and exposed tools
     Status,
 }
@@ -4127,8 +4132,8 @@ fn main() {
                     process::exit(exit_code_for_error(&e));
                 }
             }
-            McpSubcommands::Daemon => {
-                if let Err(e) = root_mcp::run_daemon() {
+            McpSubcommands::Daemon { http } => {
+                if let Err(e) = root_mcp::run_daemon(http.as_deref()) {
                     eprintln!("Error: {}", format_user_error(&e));
                     process::exit(exit_code_for_error(&e));
                 }

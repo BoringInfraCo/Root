@@ -2,16 +2,14 @@
 //!
 //! One Unix socket per Root directory. Each connection begins with a single
 //! JSON line `{"cwd":"<workspace>"}` and then speaks the same newline-delimited
-//! JSON-RPC session as `root mcp serve`. There is no TCP listener and no
-//! bearer token in this slice: anyone who can connect to the socket can use
-//! the workspace, which is the same trust boundary as running the stdio server.
+//! JSON-RPC session as `root mcp serve`. The socket requires the bearer token
+//! in `$ROOT_DIR/rootd.token`. Streamable HTTP listens only when asked, and
+//! only on 127.0.0.1.
 
 use crate::jsonrpc;
-use crate::policy::{self, Policy};
+use crate::policy;
 use crate::server::run_lines;
-use crate::session::ServerState;
 use anyhow::{Context, Result};
-use root_work::{Repository, WorkStore};
 use serde::Deserialize;
 use serde_json::Value;
 use std::io::{BufRead, BufReader, Write};
@@ -27,6 +25,8 @@ const IDLE_EXIT_ENV: &str = "ROOTD_IDLE_EXIT";
 #[derive(Debug, Deserialize)]
 struct Hello {
     cwd: PathBuf,
+    #[serde(default)]
+    authorization: Option<String>,
 }
 
 pub fn socket_path(root_dir: &Path) -> PathBuf {
@@ -46,10 +46,25 @@ fn pid_path(root_dir: &Path) -> PathBuf {
 /// Listen until the process is stopped. When `ROOTD_IDLE_EXIT=1`, exit after
 /// the last connection closes so a shim-started daemon does not outlive the
 /// client that spawned it.
-pub fn run_daemon() -> Result<()> {
+pub fn run_daemon(http: Option<&str>) -> Result<()> {
     let root_dir = policy::root_dir()?;
     std::fs::create_dir_all(&root_dir)
         .with_context(|| format!("could not create {}", root_dir.display()))?;
+    let token = crate::auth::load_or_create(&root_dir)?;
+    if let Some(addr) = http {
+        let socket = crate::http::parse_loopback(addr)?;
+        let http_listener = std::net::TcpListener::bind(socket)
+            .with_context(|| format!("could not bind {socket}"))?;
+        let bound = http_listener.local_addr()?;
+        std::fs::write(root_dir.join("rootd.http"), bound.to_string())?;
+        let cwd = std::env::current_dir()?;
+        let http_token = token.clone();
+        std::thread::spawn(move || {
+            if let Err(error) = crate::http::serve(http_listener, cwd, http_token) {
+                eprintln!("rootd http: {error}");
+            }
+        });
+    }
     let path = socket_path(&root_dir);
     let listener = bind_listener(&path)?;
     let _ = std::fs::write(pid_path(&root_dir), std::process::id().to_string());
@@ -69,8 +84,9 @@ pub fn run_daemon() -> Result<()> {
         connections.fetch_add(1, Ordering::SeqCst);
         let idle = idle_exit;
         let root_for_cleanup = root_dir.clone();
+        let token = token.clone();
         std::thread::spawn(move || {
-            let _ = serve_connection(stream);
+            let _ = serve_connection(stream, &token);
             if idle && connections.fetch_sub(1, Ordering::SeqCst) == 1 {
                 cleanup(&root_for_cleanup);
                 std::process::exit(0);
@@ -154,9 +170,10 @@ fn cleanup(root_dir: &Path) {
     let _ = std::fs::remove_file(socket_path(root_dir));
     let _ = std::fs::remove_file(pid_path(root_dir));
     let _ = std::fs::remove_file(root_dir.join("rootd.path"));
+    let _ = std::fs::remove_file(root_dir.join("rootd.http"));
 }
 
-fn serve_connection(stream: UnixStream) -> Result<()> {
+fn serve_connection(stream: UnixStream, token: &str) -> Result<()> {
     let mut writer = stream.try_clone()?;
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -170,7 +187,11 @@ fn serve_connection(stream: UnixStream) -> Result<()> {
             return Ok(());
         }
     };
-    let state = match bind_workspace(&hello.cwd) {
+    if !crate::auth::bearer_matches(hello.authorization.as_deref(), token) {
+        write_error(&mut writer, "unauthorized".to_string())?;
+        return Ok(());
+    }
+    let state = match crate::server::open_session(&hello.cwd) {
         Ok(state) => state,
         Err(error) => {
             write_error(&mut writer, error.to_string())?;
@@ -179,15 +200,6 @@ fn serve_connection(stream: UnixStream) -> Result<()> {
     };
     let mut state = state;
     run_lines(&mut state, reader.lines(), &mut writer)
-}
-
-fn bind_workspace(cwd: &Path) -> Result<ServerState> {
-    let repository = Repository::discover(cwd)
-        .with_context(|| format!("not a git repository: {}", cwd.display()))?;
-    let store = WorkStore::open(repository.clone())?;
-    let root_dir = policy::root_dir()?;
-    let policy = Policy::load_at(&root_dir);
-    Ok(ServerState::new(store, root_dir, repository, policy))
 }
 
 fn write_error(writer: &mut UnixStream, message: String) -> Result<()> {

@@ -5,14 +5,14 @@ engineering continuity state. `rootd` listens on a Unix socket. The path is
 short (`/tmp/rootd-<hash>.sock`) because macOS limits socket paths to 104
 bytes; `$ROOT_DIR/rootd.path` records it. `root mcp serve` is the
 stdio shim agents already launch: it connects to that socket, starting `rootd`
-if it is not already running. MCP is an interface, not the product. There is
-no TCP listener and no bearer token yet.
+if it is not already running. Non-stdio connections present the bearer token
+in `$ROOT_DIR/rootd.token`. MCP is an interface, not the product.
 
 ## Commands
 
 ```bash
 root mcp serve              # stdio shim to rootd (newline-delimited JSON-RPC 2.0)
-root mcp daemon             # run rootd in the foreground
+root mcp daemon [--http 127.0.0.1:PORT]   # foreground rootd; HTTP is opt-in loopback
 root mcp status             # workspace, capabilities, policy source, and exposed tools
 root capability list        # registered capabilities and their namespaces
 root capability inspect NAME
@@ -28,6 +28,10 @@ instructions live in `root adapters inspect --agent codex|claude`. See
 ## Protocol
 
 - Revision: `2024-11-05` (unknown client revisions fall back to this).
+- HTTP, when enabled, is Streamable HTTP `POST /mcp` on `127.0.0.1` only.
+  `Authorization: Bearer` is required. `initialize` returns `Mcp-Session-Id`;
+  later calls send it back. `GET` is refused. `DELETE` ends the session.
+  Protocol `2026-07-28` is rejected. The token is never accepted in the URL.
 - Methods: `initialize`, `notifications/initialized`, `ping`, `tools/list`,
   `tools/call`.
 

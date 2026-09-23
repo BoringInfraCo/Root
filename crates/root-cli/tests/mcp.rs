@@ -1,6 +1,6 @@
 //! Sprint 008 integration: the local MCP stdio server.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -333,6 +333,121 @@ fn mcp_serve_proxies_to_an_already_running_rootd() {
     drop(server);
     let _ = daemon.kill();
     let _ = daemon.wait();
+}
+
+fn http_exchange(addr: &str, request: &str) -> String {
+    let mut stream = std::net::TcpStream::connect(addr).unwrap();
+    stream.write_all(request.as_bytes()).unwrap();
+    let mut buf = String::new();
+    stream.read_to_string(&mut buf).unwrap();
+    buf
+}
+
+#[test]
+fn http_requires_bearer_on_loopback_and_the_socket() {
+    let fixture = Fixture::new("http");
+    fixture.json(&["workspace", "init", "--json"]);
+    let mut daemon = Command::new(root_bin())
+        .args(["mcp", "daemon", "--http", "127.0.0.1:0"])
+        .current_dir(&fixture.repo)
+        .env("ROOT_DIR", &fixture.root_dir)
+        .env_remove("ROOTD_IDLE_EXIT")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let started = std::time::Instant::now();
+    let addr = loop {
+        if let Ok(text) = std::fs::read_to_string(fixture.root_dir.join("rootd.http")) {
+            if !text.trim().is_empty() {
+                break text.trim().to_string();
+            }
+        }
+        if started.elapsed() > std::time::Duration::from_secs(3)
+            || daemon.try_wait().unwrap().is_some()
+        {
+            let _ = daemon.kill();
+            panic!("rootd HTTP listener did not start");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    let token = std::fs::read_to_string(fixture.root_dir.join("rootd.token")).unwrap();
+    let token = token.trim();
+
+    let denied = http_exchange(
+        &addr,
+        "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 2\r\n\r\n{}",
+    );
+    assert!(denied.starts_with("HTTP/1.1 401"), "{denied}");
+    assert!(denied.contains("WWW-Authenticate: Bearer"), "{denied}");
+
+    let init_body = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","clientInfo":{"name":"codex","version":"1"}}}"#;
+    let init = http_exchange(
+        &addr,
+        &format!(
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{init_body}",
+            init_body.len()
+        ),
+    );
+    assert!(init.starts_with("HTTP/1.1 200"), "{init}");
+    let session = init
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Mcp-Session-Id:"))
+        .expect("session id")
+        .trim();
+    assert!(init.contains("\"name\":\"root\""), "{init}");
+
+    let call_body = r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"work.record_decision","arguments":{"statement":"Recorded over HTTP"}}}"#;
+    let call = http_exchange(
+        &addr,
+        &format!(
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nMcp-Session-Id: {session}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{call_body}",
+            call_body.len()
+        ),
+    );
+    assert!(call.contains("\"isError\":false"), "{call}");
+
+    let leaked = http_exchange(
+        &addr,
+        &format!(
+            "POST /mcp?access_token={token} HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nContent-Length: 2\r\n\r\n{{}}"
+        ),
+    );
+    assert!(leaked.starts_with("HTTP/1.1 400"), "{leaked}");
+
+    let origin = http_exchange(
+        &addr,
+        &format!(
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nOrigin: http://evil.example\r\nContent-Length: 2\r\n\r\n{{}}"
+        ),
+    );
+    assert!(origin.starts_with("HTTP/1.1 403"), "{origin}");
+
+    let modern = http_exchange(
+        &addr,
+        &format!(
+            "POST /mcp HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer {token}\r\nMCP-Protocol-Version: 2026-07-28\r\nContent-Length: 2\r\n\r\n{{}}"
+        ),
+    );
+    assert!(modern.starts_with("HTTP/1.1 400"), "{modern}");
+    assert!(modern.contains("2024-11-05"), "{modern}");
+
+    let sock = std::fs::read_to_string(fixture.root_dir.join("rootd.path")).unwrap();
+    let mut unix = std::os::unix::net::UnixStream::connect(sock.trim()).unwrap();
+    writeln!(
+        unix,
+        "{{\"cwd\":{}}}",
+        serde_json::to_string(&fixture.repo).unwrap()
+    )
+    .unwrap();
+    let mut line = String::new();
+    BufReader::new(unix).read_line(&mut line).unwrap();
+    assert!(line.contains("unauthorized"), "{line}");
+
+    let _ = daemon.kill();
+    let _ = daemon.wait();
+    let _ = std::fs::remove_file(sock.trim());
 }
 
 #[test]
