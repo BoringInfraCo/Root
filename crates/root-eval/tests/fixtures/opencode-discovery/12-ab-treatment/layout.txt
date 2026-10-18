@@ -1,0 +1,20 @@
+layout (files below are relative to this case directory)
+roots per tree: home=<tree>/home, xdg_config_home=<tree>/home/config, project_root=<tree>/project, worktree_root=<tree>/project
+
+base/home/config/opencode/AGENTS.md
+base/project/.opencode/skill/foo/SKILL.md
+base/project/AGENTS.md
+treatment-added/home/config/opencode/AGENTS.md
+treatment-added/project/.opencode/skill/foo/SKILL.md
+treatment-added/project/.opencode/skill/root/SKILL.md
+treatment-added/project/AGENTS.md
+treatment-extra/home/config/opencode/AGENTS.md
+treatment-extra/project/.opencode/skill/foo/SKILL.md
+treatment-extra/project/.opencode/skill/other/SKILL.md
+treatment-extra/project/.opencode/skill/root/SKILL.md
+treatment-extra/project/AGENTS.md
+treatment-modified/home/config/opencode/AGENTS.md
+treatment-modified/project/.opencode/skill/foo/SKILL.md
+treatment-modified/project/AGENTS.md
+treatment-removed/home/config/opencode/AGENTS.md
+treatment-removed/project/AGENTS.md

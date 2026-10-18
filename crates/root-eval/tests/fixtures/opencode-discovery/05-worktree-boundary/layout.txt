@@ -1,0 +1,8 @@
+layout (files below are relative to this case directory)
+roots: home=home, xdg_config_home=home/config; scenarios vary under cases/
+
+cases/with-inside/worktree/AGENTS.md
+cases/with-inside/worktree/app/.gitkeep
+cases/without-inside/worktree/app/.gitkeep
+home/config/opencode/.gitkeep
+outside/AGENTS.md

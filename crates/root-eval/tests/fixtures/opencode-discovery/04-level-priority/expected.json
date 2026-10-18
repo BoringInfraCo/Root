@@ -1,0 +1,114 @@
+{
+  "case": "04-level-priority",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "all",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/all",
+        "worktree_root": "trees/all"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 0,
+            "file": "trees/all/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:f1f2f8c0c1bddd087aac4d6ae9a37fd6ff7716647e60ef7fb79cfdb6f47a81d8",
+            "size": 73
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:7d1824e8f14d7ff7eea55771fc381dbde48e98aa74cd83d7237968ce966302ff"
+      }
+    },
+    {
+      "name": "claude-context",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/claude-context",
+        "worktree_root": "trees/claude-context"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 0,
+            "file": "trees/claude-context/CLAUDE.md",
+            "token": "project:CLAUDE.md",
+            "sha256": "sha256:89b898398f6036cc11a7585eee31c93d92020d465ee0afd1297b132357a79986",
+            "size": 66
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:a957de2cd3a8212a03e1e7a83d42328ab541038bf155c299bf8ac5ac5661ba53"
+      }
+    },
+    {
+      "name": "context-only",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/context-only",
+        "worktree_root": "trees/context-only"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 0,
+            "file": "trees/context-only/CONTEXT.md",
+            "token": "project:CONTEXT.md",
+            "sha256": "sha256:f1210b240fa79e314b29ebc86c7b3db7cdd1b365471c63c55457944e275f3f62",
+            "size": 73
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:8c4bc496ad4653898f660c748188cb5fe62939ac40488fa4ea02949e72da2c49"
+      }
+    },
+    {
+      "name": "cross-level",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/cross-level/worktree/app",
+        "worktree_root": "trees/cross-level/worktree"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 0,
+            "file": "trees/cross-level/worktree/AGENTS.md",
+            "token": "worktree:AGENTS.md",
+            "sha256": "sha256:58708134919f4796dbda58a6a89287531853277b882d22bc16ba4a467a6e9d7a",
+            "size": 81
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:d45814a0b195e45556b63351f179fab596a8959d5e5dcdc1676b2bfbcf5532d7"
+      }
+    }
+  ]
+}

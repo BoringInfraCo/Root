@@ -50,7 +50,7 @@ Before tagging, verify all of these match the **new** version (X.Y.Z):
 | Source | Check | Expected |
 |--------|-------|----------|
 | `Cargo.toml` | `workspace.package.version` | `X.Y.Z` |
-| `Cargo.lock` | all 14 workspace crates (`root-cli`, `root-core`, `root-agent`, `root-agent-bundle`, `root-sandbox`, `root-work`, `root-continuity`, `root-mcp`, `root-adapters`, `root-lockfile`, `root-nix`, `root-snapshot`, `root-doctor`, `root-verify`) | `X.Y.Z` (run `cargo metadata --no-deps --format-version 1`) |
+| `Cargo.lock` | all 15 workspace crates (`root-cli`, `root-core`, `root-agent`, `root-agent-bundle`, `root-sandbox`, `root-work`, `root-continuity`, `root-mcp`, `root-adapters`, `root-eval`, `root-lockfile`, `root-nix`, `root-snapshot`, `root-doctor`, `root-verify`) | `X.Y.Z` (run `cargo metadata --no-deps --format-version 1`) |
 | `cargo build && root --version` | Binary banner | contains `X.Y.Z` |
 | `CHANGELOG.md` | Has `## [X.Y.Z]` entry | present |
 | `README.md` | Title `# Root vX.Y.Z` | correct |
@@ -71,7 +71,7 @@ Before tagging, verify all of these match the **new** version (X.Y.Z):
 
 ## Architecture
 
-14 crates (authoritative list: `Cargo.toml` `[workspace] members`). Local and synchronous — no async runtime; process spawning uses `std::process::Command`.
+15 crates (authoritative list: `Cargo.toml` `[workspace] members`). Local and synchronous — no async runtime; process spawning uses `std::process::Command`.
 
 ```
 root-cli (bin)
@@ -82,6 +82,7 @@ root-cli (bin)
   └─ identity helpers:    root-adapters (standalone)
 
 root-agent                   # static Safe Install Protocol serializer; NOT wired into CLI
+root-eval                    # skill-evaluation domain: task records, effective-context manifests, plan hashing (M1; no CLI yet) → root-lockfile
 ```
 
 `NixAdapter` trait in `root-nix` has two impls: `RealNixAdapter` (shells out to `nix` CLI) and `MockNixAdapter` (in-memory).

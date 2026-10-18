@@ -1,0 +1,239 @@
+{
+  "case": "12-ab-treatment",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "base",
+      "roots": {
+        "home": "base/home",
+        "xdg_config_home": "base/home/config",
+        "project_root": "base/project",
+        "worktree_root": "base/project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "base/home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:1a429f01f1f04d3eec2daf9fb3f03726434c1fd96419bfc0d0aff444bcb52ecd",
+            "size": 66
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "base/project/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:86558a2259fb88c0e5a2a1865167826c2954c34b1be1971a8b336d30eb8f3c81",
+            "size": 67
+          }
+        ],
+        "skills": [
+          {
+            "name": "foo",
+            "source": "opencode-config-dir",
+            "file": "base/project/.opencode/skill/foo/SKILL.md",
+            "token": "project:.opencode/skill/foo/SKILL.md",
+            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:6b667d04d05432dbbdaf430bcdecd057cf981a1f4da084cce1707042089a78a9"
+      }
+    },
+    {
+      "name": "treatment-added",
+      "roots": {
+        "home": "treatment-added/home",
+        "xdg_config_home": "treatment-added/home/config",
+        "project_root": "treatment-added/project",
+        "worktree_root": "treatment-added/project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "treatment-added/home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:1a429f01f1f04d3eec2daf9fb3f03726434c1fd96419bfc0d0aff444bcb52ecd",
+            "size": 66
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "treatment-added/project/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:86558a2259fb88c0e5a2a1865167826c2954c34b1be1971a8b336d30eb8f3c81",
+            "size": 67
+          }
+        ],
+        "skills": [
+          {
+            "name": "foo",
+            "source": "opencode-config-dir",
+            "file": "treatment-added/project/.opencode/skill/foo/SKILL.md",
+            "token": "project:.opencode/skill/foo/SKILL.md",
+            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+          },
+          {
+            "name": "root",
+            "source": "opencode-config-dir",
+            "file": "treatment-added/project/.opencode/skill/root/SKILL.md",
+            "token": "project:.opencode/skill/root/SKILL.md",
+            "sha256": "sha256:51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46"
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:fd0239265569652e850616af10c848093358b7d9dccfb5194bc2f450e908a5e2"
+      }
+    },
+    {
+      "name": "treatment-extra",
+      "roots": {
+        "home": "treatment-extra/home",
+        "xdg_config_home": "treatment-extra/home/config",
+        "project_root": "treatment-extra/project",
+        "worktree_root": "treatment-extra/project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "treatment-extra/home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:1a429f01f1f04d3eec2daf9fb3f03726434c1fd96419bfc0d0aff444bcb52ecd",
+            "size": 66
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "treatment-extra/project/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:86558a2259fb88c0e5a2a1865167826c2954c34b1be1971a8b336d30eb8f3c81",
+            "size": 67
+          }
+        ],
+        "skills": [
+          {
+            "name": "foo",
+            "source": "opencode-config-dir",
+            "file": "treatment-extra/project/.opencode/skill/foo/SKILL.md",
+            "token": "project:.opencode/skill/foo/SKILL.md",
+            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+          },
+          {
+            "name": "other",
+            "source": "opencode-config-dir",
+            "file": "treatment-extra/project/.opencode/skill/other/SKILL.md",
+            "token": "project:.opencode/skill/other/SKILL.md",
+            "sha256": "sha256:3b9bab8dad5cfafc2f99614b0abeda5ff15fa32e2728953eaf907e66cc9ee854"
+          },
+          {
+            "name": "root",
+            "source": "opencode-config-dir",
+            "file": "treatment-extra/project/.opencode/skill/root/SKILL.md",
+            "token": "project:.opencode/skill/root/SKILL.md",
+            "sha256": "sha256:51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46"
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:f2c901398b75a32785670920c5a3a86871dbd8e359b280dbe00346a70567078a"
+      }
+    },
+    {
+      "name": "treatment-modified",
+      "roots": {
+        "home": "treatment-modified/home",
+        "xdg_config_home": "treatment-modified/home/config",
+        "project_root": "treatment-modified/project",
+        "worktree_root": "treatment-modified/project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "treatment-modified/home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:1a429f01f1f04d3eec2daf9fb3f03726434c1fd96419bfc0d0aff444bcb52ecd",
+            "size": 66
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "treatment-modified/project/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:86558a2259fb88c0e5a2a1865167826c2954c34b1be1971a8b336d30eb8f3c81",
+            "size": 67
+          }
+        ],
+        "skills": [
+          {
+            "name": "foo",
+            "source": "opencode-config-dir",
+            "file": "treatment-modified/project/.opencode/skill/foo/SKILL.md",
+            "token": "project:.opencode/skill/foo/SKILL.md",
+            "sha256": "sha256:315e827039435868629c11556db8e2574b4f7c0f42266c26524597cbf7172cbf"
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:4981d86e1909fde83483fc15745d5e0d46561fbff8c79bce6739356bf6be179b"
+      }
+    },
+    {
+      "name": "treatment-removed",
+      "roots": {
+        "home": "treatment-removed/home",
+        "xdg_config_home": "treatment-removed/home/config",
+        "project_root": "treatment-removed/project",
+        "worktree_root": "treatment-removed/project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "treatment-removed/home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:1a429f01f1f04d3eec2daf9fb3f03726434c1fd96419bfc0d0aff444bcb52ecd",
+            "size": 66
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "treatment-removed/project/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:86558a2259fb88c0e5a2a1865167826c2954c34b1be1971a8b336d30eb8f3c81",
+            "size": 67
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:b391331b8d81799d154c8f4fa68f5bd69ffda36bbb33cada6b37acdae96d47ae"
+      }
+    }
+  ]
+}

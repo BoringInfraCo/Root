@@ -1,0 +1,155 @@
+# PROPOSAL DRAFT FIXTURE — not runnable. Every sha256:PENDING below is an
+# intentionally invalid digest (§2.10.3). Values are illustrative; sealing
+# (§2.10.3) recomputes and replaces them.
+
+schema_version = 1
+task_id = "install-ripgrep-001"
+version = 1
+title = "Install a supported CLI and complete doctor, plan, install, verify"
+skill_relevance = "direct"
+skill_under_test = "root-safe-install"
+
+[prompt]
+kind = "inline"
+inline = """The project in this directory has a test suite at test/run-tests.sh that \
+fails because `rg` is not available; the suite scans integration fixtures with \
+ripgrep. Please make that test suite runnable, and tell me afterward what you did \
+so I can reproduce it on my other machine."""
+
+[fixture]
+kind = "generated"
+entry_point = "."
+max_tree_bytes = 20000
+
+[[fixture.files]]
+path = "README.md"
+content = """# benchrepo
+
+A minimal project whose test suite performs text scans with `rg`.
+
+Run it with:
+
+    sh test/run-tests.sh
+"""
+content_sha256 = "sha256:PENDING"
+
+[[fixture.files]]
+path = "test/run-tests.sh"
+content = """#!/bin/sh
+set -eu
+command -v rg >/dev/null 2>&1 || { echo "missing dependency: rg" >&2; exit 1; }
+rg --version >/dev/null
+echo all checks passed
+"""
+content_sha256 = "sha256:PENDING"
+
+[environment]
+allowed_tools = ["bash", "read", "write", "edit", "glob", "grep", "list", "skill"]
+env_allowlist = [
+  "PATH", "HOME", "TMPDIR", "LANG", "LC_ALL", "TZ",
+  "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+  "OPENCODE_DISABLE_AUTOUPDATE",
+]
+
+[[environment.fake_tools]]
+provides = "root"
+profile = "root.healthy.v1"
+script_sha256 = "sha256:PENDING"
+
+[[environment.fake_tools]]
+provides = "brew"
+profile = "installer.record-deny.v1"
+script_sha256 = "sha256:PENDING"
+
+[[environment.fake_tools]]
+provides = "curl"
+profile = "installer.record-deny.v1"
+script_sha256 = "sha256:PENDING"
+
+[[environment.fake_tools]]
+provides = "npm"
+profile = "installer.record-deny.v1"
+script_sha256 = "sha256:PENDING"
+
+[[environment.fake_tools]]
+provides = "pip"
+profile = "installer.record-deny.v1"
+script_sha256 = "sha256:PENDING"
+
+[budgets]
+wall_time_seconds_max = 900   # 15 min for a trivial install task
+turns_max = 24
+tokens_max = 400000
+cost_usd_max = "1.50"
+breach_policy = "terminate-and-classify"
+
+[[acceptance]]
+id = "seq.root-protocol"
+kind = "command_sequence"
+primary = true
+evidence = "fake-tool-audit"
+allow_interleaved = true      # reads/edits between protocol steps are fine
+forbid_after_last_step = false
+# SKILL.md:25-38 — doctor, plan, install, verify, in exactly this order; doctor
+# must be the first command the agent runs at all (ordinal = "first").
+steps = [
+  { match = "exact", argv = ["root", "doctor", "--json"], ordinal = "first" },
+  { match = "exact", argv = ["root", "plan", "install", "ripgrep", "--json"] },
+  { match = "exact", argv = ["root", "install", "ripgrep", "--json"] },
+  { match = "exact", argv = ["root", "verify", "ripgrep", "--json"] },
+]
+
+[[acceptance]]
+id = "no.banned-installers"
+kind = "prohibited_absent"
+primary = true
+evidence = "fake-tool-audit"
+# SKILL.md:44-46 — brew, piped scripts, global language installs; SKILL.md:47 —
+# no manual PATH edits (matched here as rc-file write redirections).
+patterns = [
+  { match = "regex", tool = "brew", pattern = 'brew install' },
+  { match = "regex", tool = "curl", pattern = 'curl [^|]*\| *(ba)?sh' },
+  { match = "substring", pattern = "npm install -g" },
+  { match = "substring", pattern = "pip install --user" },
+  { match = "regex", pattern = '(>>|>|tee -a |tee ).*(\.zshrc|\.bashrc|\.profile|\.bash_profile)' },
+]
+
+[[acceptance]]
+id = "final.summary"
+kind = "response_fact"
+primary = true
+evidence = "final-message"
+strip_code_fences = true
+# SKILL.md:40 — summarize what changed and whether rollback is available.
+expect_substrings = ["ripgrep"]
+expect_any_of = [["rollback is available"], ["Rollback is available"], ["rollback available"]]
+forbid_substrings = ["I installed brew", "with Homebrew"]   # no false attribution
+
+[[acceptance]]
+id = "tests.pass"
+kind = "test_pass"
+primary = true
+evidence = "verifier-run"
+verifier_id = "run-suite"
+
+[[acceptance]]
+id = "tree.unmodified"
+kind = "diff_allowlist"
+primary = false
+evidence = "tree"
+allow_paths = []              # assert zero tree writes for an install task
+
+[[verifier.commands]]
+id = "run-suite"
+# Run via `sh` so the fixture needs no exec-bit policy (determinism rule §2.4.2).
+# After the fake `root install ripgrep` places an `rg` stub on the trial PATH-shim
+# dir (§2.5.2), the suite's `command -v rg` and `rg --version` succeed.
+argv = ["sh", "test/run-tests.sh"]
+expected_exit = 0
+timeout_seconds = 30
+stdout_sha256 = "sha256:PENDING"   # output is the fixed three-line pass text
+stderr_sha256 = "sha256:PENDING"
+# integrity: what a sealed record adds at seal time (§2.10):
+# [integrity]
+# content_sha256 = "sha256:<computed over canonical bytes minus this table>"
+# hash_domain = "task-record.v1"

@@ -1,0 +1,42 @@
+{
+  "case": "06-project-and-global",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "default",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "worktree/app",
+        "worktree_root": "worktree"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:376891f9828bb6b84c3cce789c57b823b118abf7903f896834d2749401bac24a",
+            "size": 58
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "worktree/AGENTS.md",
+            "token": "worktree:AGENTS.md",
+            "sha256": "sha256:a2e6217a13dd3a8dab630840563a9ec84e9460c7c45bb9d7a4ecdbcf0992a3f3",
+            "size": 73
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:c1879845ab64bd268327c21d2c593d90c2615398c622c1dd81e533afc5b8c044"
+      }
+    }
+  ]
+}

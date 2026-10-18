@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "token": "project:.opencode/skill/foo/SKILL.md",
+      "action": "remove",
+      "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+    }
+  ]
+}

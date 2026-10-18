@@ -1,0 +1,9 @@
+{
+  "skills": {
+    "paths": [
+      "~/home-skills",
+      "rel-skills",
+      "/nonexistent/root-eval-fixture-absolute-path"
+    ]
+  }
+}

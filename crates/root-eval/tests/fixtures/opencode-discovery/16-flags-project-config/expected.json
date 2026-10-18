@@ -1,0 +1,65 @@
+{
+  "case": "16-flags-project-config",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "default",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "global-skill",
+            "source": "opencode-config-dir",
+            "file": "home/.opencode/skill/global-skill/SKILL.md",
+            "token": "home:.opencode/skill/global-skill/SKILL.md",
+            "sha256": "sha256:3ad3083c5555cda20fd8dc23bb29b9ea7f1833ca2a966e1f20284256e65078bb"
+          },
+          {
+            "name": "project-skill",
+            "source": "opencode-config-dir",
+            "file": "project/.opencode/skill/project-skill/SKILL.md",
+            "token": "project:.opencode/skill/project-skill/SKILL.md",
+            "sha256": "sha256:87691e7decd86d71bd5e53998f0c8b312c64ad5068d7cbb9101b8b5601e94b3e"
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:f485eb262f9307b79967d6d1c3285b32ca94984307dbe57b6d4c7e004a0ea738"
+      }
+    },
+    {
+      "name": "disable-project-config",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {
+        "disable_project_config": true
+      },
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "global-skill",
+            "source": "opencode-config-dir",
+            "file": "home/.opencode/skill/global-skill/SKILL.md",
+            "token": "home:.opencode/skill/global-skill/SKILL.md",
+            "sha256": "sha256:3ad3083c5555cda20fd8dc23bb29b9ea7f1833ca2a966e1f20284256e65078bb"
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "manifest_sha256": "sha256:866dce5faac40c6fa171c32992c1ad4977f0868ed9b98df28b9427242695d9ff"
+      }
+    }
+  ]
+}

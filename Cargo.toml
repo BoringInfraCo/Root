@@ -4,6 +4,7 @@ members = [
     "crates/root-core",
     "crates/root-nix",
     "crates/root-lockfile",
+    "crates/root-eval",
     "crates/root-snapshot",
     "crates/root-doctor",
     "crates/root-verify",

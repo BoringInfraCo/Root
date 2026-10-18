@@ -1,0 +1,9 @@
+{
+  "entries": [
+    {
+      "token": "project:.opencode/skill/foo/SKILL.md",
+      "action": "modify",
+      "sha256": "sha256:315e827039435868629c11556db8e2574b4f7c0f42266c26524597cbf7172cbf"
+    }
+  ]
+}

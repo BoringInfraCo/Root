@@ -1,0 +1,44 @@
+schema_version = 1
+task_id = "valid-spine-001"
+version = 1
+title = "Valid spine"
+skill_relevance = "direct"
+skill_under_test = "root-safe-install"
+
+[prompt]
+kind = "inline"
+inline = "Install the tool from the project instructions."
+
+[fixture]
+kind = "generated"
+entry_point = "."
+max_tree_bytes = 1000
+
+[[fixture.files]]
+path = "README.md"
+content = "fixture body\n"
+content_sha256 = "sha256:51dbae01c73ea7f67a332b4f0bcce942f43f456aff9615ef632c0c1d4e719f37"
+
+[environment]
+allowed_tools = ["bash", "read"]
+env_allowlist = ["PATH", "HOME", "TMPDIR"]
+
+[budgets]
+wall_time_seconds_max = 60
+turns_max = 8
+tokens_max = 1000
+cost_usd_max = "0.50"
+breach_policy = "terminate-and-classify"
+
+[[acceptance]]
+id = "seq.root"
+kind = "command_sequence"
+primary = true
+evidence = "fake-tool-audit"
+steps = [
+  { match = "exact", argv = ["root", "doctor", "--json"], ordinal = "first" },
+]
+
+[integrity]
+content_sha256 = "sha256:c8794c59e63a56e82e7fa45f29cd03cda05314a095fedcbe91e2526f3cd52b8e"
+hash_domain = "task-record.v1"

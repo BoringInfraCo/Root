@@ -901,6 +901,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "root-eval"
+version = "0.7.0"
+dependencies = [
+ "anyhow",
+ "root-lockfile",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "root-lockfile"
 version = "0.7.0"
 dependencies = [

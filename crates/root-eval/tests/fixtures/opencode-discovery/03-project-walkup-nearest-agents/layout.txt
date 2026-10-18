@@ -1,0 +1,7 @@
+layout (files below are relative to this case directory)
+roots: home=home, xdg_config_home=home/config, project_root=worktree/applications/service, worktree_root=worktree
+
+home/config/opencode/.gitkeep
+worktree/AGENTS.md
+worktree/applications/AGENTS.md
+worktree/applications/service/.gitkeep
