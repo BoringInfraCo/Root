@@ -1,0 +1,30 @@
+timestamp=2026-10-18T19:12:49.706Z level=INFO run=53083dc0 message="creating instance" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd
+timestamp=2026-10-18T19:12:49.707Z level=INFO run=53083dc0 message=fromDirectory directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd
+timestamp=2026-10-18T19:12:49.717Z level=INFO run=53083dc0 message=bootstrapping directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd
+timestamp=2026-10-18T19:12:49.721Z level=INFO run=53083dc0 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/config/opencode/config.json
+timestamp=2026-10-18T19:12:49.721Z level=INFO run=53083dc0 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/config/opencode/opencode.json
+timestamp=2026-10-18T19:12:49.722Z level=INFO run=53083dc0 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/config/opencode/opencode.jsonc
+timestamp=2026-10-18T19:12:49.741Z level=INFO run=53083dc0 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd/.opencode/opencode.json
+timestamp=2026-10-18T19:12:49.741Z level=INFO run=53083dc0 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd/.opencode/opencode.jsonc
+timestamp=2026-10-18T19:12:49.782Z level=INFO run=53083dc0 message="all LSPs are disabled"
+timestamp=2026-10-18T19:12:49.782Z level=INFO run=53083dc0 message="all formatters are disabled"
+timestamp=2026-10-18T19:12:49.782Z level=INFO run=53083dc0 message=init
+timestamp=2026-10-18T19:12:49.963Z level=INFO run=53083dc0 message=created id=ses_eaf91acd4ffeAzyu4VdoxAA1oE slug=witty-garden version=1.18.27 projectID=global directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd path=private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd workspaceID=undefined parentID=undefined title="New session - 2026-10-18T19:12:49.963Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1792350769963 time.updated=1792350769963
+timestamp=2026-10-18T19:12:49.972Z level=INFO run=53083dc0 message="event connected"
+timestamp=2026-10-18T19:12:50.316Z level=INFO run=53083dc0 message=loop session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE step=0
+timestamp=2026-10-18T19:12:50.326Z level=INFO run=53083dc0 message="shell tool using shell" shell=/bin/zsh
+timestamp=2026-10-18T19:12:50.347Z level=INFO run=53083dc0 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE small=true agent=title mode=primary
+timestamp=2026-10-18T19:12:50.358Z level=INFO run=53083dc0 message=init count=2
+timestamp=2026-10-18T19:12:50.363Z level=INFO run=53083dc0 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:12:50.874Z level=INFO run=53083dc0 message="watcher backend" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd platform=darwin backend=fs-events
+timestamp=2026-10-18T19:12:50.884Z level=INFO run=53083dc0 message="booting location services" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd workspaceID=undefined
+timestamp=2026-10-18T19:12:50.886Z level=INFO run=53083dc0 message="project copy refresh started" projectID=global
+timestamp=2026-10-18T19:12:50.887Z level=INFO run=53083dc0 message="project copy refresh done" projectID=global updated=[] removed=[]
+timestamp=2026-10-18T19:12:51.209Z level=INFO run=53083dc0 message=process session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE messageID=msg_1506e548e001Es3MWOF2Qn7Ame
+timestamp=2026-10-18T19:12:51.210Z level=INFO run=53083dc0 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE small=false agent=build mode=primary
+timestamp=2026-10-18T19:12:51.216Z level=INFO run=53083dc0 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:12:53.320Z level=INFO run=53083dc0 message=evaluated permission=skill pattern=root action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-18T19:12:53.443Z level=INFO run=53083dc0 message=loop session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE step=1
+timestamp=2026-10-18T19:12:53.460Z level=INFO run=53083dc0 message=process session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE messageID=msg_1506e60c4001FILuoacuqcXrJE
+timestamp=2026-10-18T19:12:53.461Z level=INFO run=53083dc0 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf91acd4ffeAzyu4VdoxAA1oE small=false agent=build mode=primary
+timestamp=2026-10-18T19:12:53.461Z level=INFO run=53083dc0 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle

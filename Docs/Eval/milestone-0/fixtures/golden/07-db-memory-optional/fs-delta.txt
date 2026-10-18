@@ -1,0 +1,7 @@
+# new during the two cap7 attempts (prewarm excluded)
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/out/stderr.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/out/stdout.ndjson
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/tmp/.b9dfb6a7e7fe4bda-00000000.dylib
+# removed:
+# external:
+# END-external

@@ -50,7 +50,7 @@ Before tagging, verify all of these match the **new** version (X.Y.Z):
 | Source | Check | Expected |
 |--------|-------|----------|
 | `Cargo.toml` | `workspace.package.version` | `X.Y.Z` |
-| `Cargo.lock` | `root-cli`, `root-core`, `root-doctor`, `root-lockfile`, `root-nix`, `root-snapshot`, `root-verify`, `root-agent` | `X.Y.Z` (run `cargo metadata --no-deps --format-version 1`) |
+| `Cargo.lock` | all 14 workspace crates (`root-cli`, `root-core`, `root-agent`, `root-agent-bundle`, `root-sandbox`, `root-work`, `root-continuity`, `root-mcp`, `root-adapters`, `root-lockfile`, `root-nix`, `root-snapshot`, `root-doctor`, `root-verify`) | `X.Y.Z` (run `cargo metadata --no-deps --format-version 1`) |
 | `cargo build && root --version` | Binary banner | contains `X.Y.Z` |
 | `CHANGELOG.md` | Has `## [X.Y.Z]` entry | present |
 | `README.md` | Title `# Root vX.Y.Z` | correct |
@@ -71,11 +71,17 @@ Before tagging, verify all of these match the **new** version (X.Y.Z):
 
 ## Architecture
 
-8 crates. No async (all `std::process::Command`).
+14 crates (authoritative list: `Cargo.toml` `[workspace] members`). Local and synchronous — no async runtime; process spawning uses `std::process::Command`.
 
 ```
-root-cli (bin) → root-core → root-lockfile, root-nix, root-snapshot, root-doctor, root-verify
-root-agent                   # defined but NOT wired into CLI yet
+root-cli (bin)
+  ├─ package/environment: root-core → root-lockfile, root-nix, root-snapshot, root-doctor, root-verify, root-sandbox
+  ├─ agent configuration: root-agent-bundle → root-lockfile
+  ├─ continuity:          root-continuity → root-work, root-agent-bundle, root-adapters, root-lockfile
+  ├─ local capability:    root-mcp → root-work, root-continuity
+  └─ identity helpers:    root-adapters (standalone)
+
+root-agent                   # static Safe Install Protocol serializer; NOT wired into CLI
 ```
 
 `NixAdapter` trait in `root-nix` has two impls: `RealNixAdapter` (shells out to `nix` CLI) and `MockNixAdapter` (in-memory).
@@ -102,6 +108,7 @@ Every command supports `--json` flag for structured output. Exit codes:
 - `~/.root/root.lock` — auto-generated JSON lockfile (schema v2 package-only; v3 when `models` is present; max supported 3)
 - `~/.root/snapshots/` — JSON snapshot files
 - `~/.root/model-pull.json` — exclusive in-progress model-pull marker (v0.3+)
+- Agent-config resolution order: explicit `--env` → Rootfile `[agents].env` → project `.root/agent.toml` → `~/.root/agent.toml`; exactly one source wins, never merged (`crates/root-agent-bundle/src/project.rs`)
 
 ## Design docs
 

@@ -1,0 +1,8 @@
+$ which codex
+/Users/sergio/.local/bin/codex
+$ codex --version
+codex-cli 0.163.0
+$ which claude
+/Users/sergio/.local/bin/claude
+$ claude --version
+2.1.260 (Claude Code)

@@ -1,0 +1,38 @@
+{
+  "capture": "provider error (forced nonexistent provider/model)",
+  "cap_dir": "cap4",
+  "date": "2026-10-18",
+  "binary_sha256": "f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6",
+  "binary_source": "opencode-darwin-arm64@1.18.27 (m0 tree, reused; gh-extract)",
+  "command": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Reply with exactly: ok' --model nonexistent-provider/nonexistent-model --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/cwd",
+  "model": "",
+  "exit": 1,
+  "wall_ms": 1090,
+  "env": {
+    "HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/home",
+    "XDG_CONFIG_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/config",
+    "XDG_DATA_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/data",
+    "XDG_CACHE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/cache",
+    "XDG_STATE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/state",
+    "TMPDIR": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap4/tmp",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "stdout_bytes": 218,
+  "stderr_bytes": 0,
+  "assertions": {
+    "error_event_present": "PASS \u2014 single line {type:error, error:{name:'UnknownError', data:{message:'Unexpected server error. Check server logs for details.', ref:'err_354fccf3'}}}",
+    "name_in_audited_union": "PASS \u2014 UnknownError {message, ref} audited-union member",
+    "exit_code": "PASS \u2014 exit 1 (run.ts failure path)",
+    "pre_events": "PASS(none) \u2014 no step_start/text/tool_use precede the error; 1 line only",
+    "retry_mirror_absent": "PASS \u2014 no session.status retry reflection (contract \u00a73.1 expected absence)",
+    "stderr": "PASS \u2014 empty (21B stdout only)"
+  },
+  "notes": [
+    "reproduced in 1.09s wall \u2014 fail-fast",
+    "observed identity gap: stdout carries NO provider/model identity; scratch SQLite `message` row holds only requested model {providerID:'nonexistent-provider', modelID:'nonexistent-model'}; no assistant message row exists",
+    "server log (opencode.log) is 0 bytes \u2014 ref 'err_354fccf3' NOT resolvable in this fast-fail shape (caveat for the error breadcrumb contract)"
+  ],
+  "extra_files": [],
+  "seed": "none",
+  "db_probe": "SELECT * FROM message \u2192 role:'user', model:{providerID:'nonexistent-provider', modelID:'nonexistent-model'} (requested-only)"
+}

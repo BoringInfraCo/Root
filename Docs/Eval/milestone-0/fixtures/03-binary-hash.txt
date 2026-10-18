@@ -1,0 +1,34 @@
+Milestone 0 — binary identity + hashes (sha256 of everything downloaded, plus integrity cross-checks)
+
+$ shasum -a 256 downloads/opencode-ai-1.18.27.tgz downloads/opencode-darwin-arm64-1.18.27.tgz \
+         downloads/opencode-darwin-arm64-v1.18.27-gh.zip \
+         install/pkg/node_modules/opencode-darwin-arm64/bin/opencode \
+         install/pkg/node_modules/opencode-ai/bin/opencode.exe gh-extract/opencode
+d1746d5dab3997f971fa643c0e1e5e553e9e18be9530f27a2a562bc19f610300  downloads/opencode-ai-1.18.27.tgz
+dba942c12128491b7c00f5d4b395bb8d36061f293b59db501ca9b0911a701680  downloads/opencode-darwin-arm64-1.18.27.tgz
+149b0c6d272d0059b8b5ffcd18c84b24f1d6cbf585942b10e60c601211992eb1  downloads/opencode-darwin-arm64-v1.18.27-gh.zip
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  install/pkg/node_modules/opencode-darwin-arm64/bin/opencode
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  install/pkg/node_modules/opencode-ai/bin/opencode.exe
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  gh-extract/opencode
+
+$ file install/pkg/node_modules/opencode-ai/bin/opencode.exe
+install/pkg/node_modules/opencode-ai/bin/opencode.exe: Mach-O 64-bit executable arm64
+
+sha1 cross-check against npm dist.shasum:
+$ shasum -a 1 downloads/opencode-ai-1.18.27.tgz downloads/opencode-darwin-arm64-1.18.27.tgz
+4c3c54227e0d3496b0914d19c98e70fd9c088108  opencode-ai-1.18.27.tgz            == dist.shasum ✓
+82cd16264964bd2db8c0183a68479d062d16ca0a  opencode-darwin-arm64-1.18.27.tgz  == dist.shasum ✓
+
+sha512 (npm dist.integrity) verification:
+  opencode-ai-1.18.27.tgz            INTEGRITY-MATCH  (sha512-5xrG2gQEwV2sLus30SZX9GyLbPX3z57BCxddedDM0wx1bgnwlHVLOS/FD2uve7fEZlmkr7KYFbvs65ySz1rwzA==)
+  opencode-darwin-arm64-1.18.27.tgz  INTEGRITY-MATCH  (sha512-Vkxv2Q0Ne5fKpB/6kyv3fgVuS4PObVlWWYpyC+O39iaSQSFmYoKn2CmXRid0RVXIku6z4GSgv2TpINJXlGGMNA==)
+
+Cross-channel identity: the npm platform-package binary, the assembled wrapper binary,
+and the GitHub release (opencode-darwin-arm64.zip from repo anomalyco/opencode, tag v1.18.27)
+all hash to the SAME binary:
+
+    opencode binary (darwin/arm64) @ 1.18.27
+    sha256 = f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+    size   = 144,074,210 bytes
+
+`opencode --version` with this binary (fresh env): 1.18.27, exit 0.

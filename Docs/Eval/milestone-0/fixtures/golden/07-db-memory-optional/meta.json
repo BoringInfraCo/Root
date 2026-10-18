@@ -1,0 +1,36 @@
+{
+  "capture": "optional sanity: --pure + OPENCODE_DB=:memory:",
+  "cap_dir": "cap7",
+  "date": "2026-10-18",
+  "binary_sha256": "f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6",
+  "binary_source": "opencode-darwin-arm64@1.18.27 (m0 tree, reused; gh-extract)",
+  "command": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Reply with exactly: ok' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/cwd (env OPENCODE_DB=:memory:; RETRY-2)",
+  "model": "",
+  "exit": 0,
+  "wall_ms": 8366,
+  "env": {
+    "HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/home",
+    "XDG_CONFIG_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/config",
+    "XDG_DATA_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/data",
+    "XDG_CACHE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/cache",
+    "XDG_STATE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/state",
+    "TMPDIR": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap7/tmp",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "stdout_bytes": 919,
+  "stderr_bytes": 0,
+  "assertions": {
+    "memory_db_accepted": "PASS \u2014 OPENCODE_DB=':memory:' honored: data/opencode contains only log/ and repos/ (NO opencode.db/-wal/-shm files created)",
+    "run_completes": "PASS on retry \u2014 exit 0, 8.37s; NDJSON identical to capture 1 shape (step_start/text/step_finish; text 'ok'; cost 0; 0 reasoning)",
+    "attempt_1_transient_hang": "DISCLOSED \u2014 attempt 1 held at stream start 100s (watchdog warn@90s, TERM@100s, exit 143) with empty stdout/stderr; attempt 2 (retry, same env) succeeded in 8.37s \u2192 verdict: transient provider-stream stall, not a ':memory:' incompatibility"
+  },
+  "notes": [
+    "manually-run variant (runner env discipline preserved: fresh census, host-marker, watchdog)",
+    "watchdog label warning: attempt-1 watchdog warn@90s fired, TERM@100s, KILL@105s armed",
+    "retry recorded in same command.txt (RETRY-2 marker); fs-delta covers both attempts"
+  ],
+  "extra_files": [],
+  "env_extra": {
+    "OPENCODE_DB": ":memory:"
+  }
+}

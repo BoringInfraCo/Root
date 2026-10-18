@@ -1,0 +1,45 @@
+{
+  "capture": "denial \u2014 canonical variant: deny write/edit",
+  "cap_dir": "cap5",
+  "date": "2026-10-18",
+  "binary_sha256": "f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6",
+  "binary_source": "opencode-darwin-arm64@1.18.27 (m0 tree, reused; gh-extract)",
+  "command": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Create a file named hello.txt in the current directory containing the single line: hello' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/cwd",
+  "model": "",
+  "exit": 0,
+  "wall_ms": 5063,
+  "env": {
+    "HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/home",
+    "XDG_CONFIG_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/config",
+    "XDG_DATA_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/data",
+    "XDG_CACHE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/cache",
+    "XDG_STATE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/state",
+    "TMPDIR": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/tmp",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "stdout_bytes": 2913,
+  "stderr_bytes": 0,
+  "assertions": {
+    "denied_tools_removed_from_toolset": "LIVE FINDING instead of error shape \u2014 seeded permission {write:{'*':'deny'}, edit:{'*':'deny'}} makes write/edit ABSENT from the toolset; model worked around via bash (tool_use bash status completed; hello.txt created). No error-shaped tool_use produced by 'deny' rules",
+    "state_status_error": "FAIL-in-this-variant \u2014 no part anywhere with state.status=='error' (the model never attempted a removed tool)",
+    "stderr_auto_rejecting": "FAIL-in-this-variant \u2014 stderr empty (no permission.asked with deny-seeded rules: removal, not ask)",
+    "denial_reason_family": "N/A in this variant \u2014 reached only in 05c ask-reject variant (state.error='The user rejected permission to use this specific tool call.'); the contract's '\u2026rule which prevents\u2026' string corresponds to the deny-rule path, which live 1.18.27 manifests as TOOL REMOVAL, not an error event"
+  },
+  "notes": [
+    "seeded config (exact bytes, sha256 2b46c13e\u2026): {'$schema':'https://opencode.ai/config.json','permission':{'write':{'*':'deny'},'edit':{'*':'deny'}}} \u2014 file UNCHANGED after run (sha256 equal)",
+    "model's workaround loop is visible in the text event: 'I don't have a write tool listed\u2026 So use bash.'",
+    "exit 0; wall 5.06s; 0 reasoning; hello.txt written IN THE SEEDED cwd (expected: tool could run)"
+  ],
+  "extra_files": [
+    [
+      "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap5/config/opencode/opencode.json",
+      "seeded-opencode.json"
+    ]
+  ],
+  "seed": {
+    "config_path": "$XDG_CONFIG_HOME/opencode/opencode.json",
+    "config_sha256": "2b46c13e828f9d275159918adaedb95f290bedfe99c0caa103cdcba34520ce93",
+    "post_run_sha256": "2b46c13e828f9d275159918adaedb95f290bedfe99c0caa103cdcba34520ce93",
+    "grant_effect": "write+edit vanish from toolset"
+  }
+}

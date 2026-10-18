@@ -1,0 +1,86 @@
+Milestone 0 — download-channel resolution for exactly opencode 1.18.27
+Probe date: 2026-10-18. npm used only for metadata + tarball fetch; no installer scripts executed.
+
+Channel A: npm registry (primary)
+
+$ npm --version
+10.9.8   (/Users/sergio/.nvm/versions/node/v22.23.2/bin/npm)
+
+$ npm view opencode-ai versions --json | grep -c '"1.18.27"'
+1
+
+$ npm view opencode-ai dist-tags --json
+{ "latest": "1.19.3", "dev": "0.0.0-dev-202610161232", "beta": "0.0.0-beta-202608110357",
+  "next": "0.0.0-next-202606270058", ... }   # 1.18.27 is NOT any dist-tag; it exists only as an exact-version tarball
+
+$ npm view opencode-ai@1.18.27 --json   (key fields extracted)
+name: opencode-ai
+version: 1.18.27
+bin: {"opencode":"bin/opencode.exe"}
+dist.tarball: https://registry.npmjs.org/opencode-ai/-/opencode-ai-1.18.27.tgz
+dist.shasum: 4c3c54227e0d3496b0914d19c98e70fd9c088108            (sha1)
+dist.integrity: sha512-5xrG2gQEwV2sLus30SZX9GyLbPX3z57BCxddedDM0wx1bgnwlHVLOS/FD2uve7fEZlmkr7KYFbvs65ySz1rwzA==
+scripts: {"postinstall":"node ./postinstall.mjs"}                # postinstall copies the platform binary over bin/opencode.exe
+
+$ npm view opencode-darwin-arm64@1.18.27 --json   (key fields extracted)
+name: opencode-darwin-arm64
+version: 1.18.27
+os: ["darwin"], cpu: ["arm64"]
+bin: undefined
+scripts: undefined, hasInstallScript: undefined   # no scripts: safe to install with --ignore-scripts semantics
+dist.tarball: https://registry.npmjs.org/opencode-darwin-arm64/-/opencode-darwin-arm64-1.18.27.tgz
+dist.shasum: 82cd16264964bd2db8c0183a68479d062d16ca0a            (sha1)
+dist.integrity: sha512-Vkxv2Q0Ne5fKpB/6kyv3fgVuS4PObVlWWYpyC+O39iaSQSFmYoKn2CmXRid0RVXIku6z4GSgv2TpINJXlGGMNA==
+
+$ npm view opencode-ai@1.18.27 --json   (optionalDependencies)
+{
+  "opencode-linux-x64": "1.18.27",
+  "opencode-darwin-x64": "1.18.27",
+  "opencode-linux-arm64": "1.18.27",
+  "opencode-windows-x64": "1.18.27",
+  "opencode-darwin-arm64": "1.18.27",
+  "opencode-windows-arm64": "1.18.27",
+  "opencode-linux-x64-musl": "1.18.27",
+  "opencode-linux-arm64-musl": "1.18.27",
+  "opencode-linux-x64-baseline": "1.18.27",
+  "opencode-darwin-x64-baseline": "1.18.27",
+  "opencode-windows-x64-baseline": "1.18.27",
+  "opencode-linux-x64-baseline-musl": "1.18.27"
+}
+
+Channel B: GitHub release (official CLI assets)
+
+$ curl https://api.github.com/repos/anomalyco/opencode/releases/tags/v1.18.27     (NOT sst/opencode — repo is anomalyco/opencode)
+tag_name: v1.18.27
+html_url: https://github.com/anomalyco/opencode/releases/tag/v1.18.27
+published_at: 2026-09-02T21:41:01Z
+draft: false, prerelease: false
+
+Relevant CLI assets (CLI for darwin/arm64 underlined):
+  latest-linux-arm64.yml | 585 B | https://github.com/anomalyco/opencode/releases/download/v1.18.27/latest-linux-arm64.yml
+  latest-linux.yml | 585 B | https://github.com/anomalyco/opencode/releases/download/v1.18.27/latest-linux.yml
+  latest-mac.yml | 704 B | https://github.com/anomalyco/opencode/releases/download/v1.18.27/latest-mac.yml
+  latest.json | 9646 B | https://github.com/anomalyco/opencode/releases/download/v1.18.27/latest.json
+  latest.yml | 384 B | https://github.com/anomalyco/opencode/releases/download/v1.18.27/latest.yml
+  opencode-darwin-arm64.zip | 46207675 B | https://github.com/anomalyco/opencode/releases/download/v1.18.27/opencode-darwin-arm64.zip   <-- used for cross-check
+  opencode-darwin-x64.zip | 48400879 B
+  opencode-darwin-x64-baseline.zip | 48400879 B
+  opencode-linux-arm64.tar.gz | 60333554 B
+  opencode-linux-arm64-musl.tar.gz | 62461955 B
+  opencode-linux-x64*.tar.gz (4 variants, ~60-63 MB)
+  opencode-windows-*.zip (3 variants, ~59-61 MB)
+  opencode-desktop-* (mac/linux/win desktop bundles, ~100-160 MB, irrelevant to CLI probe)
+
+Download commands actually used:
+$ curl -sS -L -o opencode-ai-1.18.27.tgz https://registry.npmjs.org/opencode-ai/-/opencode-ai-1.18.27.tgz         (HTTP 200, 3046 B)
+$ curl -sS -L -o opencode-darwin-arm64-1.18.27.tgz https://registry.npmjs.org/opencode-darwin-arm64/-/opencode-darwin-arm64-1.18.27.tgz   (HTTP 200, 45940410 B)
+$ curl -sS -L -o opencode-darwin-arm64-v1.18.27-gh.zip https://github.com/anomalyco/opencode/releases/download/v1.18.27/opencode-darwin-arm64.zip        (HTTP 200, 46207675 B)
+
+Tarball layout after extraction:
+  node_modules/opencode-ai/{bin/opencode.exe(POSIX-shim placeholder until postinstall), package.json, postinstall.mjs, LICENSE}
+  node_modules/opencode-darwin-arm64/{bin/opencode (Mach-O 64-bit executable arm64), package.json}
+  gh zip -> ./opencode (Mach-O binary)
+
+Assembly note (replicating what postinstall.mjs does, without running it):
+  cp node_modules/opencode-darwin-arm64/bin/opencode node_modules/opencode-ai/bin/opencode.exe && chmod 755 opencode.exe
+  ln -s opencode.exe node_modules/opencode-ai/bin/opencode          # PATH lookup name (npm would create node_modules/.bin/opencode)

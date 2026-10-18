@@ -1,0 +1,42 @@
+{
+  "capture": "deny variant B: bash also denied",
+  "cap_dir": "cap8",
+  "date": "2026-10-18",
+  "binary_sha256": "f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6",
+  "binary_source": "opencode-darwin-arm64@1.18.27 (m0 tree, reused; gh-extract)",
+  "command": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Run the command echo hello > hello.txt and tell me the output' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd",
+  "model": "",
+  "exit": 0,
+  "wall_ms": 38275,
+  "env": {
+    "HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/home",
+    "XDG_CONFIG_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/config",
+    "XDG_DATA_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data",
+    "XDG_CACHE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cache",
+    "XDG_STATE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/state",
+    "TMPDIR": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/tmp",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "stdout_bytes": 4423,
+  "stderr_bytes": 0,
+  "assertions": {
+    "bash_deny_also_removes_tool": "LIVE \u2014 toolset no longer offers bash; model invoked glob (count 0) then 'task' (subagent) attempting the run",
+    "task_metadata_identity": "LIVE BONUS \u2014 task tool_use state.metadata {parentSessionId, sessionId (nested, NOT mirrored into stdout), model:{modelID:'big-pickle', providerID:'opencode'}, truncated:false} \u2014 per-task observed-identity channel in metadata",
+    "no_file_written": "PASS \u2014 cwd empty; exit 0; wall 38.3s (two workaround legs)",
+    "stderr": "PASS \u2014 empty"
+  },
+  "notes": [
+    "seeded config sha256 35b26b6e\u2026: {'permission':{'bash':{'*':'deny'},'write':{'*':'deny'},'edit':{'*':'deny'}}}",
+    "subagent leg also had no shell: its report folded into the outer text event ('No shell tool is available\u2026')",
+    "7 lines: step/tool/step \u00d72 then step_start/text/step_finish"
+  ],
+  "extra_files": [
+    [
+      "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/config/opencode/opencode.json",
+      "seeded-opencode.json"
+    ]
+  ],
+  "seed": {
+    "config_sha256": "35b26b6ebb2cc00dd5247ae47d28829b53ddd2afbe01625acc2cb8f8d5f9dc5a"
+  }
+}

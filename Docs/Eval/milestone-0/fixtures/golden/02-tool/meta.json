@@ -1,0 +1,42 @@
+{
+  "capture": "one tool call (read)",
+  "cap_dir": "cap2",
+  "date": "2026-10-18",
+  "binary_sha256": "f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6",
+  "binary_source": "opencode-darwin-arm64@1.18.27 (m0 tree, reused; gh-extract)",
+  "command": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Read the file note.txt in the current directory and reply with its exact first line' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/cwd",
+  "model": "",
+  "exit": 0,
+  "wall_ms": 8366,
+  "env": {
+    "HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/home",
+    "XDG_CONFIG_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/config",
+    "XDG_DATA_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data",
+    "XDG_CACHE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/cache",
+    "XDG_STATE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/state",
+    "TMPDIR": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/tmp",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "stdout_bytes": 2687,
+  "stderr_bytes": 0,
+  "assertions": {
+    "tool_use_present": "PASS \u2014 line 2 {type:tool_use, part.tool:'read', callID:'call_310a541fe03c41b2a5440b4e'}",
+    "state_input_arguments": "PASS \u2014 state.input {filePath:'/\u2026/cap2/cwd/note.txt', limit:1}",
+    "state_output_result": "PASS \u2014 state.output contains '<content>1: alpha-read-line-ok' (seeded first line bytes)",
+    "time_start_end": "PASS \u2014 state.time {start:1792350633197, end:1792350633205}",
+    "schema_correction": "LIVE: metadata/title/time ride INSIDE part.state, not at part level (contract \u00a73.2 said part-level) \u2014 fixtures freeze the live shape",
+    "exit_zero": "PASS",
+    "reasoning_events_absent": "PASS \u2014 0"
+  },
+  "notes": [
+    "two-step run: step_start\u2192tool_use\u2192step_finish\u2192step_start\u2192text\u2192step_finish (6 lines total)",
+    "sessionID identical on all lines (ses_eaf93d49bffedWopq1E17qHaRW)",
+    "stdout text event carries only final text (no deltas) \u2014 contract \u00a73.1 confirmed"
+  ],
+  "extra_files": [],
+  "seed": {
+    "seed_file": "note.txt",
+    "sha256": "45c3c98376b2f3839c4c58440f1014b523a6e3f759564f2a400c728a103b9a82",
+    "bytes": 67
+  }
+}

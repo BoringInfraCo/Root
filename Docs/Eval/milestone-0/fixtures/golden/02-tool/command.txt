@@ -1,0 +1,5 @@
+cap=2
+command=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Read the file note.txt in the current directory and reply with its exact first line' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/cwd 
+exit=0
+wall_ms=8366
+binary_sha=f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6

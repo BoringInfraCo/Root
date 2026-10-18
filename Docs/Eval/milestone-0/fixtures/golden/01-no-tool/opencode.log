@@ -1,0 +1,26 @@
+timestamp=2026-10-18T19:06:36.655Z level=INFO run=51292054 message="creating instance" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd
+timestamp=2026-10-18T19:06:36.657Z level=INFO run=51292054 message=fromDirectory directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd
+timestamp=2026-10-18T19:06:36.670Z level=INFO run=51292054 message=bootstrapping directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd
+timestamp=2026-10-18T19:06:36.677Z level=INFO run=51292054 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/config/opencode/config.json
+timestamp=2026-10-18T19:06:36.677Z level=INFO run=51292054 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/config/opencode/opencode.json
+timestamp=2026-10-18T19:06:36.677Z level=INFO run=51292054 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/config/opencode/opencode.jsonc
+timestamp=2026-10-18T19:06:36.740Z level=INFO run=51292054 message="all LSPs are disabled"
+timestamp=2026-10-18T19:06:36.740Z level=INFO run=51292054 message="all formatters are disabled"
+timestamp=2026-10-18T19:06:36.741Z level=INFO run=51292054 message=init
+timestamp=2026-10-18T19:06:36.928Z level=INFO run=51292054 message=created id=ses_eaf975e00ffeULvvWmeMCr2iBf slug=clever-planet version=1.18.27 projectID=global directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd path=private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd workspaceID=undefined parentID=undefined title="New session - 2026-10-18T19:06:36.928Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1792350396928 time.updated=1792350396928
+timestamp=2026-10-18T19:06:36.936Z level=INFO run=51292054 message="event connected"
+timestamp=2026-10-18T19:06:37.303Z level=INFO run=51292054 message=loop session.id=ses_eaf975e00ffeULvvWmeMCr2iBf step=0
+timestamp=2026-10-18T19:06:37.311Z level=INFO run=51292054 message="shell tool using shell" shell=/bin/zsh
+timestamp=2026-10-18T19:06:37.316Z level=INFO run=51292054 message=init count=1
+timestamp=2026-10-18T19:06:37.339Z level=INFO run=51292054 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf975e00ffeULvvWmeMCr2iBf small=true agent=title mode=primary
+timestamp=2026-10-18T19:06:37.352Z level=INFO run=51292054 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:06:37.781Z level=INFO run=51292054 message="watcher backend" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd platform=darwin backend=fs-events
+timestamp=2026-10-18T19:06:37.795Z level=INFO run=51292054 message="booting location services" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd workspaceID=undefined
+timestamp=2026-10-18T19:06:37.797Z level=INFO run=51292054 message="project copy refresh started" projectID=global
+timestamp=2026-10-18T19:06:37.798Z level=INFO run=51292054 message="project copy refresh done" projectID=global updated=[] removed=[]
+timestamp=2026-10-18T19:06:38.162Z level=INFO run=51292054 message=process session.id=ses_eaf975e00ffeULvvWmeMCr2iBf messageID=msg_15068a379001Qe3nGtBBzAngiv
+timestamp=2026-10-18T19:06:38.162Z level=INFO run=51292054 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf975e00ffeULvvWmeMCr2iBf small=false agent=build mode=primary
+timestamp=2026-10-18T19:06:38.164Z level=INFO run=51292054 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:06:48.867Z level=INFO run=51292054 message=loop session.id=ses_eaf975e00ffeULvvWmeMCr2iBf step=1
+timestamp=2026-10-18T19:06:48.867Z level=INFO run=51292054 message="exiting loop" session.id=ses_eaf975e00ffeULvvWmeMCr2iBf
+timestamp=2026-10-18T19:06:48.870Z level=INFO run=51292054 message="disposing instance" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap1/cwd

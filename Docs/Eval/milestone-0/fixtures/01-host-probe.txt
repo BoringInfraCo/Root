@@ -1,0 +1,27 @@
+Milestone 0 — host state probe (read-only)
+Probe date: 2026-10-18 (local ~14:44, macOS darwin/arm64)
+Host = machine of this probe session; nothing was installed or modified here.
+
+$ which opencode
+/Users/sergio/.opencode/bin/opencode
+
+$ opencode --version
+opencode v2.0.32
+exit=0
+
+$ codex --version
+codex-cli 0.163.0
+exit=0
+
+$ claude --version
+2.1.260 (Claude Code)
+exit=0
+
+$ pi --version
+zsh:1: command not found: pi
+exit=127
+
+Notes:
+- Host default opencode = v2.0.32 at /Users/sergio/.opencode/bin/opencode (NOT the version under test, and it must not be touched).
+- codex and claude CLI versions recorded for context only.
+- `pi` is not installed on this host (expected failure, recorded as-is).

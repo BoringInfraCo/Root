@@ -1,0 +1,41 @@
+{
+  "capture": "denial variant C: ask + auto-reject",
+  "cap_dir": "cap9",
+  "date": "2026-10-18",
+  "binary_sha256": "f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6",
+  "binary_source": "opencode-darwin-arm64@1.18.27 (m0 tree, reused; gh-extract)",
+  "command": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Run the command echo hello > hello.txt and tell me the output' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/cwd",
+  "model": "",
+  "exit": 0,
+  "wall_ms": 4875,
+  "env": {
+    "HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/home",
+    "XDG_CONFIG_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/config",
+    "XDG_DATA_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/data",
+    "XDG_CACHE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/cache",
+    "XDG_STATE_HOME": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/state",
+    "TMPDIR": "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/tmp",
+    "OPENCODE_DISABLE_AUTOUPDATE": "1"
+  },
+  "stdout_bytes": 1117,
+  "stderr_bytes": 83,
+  "assertions": {
+    "tool_use_error_status": "PASS \u2014 tool_use bash state.status=='error', state.error=='The user rejected permission to use this specific tool call.'",
+    "stderr_auto_rejecting_line": "PASS \u2014 stderr: '! permission requested: bash (echo hello > hello.txt); auto-rejecting' (with ANSI color codes)",
+    "file_not_written": "PASS \u2014 cwd empty; exit 0; wall 4.88s",
+    "reasoning_events_absent": "PASS \u2014 0"
+  },
+  "notes": [
+    "seeded config sha256 2cea6256\u2026: {'permission':{'bash':{'*':'ask'}}} \u2014 the 'ask' rule is what produces permission.asked (auto-rejected by the non-interactive run loop); 'deny' seeds NEVER ask (they remove the tool)",
+    "denial reason family recorded for 1.18.27 as: ask+reject \u2192 'The user rejected permission to use this specific tool call.' (differs from the contract text's '\u2026rule which prevents\u2026' family, which belongs to the deny-rule path that removes tools instead)"
+  ],
+  "extra_files": [
+    [
+      "/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap9/config/opencode/opencode.json",
+      "seeded-opencode.json"
+    ]
+  ],
+  "seed": {
+    "config_sha256": "2cea6256d91c96733f5a88e97ab2a9270d9479c8d15a551f52fe7619c0a30094"
+  }
+}

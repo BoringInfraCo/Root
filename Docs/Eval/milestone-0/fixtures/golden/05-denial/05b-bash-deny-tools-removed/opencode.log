@@ -1,0 +1,40 @@
+timestamp=2026-10-18T19:16:01.835Z level=INFO run=eeac6b50 message="creating instance" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd
+timestamp=2026-10-18T19:16:01.837Z level=INFO run=eeac6b50 message=fromDirectory directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd
+timestamp=2026-10-18T19:16:01.845Z level=INFO run=eeac6b50 message=bootstrapping directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd
+timestamp=2026-10-18T19:16:01.849Z level=INFO run=eeac6b50 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/config/opencode/config.json
+timestamp=2026-10-18T19:16:01.849Z level=INFO run=eeac6b50 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/config/opencode/opencode.json
+timestamp=2026-10-18T19:16:01.852Z level=INFO run=eeac6b50 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/config/opencode/opencode.jsonc
+timestamp=2026-10-18T19:16:01.903Z level=INFO run=eeac6b50 message="all LSPs are disabled"
+timestamp=2026-10-18T19:16:01.904Z level=INFO run=eeac6b50 message="all formatters are disabled"
+timestamp=2026-10-18T19:16:01.904Z level=INFO run=eeac6b50 message=init
+timestamp=2026-10-18T19:16:01.986Z level=INFO run=eeac6b50 message=created id=ses_eaf8ebebdffexkR0Niq7aXM6mj slug=misty-circuit version=1.18.27 projectID=global directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd path=private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd workspaceID=undefined parentID=undefined title="New session - 2026-10-18T19:16:01.986Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1792350961986 time.updated=1792350961986
+timestamp=2026-10-18T19:16:01.995Z level=INFO run=eeac6b50 message="event connected"
+timestamp=2026-10-18T19:16:02.309Z level=INFO run=eeac6b50 message=loop session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj step=0
+timestamp=2026-10-18T19:16:02.319Z level=INFO run=eeac6b50 message="shell tool using shell" shell=/bin/zsh
+timestamp=2026-10-18T19:16:02.324Z level=INFO run=eeac6b50 message=init count=1
+timestamp=2026-10-18T19:16:02.341Z level=INFO run=eeac6b50 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj small=true agent=title mode=primary
+timestamp=2026-10-18T19:16:02.346Z level=INFO run=eeac6b50 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:16:02.861Z level=INFO run=eeac6b50 message="watcher backend" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd platform=darwin backend=fs-events
+timestamp=2026-10-18T19:16:02.866Z level=INFO run=eeac6b50 message="project copy refresh started" projectID=global
+timestamp=2026-10-18T19:16:02.866Z level=INFO run=eeac6b50 message="project copy refresh done" projectID=global updated=[] removed=[]
+timestamp=2026-10-18T19:16:02.879Z level=INFO run=eeac6b50 message="booting location services" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd workspaceID=undefined
+timestamp=2026-10-18T19:16:03.053Z level=INFO run=eeac6b50 message=process session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj messageID=msg_150714288001r2FfL8kHiA6t9N
+timestamp=2026-10-18T19:16:03.053Z level=INFO run=eeac6b50 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj small=false agent=build mode=primary
+timestamp=2026-10-18T19:16:03.055Z level=INFO run=eeac6b50 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:16:07.434Z level=INFO run=eeac6b50 message=evaluated permission=glob pattern=hello.txt action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-18T19:16:07.464Z level=INFO run=eeac6b50 message=loop session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj step=1
+timestamp=2026-10-18T19:16:07.479Z level=INFO run=eeac6b50 message=process session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj messageID=msg_1507156a8001tnUicQlWtgoHmq
+timestamp=2026-10-18T19:16:07.480Z level=INFO run=eeac6b50 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj small=false agent=build mode=primary
+timestamp=2026-10-18T19:16:07.480Z level=INFO run=eeac6b50 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:16:19.316Z level=INFO run=eeac6b50 message=evaluated permission=task pattern=general action.permission=* action.action=allow action.pattern=*
+timestamp=2026-10-18T19:16:19.316Z level=INFO run=eeac6b50 message=created id=ses_eaf8e7b0bffeSVwlJVzMuvjg2X slug=proud-squid version=1.18.27 projectID=global directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd path=private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cwd workspaceID=undefined parentID=ses_eaf8ebebdffexkR0Niq7aXM6mj title="Run echo hello command (@general subagent)" agent=general model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"task\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1792350979316 time.updated=1792350979316
+timestamp=2026-10-18T19:16:19.331Z level=INFO run=eeac6b50 message=loop session.id=ses_eaf8e7b0bffeSVwlJVzMuvjg2X step=0
+timestamp=2026-10-18T19:16:19.347Z level=INFO run=eeac6b50 message=process session.id=ses_eaf8e7b0bffeSVwlJVzMuvjg2X messageID=msg_150718504001ewjwfuwqjWWHk1
+timestamp=2026-10-18T19:16:19.347Z level=INFO run=eeac6b50 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8e7b0bffeSVwlJVzMuvjg2X small=false agent=general mode=subagent
+timestamp=2026-10-18T19:16:19.348Z level=INFO run=eeac6b50 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:16:35.415Z level=INFO run=eeac6b50 message=loop session.id=ses_eaf8e7b0bffeSVwlJVzMuvjg2X step=1
+timestamp=2026-10-18T19:16:35.416Z level=INFO run=eeac6b50 message="exiting loop" session.id=ses_eaf8e7b0bffeSVwlJVzMuvjg2X
+timestamp=2026-10-18T19:16:35.424Z level=INFO run=eeac6b50 message=loop session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj step=2
+timestamp=2026-10-18T19:16:35.436Z level=INFO run=eeac6b50 message=process session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj messageID=msg_15071c3e1001CDDs7bRou7UEeO
+timestamp=2026-10-18T19:16:35.436Z level=INFO run=eeac6b50 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8ebebdffexkR0Niq7aXM6mj small=false agent=build mode=primary
+timestamp=2026-10-18T19:16:35.437Z level=INFO run=eeac6b50 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle

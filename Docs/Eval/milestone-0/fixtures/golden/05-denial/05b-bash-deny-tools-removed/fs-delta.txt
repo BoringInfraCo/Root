@@ -1,0 +1,47 @@
+# new files/dirs created by the run (vs census after seeding; home/.npm prewarm excluded)
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/cache/opencode/bin
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode/log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode/log/opencode.log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode/opencode.db
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode/opencode.db-shm
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode/opencode.db-wal
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/data/opencode/repos
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/out/command.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/out/env.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/out/host-marker
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/out/stderr.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/out/stdout.ndjson
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/out/tree-after.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/state/opencode
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/tmp/.b9dfb7b5faffb792-00000000.dylib
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap8/tmp/opencode
+# removed during the run (should be empty)
+# external host paths touched during the run (younger than marker; must be empty)
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/61
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/61/c9cd72448d6ad48620520bbebf10e2c7fe0db2
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/bc
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/bc/d0296836d2adfc6ef925308459ba02b968d515
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/09
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/09/6606314de91e5eb2073e7b6bf08cdcd03e0bea
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/b9
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/b9/36fe1b1b8e0184326d22c2e518018ef73ce064
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/cd
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/cd/d1867e5322e20e8cc3beb1e6d9f2cb920b1672
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/index
+/Users/sergio/.local/share/opencode/snapshot/565e534bf77671cc72d11e35a3197de83a9cfa61/a6ba26e750f29e58ed241989c082bff0e3047c6e
+/Users/sergio/.local/share/opencode/snapshot/565e534bf77671cc72d11e35a3197de83a9cfa61/a6ba26e750f29e58ed241989c082bff0e3047c6e/index
+/Users/sergio/.local/share/opencode/opencode.db-wal
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_1507159c90013Q4yjf0ddxyYlU.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150714a080014cOMaceB9zmeGV.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150719d71001wELiB0zlmGJHZc.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150716380001Un1wQ5QcVqGSDM.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_15071ce4b002qpqOuerAep232C.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_1507172c200166Q7SIQSw9wVCL.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_15071ce4b001kBIYf79iMyrJE3.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_15071843a001POWpeOFYkw4e8z.out
+/Users/sergio/.local/share/opencode/log/opencode.log
+/Users/sergio/.local/share/opencode/opencode.db
+# END-external

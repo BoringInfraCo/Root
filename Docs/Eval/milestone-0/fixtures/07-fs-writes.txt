@@ -1,0 +1,89 @@
+Milestone 0 — filesystem write map (what the pinned 1.18.27 binary wrote, and where)
+
+Method: every opencode invocation ran with HOME, XDG_CONFIG_HOME, XDG_DATA_HOME,
+XDG_CACHE_HOME, XDG_STATE_HOME, XDG_RUNTIME_DIR, TMPDIR pointed at fresh subdirs of the
+disposable m0 tree. After each command: `find <env dirs> -type f | sort`. Host dirs
+verified by pre/post snapshots outside the probe sandbox.
+
+--- 1. `opencode --version` ---
+files created in env dirs: NONE  (all eight env dirs still empty)
+
+--- 2. `opencode --help` ---
+files created in env dirs: NONE
+
+--- 3. `opencode run --help` ---
+files created in env dirs: NONE
+
+--- 4. `opencode run "Reply with exactly: ok"` (no auth) ---
+env dirs after run (final census; du -sk):
+    83220  home      (home/.npm/_cacache — npm packages fetched AT RUNTIME during the run)
+        8  config
+      904  data
+     5668  cache
+        4  state
+        0  runtime
+     6708  tmp
+        8  run-cwd   (only my own stdout.txt/stderr.txt captures live here)
+    total files at census: 463
+
+Write map by directory:
+
+$XDG_CONFIG_HOME/opencode/
+    .gitignore
+    opencode.jsonc                      content: { "$schema": "https://opencode.ai/config.json" }
+
+$XDG_DATA_HOME/opencode/
+    log/opencode.log                    4044 bytes, INFO-level session trace
+    opencode.db                         SQLite session store
+    opencode.db-shm
+    opencode.db-wal
+
+$XDG_CACHE_HOME/opencode/
+    models.json                         ~5.6 MB provider/model catalog snapshot
+                                        (starts: {"deepinfra":{"id":"deepinfra",...} — models.dev data)
+
+$XDG_STATE_HOME/opencode/locks/
+    8f7aaa40ca0b62b0d36d030386ab65583cbe4a6b.lock/heartbeat
+    8f7aaa40ca0b62b0d36d030386ab65583cbe4a6b.lock/meta.json
+        {"token":"740024d1-...","pid":82323,"hostname":"Sergios-MacBook-Pro-2.local",
+         "createdAt":"2026-10-18T18:49:05.218Z"}
+        -> lock dir SURVIVES process exit (not cleaned up).
+
+$HOME/.npm/_cacache/{content-v2,index-v5,tmp}
+    ~83 MB of npm package cache. The `opencode run` session fetched provider runtime deps
+    (ai-sdk runtime) through npm at run time. All contained in the redirected HOME.
+
+$TMPDIR/
+    .b9dfb6bffbffbfb2-00000000.dylib    (runtime-generated dylib)
+    node-compile-cache/v22.23.2-arm64-2b4477fa-501/*   (bulk of the 463 files; Node compile cache)
+    tmp/opencode/                       (working dir)
+
+$XDG_RUNTIME_DIR/
+    empty.
+
+Project cwd (run-cwd/):
+    NOTHING written by opencode itself — no .opencode/ project dir, no project files.
+    (Only the probe's own stdout.txt / stderr.txt captures.)
+
+--- 5. Outside-the-sandbox verification ---
+Pre-run snapshot of /Users/sergio/.opencode (host install):
+    total 56
+    drwxr-xr-x    8 sergio  staff    256 Apr 21 18:17 .
+    -rw-r--r--    1 sergio  staff     45 Dec 20  2025 .gitignore
+    drwxr-xr-x    4 sergio  staff    128 Oct 16 23:22 bin
+    -rw-r--r--    1 sergio  staff    711 Mar  3  2026 bun.lock
+    drwxr-xr-x   28 sergio  staff    896 Apr 21 18:17 node_modules
+    -rw-r--r--    1 sergio  staff  13563 Apr 21 18:17 package-lock.json
+    -rw-r--r--    1 sergio  staff     65 Apr 21 18:17 package.json
+
+Post-run listing: IDENTICAL (same entries, same mtimes). /Users/sergio/.opencode was NOT touched.
+
+/Users/sergio/.config/opencode  — exists (host harness config w/ node_modules);
+    checked for files newer than probe-window start (find -newermt "2026-10-18 14:40"):
+    ZERO matches. NOT written by the pinned binary.
+/Users/sergio/Library/Application Support/opencode — does not exist; never created.
+
+Deviation (disclosed): the very first metadata command (`npm view opencode-ai versions --json`)
+ran before npm's cache was routed into the m0 tree, so npm MAY have written its own host cache
+under ~/.npm on that one call. That is npm registry-metadata caching, not opencode; all later
+npm calls used `--cache <m0>/npm-cache`.

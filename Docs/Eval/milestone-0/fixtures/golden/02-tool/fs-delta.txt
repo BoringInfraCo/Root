@@ -1,0 +1,25 @@
+# new files/dirs created by the run (vs census after seeding; home/.npm prewarm excluded)
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/cache/opencode/bin
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode/log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode/log/opencode.log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode/opencode.db
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode/opencode.db-shm
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode/opencode.db-wal
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/data/opencode/repos
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/out/command.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/out/env.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/out/host-marker
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/out/stderr.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/out/stdout.ndjson
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/out/tree-after.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/state/opencode
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/tmp/.b9dfb7e7fefecff2-00000000.dylib
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap2/tmp/opencode
+# removed during the run (should be empty)
+# external host paths touched during the run (younger than marker; must be empty)
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/index
+/Users/sergio/.local/share/opencode/opencode.db-wal
+/Users/sergio/.local/share/opencode/log/opencode.log
+# END-external

@@ -1,0 +1,56 @@
+Milestone 0 — unauthenticated run attempt (the "provider-missing error" probe)
+
+IMPORTANT FINDING (see DISCLOSURE at bottom): at 1.18.27 the no-auth path does NOT fail.
+It auto-selects a built-in default provider (provider "opencode", model "big-pickle")
+and the run COMPLETES. There is no provider-missing error to capture as a fixture.
+
+Environment: fully isolated (fresh HOME/XDG_* dirs and TMPDIR, all inside the disposable
+m0 tree). No provider credentials of any kind were configured; auth.json absent;
+no ad-hoc auth performed. Binary sha256 f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+(invocation-identical file across npm and GitHub channels; see 03-binary-hash.txt).
+
+$ opencode run "Reply with exactly: ok"      ; watchdog: kill -TERM after 30s, -KILL after 32s
+
+exit=0
+--- stdout ---
+ok
+--- stderr (raw, ANSI escapes shown as e.g. [0m) ---
+[0m
+> build · big-pickle
+[0m
+
+Context line in the run banner: "build · big-pickle" = agent "build", model "big-pickle".
+
+Evidence from the session log ($XDG_DATA_HOME/opencode/log/opencode.log, first 3000 bytes):
+
+timestamp=2026-10-18T18:49:05.183Z level=INFO run=15186f66 message="creating instance" directory=.../m0/run-cwd
+timestamp=2026-10-18T18:49:05.195Z level=INFO run=15186f66 message=bootstrapping directory=.../m0/run-cwd
+timestamp=2026-10-18T18:49:05.357Z level=INFO run=15186f66 message="all LSPs are disabled"
+timestamp=2026-10-18T18:49:05.358Z level=INFO run=15186f66 message="all formatters are disabled"
+timestamp=2026-10-18T18:49:05.448Z level=INFO run=15186f66 message=created id=ses_eafa76958ffeQcKgUNINWH58it slug=quiet-nebula version=1.18.27 projectID=global directory=.../m0/run-cwd ... cost=0 tokens.input=0 tokens.output=0 ...
+timestamp=2026-10-18T18:49:05.827Z level=INFO run=15186f66 message=stream providerID=opencode modelID=big-pickle session.id=ses_eafa76958ffeQcKgUNINWH58it small=true agent=title mode=primary
+timestamp=2026-10-18T18:49:05.839Z level=INFO run=15186f66 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+   (log continues: watcher backend setup; session completes; no auth error at any point)
+
+grep of log for provider/auth tokens:
+   2 provider=opencode llm.model=big-pickle
+   1 providerID=opencode modelID=big-pickle ... small=true agent=title mode=primary
+   1 providerID=opencode modelID=big-pickle ... small=false agent=build mode=primary
+
+DISCLOSURE (honest accounting):
+- The task brief expected the unauth run to hit a provider-missing error path. It did not:
+  1.18.27 silently provisions its built-in free default ("opencode"/"big-pickle") and returned
+  a model response ("ok"), meaning a network model call DID occur — before any watcher could
+  decide otherwise, since the expected behavior was a fast local error, not a successful call.
+- No credentials were configured or exposed; the observed session log reports cost=0
+  (built-in free default provider path). The one run completed in ~1-4s, well inside the 30s watchdog.
+- No further runs were attempted after observing this behavior.
+- Consequence for Milestone 0: "unauth error shape" for 1.18.27 = NO ERROR (success with
+  provider=opencode, model=big-pickle). If the Root harness needs an error-shaped fixture,
+  it must force a provider selection (e.g. explicit provider/model flags or a locked config),
+  which was out of scope for this probe run to avoid further network calls.
+
+Watchdog status: no processes were left running. The only long-lived "opencode" pgrep hit
+(PID 26392, started 00:09 local) is the host session-harness process running
+/Users/sergio/.opencode/bin/opencode — unrelated to this probe (verified via lsof txt path
+and its start time predating the probe window).

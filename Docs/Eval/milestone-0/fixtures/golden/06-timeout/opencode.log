@@ -1,0 +1,23 @@
+timestamp=2026-10-18T19:17:51.590Z level=INFO run=2a6b5744 message="creating instance" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd
+timestamp=2026-10-18T19:17:51.591Z level=INFO run=2a6b5744 message=fromDirectory directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd
+timestamp=2026-10-18T19:17:51.605Z level=INFO run=2a6b5744 message=bootstrapping directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd
+timestamp=2026-10-18T19:17:51.609Z level=INFO run=2a6b5744 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/config/opencode/config.json
+timestamp=2026-10-18T19:17:51.609Z level=INFO run=2a6b5744 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/config/opencode/opencode.json
+timestamp=2026-10-18T19:17:51.609Z level=INFO run=2a6b5744 message=loading path=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/config/opencode/opencode.jsonc
+timestamp=2026-10-18T19:17:51.663Z level=INFO run=2a6b5744 message="all LSPs are disabled"
+timestamp=2026-10-18T19:17:51.664Z level=INFO run=2a6b5744 message="all formatters are disabled"
+timestamp=2026-10-18T19:17:51.664Z level=INFO run=2a6b5744 message=init
+timestamp=2026-10-18T19:17:51.748Z level=INFO run=2a6b5744 message=created id=ses_eaf8d11fbffem3iZGxG695z03X slug=happy-rocket version=1.18.27 projectID=global directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd path=private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd workspaceID=undefined parentID=undefined title="New session - 2026-10-18T19:17:51.748Z" agent=undefined model=undefined metadata=undefined permission="[{\"permission\":\"question\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_enter\",\"pattern\":\"*\",\"action\":\"deny\"},{\"permission\":\"plan_exit\",\"pattern\":\"*\",\"action\":\"deny\"}]" cost=0 tokens.input=0 tokens.output=0 tokens.reasoning=0 tokens.cache.read=0 tokens.cache.write=0 time.created=1792351071748 time.updated=1792351071748
+timestamp=2026-10-18T19:17:51.756Z level=INFO run=2a6b5744 message="event connected"
+timestamp=2026-10-18T19:17:52.054Z level=INFO run=2a6b5744 message=loop session.id=ses_eaf8d11fbffem3iZGxG695z03X step=0
+timestamp=2026-10-18T19:17:52.063Z level=INFO run=2a6b5744 message="shell tool using shell" shell=/bin/zsh
+timestamp=2026-10-18T19:17:52.067Z level=INFO run=2a6b5744 message=init count=1
+timestamp=2026-10-18T19:17:52.085Z level=INFO run=2a6b5744 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8d11fbffem3iZGxG695z03X small=true agent=title mode=primary
+timestamp=2026-10-18T19:17:52.089Z level=INFO run=2a6b5744 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle
+timestamp=2026-10-18T19:17:52.595Z level=INFO run=2a6b5744 message="watcher backend" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd platform=darwin backend=fs-events
+timestamp=2026-10-18T19:17:52.600Z level=INFO run=2a6b5744 message="project copy refresh started" projectID=global
+timestamp=2026-10-18T19:17:52.601Z level=INFO run=2a6b5744 message="project copy refresh done" projectID=global updated=[] removed=[]
+timestamp=2026-10-18T19:17:52.608Z level=INFO run=2a6b5744 message="booting location services" directory=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap6/cwd workspaceID=undefined
+timestamp=2026-10-18T19:17:52.826Z level=INFO run=2a6b5744 message=process session.id=ses_eaf8d11fbffem3iZGxG695z03X messageID=msg_15072ef38001j6dwzUh0uEAAzr
+timestamp=2026-10-18T19:17:52.827Z level=INFO run=2a6b5744 message=stream providerID=opencode modelID=big-pickle session.id=ses_eaf8d11fbffem3iZGxG695z03X small=false agent=build mode=primary
+timestamp=2026-10-18T19:17:52.829Z level=INFO run=2a6b5744 message="llm runtime selected" llm.runtime=ai-sdk llm.provider=opencode llm.model=big-pickle

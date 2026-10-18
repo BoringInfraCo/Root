@@ -1,0 +1,50 @@
+# new files/dirs created by the run (vs census after seeding; home/.npm prewarm excluded)
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/cache/opencode/bin
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode/log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode/log/opencode.log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode/opencode.db
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode/opencode.db-shm
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode/opencode.db-wal
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/data/opencode/repos
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/command.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/env.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/host-marker
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/stderr.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/stdout.ndjson
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/tree-after.txt
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/out/watchdog.log
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/state/opencode
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/tmp/.b9dfb7edf2ff93b2-00000000.dylib
+/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap10/tmp/opencode
+# removed during the run (should be empty)
+# external host paths touched during the run (younger than marker; must be empty)
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/index.opencode-1792351237160-31832-e4gwtu6ygqk
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/93
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/93/430af5ab469fe347589a2ac4170e74a2d97127
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/fb
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/fb/9742d2951c159bf4cb301878113439854bb382
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/c6
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/c6/4761d1371e4e88128a876926d3577ed7eb435d
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/d3
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/d3/aec1d3b6804616ef07bf16d46f221190550740
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/13
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/objects/13/ca9bc201aa7a1c795084355c5a9358ffec2302
+/Users/sergio/.local/share/opencode/snapshot/b133255cbfc518e97e9fb9c5d18046bbdf04133d/6a6bb95cc31623702b453e38fe4ac3f59f1d809f/index
+/Users/sergio/.local/share/opencode/snapshot/565e534bf77671cc72d11e35a3197de83a9cfa61/a6ba26e750f29e58ed241989c082bff0e3047c6e
+/Users/sergio/.local/share/opencode/snapshot/565e534bf77671cc72d11e35a3197de83a9cfa61/a6ba26e750f29e58ed241989c082bff0e3047c6e/index
+/Users/sergio/.local/share/opencode/opencode.db-wal
+/Users/sergio/.local/share/opencode/shell/b133255cbfc518e97e9fb9c5d18046bbdf04133d
+/Users/sergio/.local/share/opencode/shell/b133255cbfc518e97e9fb9c5d18046bbdf04133d/sh_150756f140010d1h7S4wa2lxgN.out
+/Users/sergio/.local/share/opencode/shell/b133255cbfc518e97e9fb9c5d18046bbdf04133d/sh_15074e56c0016BXkh0EHc78Igo.out
+/Users/sergio/.local/share/opencode/shell/b133255cbfc518e97e9fb9c5d18046bbdf04133d/sh_1507506a7001Djm906dwBR5OFL.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150754130001bprNYU9oBUzmt9.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150756451001fUDmn9HJu6eBLK.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150756f12001nW38Uj9ZFOrdOE.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_150751534001NuLgJntZ7BiCZD.out
+/Users/sergio/.local/share/opencode/shell/565e534bf77671cc72d11e35a3197de83a9cfa61/sh_15074f65d001CXrTswCX4tszK4.out
+/Users/sergio/.local/share/opencode/log/opencode.log
+/Users/sergio/.local/share/opencode/opencode.db
+# END-external

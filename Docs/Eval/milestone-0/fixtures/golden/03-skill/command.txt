@@ -1,0 +1,5 @@
+cap=3
+command=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/bin/opencode run 'Load the skill root using the skill tool, then tell me its first Protocol step.' --model opencode/big-pickle --pure --format json --dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/golden/cap3/cwd 
+exit=0
+wall_ms=13352
+binary_sha=f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
