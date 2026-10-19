@@ -53,6 +53,21 @@
 //! read-only mode, and an integrity check that re-verifies every stored
 //! evidence manifest against the content-addressed artifact store.
 //!
+//! Milestone 4 adds the deterministic scheduler and the paired feasibility
+//! report:
+//!
+//! - `schedule` — [`generate_schedule`], the balanced seeded trial order
+//!   (Fisher–Yates block shuffle plus a per-block condition rotation; the same
+//!   [`ScheduleSpec`] always yields the same plan);
+//! - `report` — [`build_feasibility_report`], which pairs baseline/treatment
+//!   trials by `(task_id, task_version, repetition)`, excludes invalid blocks
+//!   symmetrically, and renders scripted paired counts, per-task direction,
+//!   secondary medians, and honest feasibility labels.
+//!
+//! The verdict engine is explicitly deferred per the audit's recorded
+//! feasibility-spike scope decision: the report carries
+//! [`ReportVerdict::Deferred`] and never emits an effectiveness verdict.
+//!
 //! The store takes an explicit evals root; nothing in this crate touches the
 //! Root directory.
 //!
@@ -144,7 +159,9 @@ mod materializer;
 mod parse;
 mod plan;
 mod raw;
+mod report;
 mod runner;
+mod schedule;
 mod schema;
 mod store;
 mod supervisor;
@@ -200,7 +217,18 @@ pub use plan::{
     RepositoryLock, EXPERIMENT_HASH_DOMAIN, EXPERIMENT_SPEC_MAX_SUPPORTED_VERSION,
     EXPERIMENT_SPEC_SCHEMA_VERSION, PINNED_HARNESS_NAME,
 };
+pub use report::{
+    build_feasibility_report, ConditionCounts, DiscordantPairs, FeasibilityReport, InvalidBlock,
+    ReportError, ReportErrorKind, ReportVerdict, SecondaryStats, TaskDirection, FEASIBILITY_LABEL,
+    INSUFFICIENT_EVIDENCE_LABEL, MIN_INDEPENDENT_TASKS_FOR_FEASIBILITY,
+    MIN_VALID_BLOCKS_FOR_FEASIBILITY, REPORT_SCHEMA_VERSION, VERDICT_DEFERRED_LINE,
+    VERDICT_DEFERRED_REASON,
+};
 pub use runner::{run_trial, TrialRunRecord, TrialRunRequest, UsageTotals};
+pub use schedule::{
+    generate_schedule, PlannedTrial, ScheduleError, ScheduleErrorKind, ScheduleSpec,
+    ScheduleTaskRef, MAX_CONDITIONS, MAX_TRIALS,
+};
 pub use schema::*;
 pub use store::{
     ArtifactRow, EvalStore, EvidenceRecord, ExecutionRow, ExperimentRow, ExperimentSummary,
