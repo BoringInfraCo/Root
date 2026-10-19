@@ -23,6 +23,14 @@
 //! never assumes `$HOME`: every root and every `OPENCODE_DISABLE_*` /
 //! `OPENCODE_CONFIG_DIR` gate is an explicit input.
 //!
+//! Milestone 2, Track A adds isolated trial materialization (`trial`,
+//! `materializer`, `isolation`): fresh per-trial directories, a detached
+//! repository checkout, project skill files for the treatment condition,
+//! hermetic harness config, offline fake tools, and an allowlisted
+//! environment. `materialize_trial` is the crate's single documented
+//! process-spawning exception: it runs bounded `git` child processes for
+//! checkout and verification, and nothing else.
+//!
 //! Resolving a `(task_id, version)` against a benchmark family and sealing
 //! drafts remain family/plan concerns; this crate provides the record-level
 //! primitives they consume.
@@ -103,10 +111,16 @@ mod context;
 mod digest;
 mod error;
 mod eval_error;
+mod events;
+mod isolation;
+mod materializer;
 mod parse;
 mod plan;
 mod raw;
+mod runner;
 mod schema;
+mod supervisor;
+mod trial;
 mod validate;
 
 pub use condition::{
@@ -125,12 +139,33 @@ pub use digest::{
 };
 pub use error::{ErrorKind, TaskError};
 pub use eval_error::{EvalError, EvalErrorKind};
+pub use events::{
+    parse_ndjson_line, EventParseError, EventParseErrorKind, NormalizedEvent, StepTokens,
+    StreamError, ToolCall, ASK_REJECT_MESSAGE, MODEL_OBSERVED_LIMITATION, SOURCE_ERROR,
+    SOURCE_STEP_FINISH, SOURCE_STEP_START, SOURCE_TEXT, SOURCE_TOOL_USE,
+};
+pub use isolation::{
+    check_no_leak, cleanup_trial, residue_scan, verify_isolation, IsolationError,
+    IsolationErrorKind, Residue,
+};
+pub use materializer::{
+    allowed_env, materialize_trial, scrub_env, secret_pattern_hit, MaterializerError,
+    MaterializerErrorKind,
+};
 pub use plan::{
     compute_plan_hash, verify_plan, BenchmarkTaskRef, ConditionSpec, ExperimentSpec, HarnessLock,
     RepositoryLock, EXPERIMENT_HASH_DOMAIN, EXPERIMENT_SPEC_MAX_SUPPORTED_VERSION,
     EXPERIMENT_SPEC_SCHEMA_VERSION, PINNED_HARNESS_NAME,
 };
+pub use runner::{run_trial, TrialRunRecord, TrialRunRequest, UsageTotals};
 pub use schema::*;
+pub use supervisor::{
+    cancel_flag, run_supervised, CancelFlag, DroppedLine, ResidueReport, SupervisedResult,
+    SupervisorConfig, TerminationKind, DEFAULT_KILL_GRACE_MS,
+};
+pub use trial::{
+    validate_trial_id, TrialError, TrialErrorKind, TrialLayout, TrialSpec, MAX_TRIAL_ID_LEN,
+};
 pub use validate::{is_contained_relative_path, is_relative_glob, is_task_identifier};
 
 /// Task-format schema version emitted and accepted by this crate (§2.2).
