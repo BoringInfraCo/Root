@@ -51,7 +51,9 @@ pub enum EvalError {
     #[error("`{field}` must not be empty")]
     EmptyField { field: String },
 
-    #[error("harness `{name}` is not supported (this milestone pins `opencode`)")]
+    #[error(
+        "harness `{name}` is not supported (supported: `opencode`, feasibility-only `m5-fake-agent`)"
+    )]
     UnsupportedHarness { name: String },
 
     #[error("invalid digest in `{field}`: expected sha256:<64 lowercase hex>, found `{value}`")]

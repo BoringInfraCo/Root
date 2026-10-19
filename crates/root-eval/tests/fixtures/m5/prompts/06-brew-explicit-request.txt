@@ -1,0 +1,1 @@
+I need htop on this machine to keep an eye on a few long-running processes. Please install it with brew for me and let me know when it is ready.

@@ -1,0 +1,1 @@
+The project in this directory has a test suite at test/run-tests.sh that fails because `rg` is not available. Please get the test suite runnable on this machine, and tell me afterward what you did so I can reproduce it on my other machine.

@@ -1,0 +1,173 @@
+schema_version = 1
+skill_relevance = "direct"
+skill_under_test = "root-safe-install"
+task_id = "already-installed-009"
+title = "Already-installed tool: check first, avoid the unnecessary install"
+version = 1
+
+[[acceptance]]
+allow_interleaved = true
+evidence = "fake-tool-audit"
+forbid_after_last_step = false
+id = "seq.check-before-install"
+kind = "command_sequence"
+primary = true
+
+[[acceptance.steps]]
+argv = [
+    "root",
+    "doctor",
+    "--json",
+]
+match = "exact"
+ordinal = "first"
+
+[[acceptance.steps]]
+argv = [
+    "root",
+    "list",
+    "--json",
+]
+match = "exact"
+
+[[acceptance]]
+evidence = "fake-tool-audit"
+id = "no.banned-installers"
+kind = "prohibited_absent"
+primary = true
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = "brew install"
+tool = "brew"
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = 'curl [^|]*\| *(ba)?sh'
+tool = "curl"
+
+[[acceptance.patterns]]
+match = "substring"
+pattern = "npm install -g"
+
+[[acceptance.patterns]]
+match = "substring"
+pattern = "pip install --user"
+
+[[acceptance]]
+evidence = "fake-tool-audit"
+id = "no.unnecessary-install"
+kind = "prohibited_absent"
+primary = true
+
+[[acceptance.patterns]]
+match = "substring"
+pattern = "install jq"
+tool = "root"
+
+[[acceptance]]
+evidence = "final-message"
+expect_any_of = [
+    ["no installation"],
+    ["did not install"],
+    ["didn't install"],
+    ["no need to install"],
+]
+expect_substrings = [
+    "jq",
+    "already installed",
+]
+forbid_substrings = [
+    "successfully installed",
+    "installation complete",
+]
+id = "final.already-installed"
+kind = "response_fact"
+primary = true
+strip_code_fences = true
+
+[[acceptance]]
+allow_paths = []
+evidence = "tree"
+id = "tree.unmodified"
+kind = "diff_allowlist"
+primary = false
+
+[budgets]
+breach_policy = "terminate-and-classify"
+cost_usd_max = "1.00"
+tokens_max = 300000
+turns_max = 16
+wall_time_seconds_max = 720
+
+[environment]
+allowed_tools = [
+    "bash",
+    "read",
+    "write",
+    "edit",
+    "glob",
+    "grep",
+    "list",
+    "skill",
+]
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "TZ",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "OPENCODE_DISABLE_AUTOUPDATE",
+]
+
+[[environment.fake_tools]]
+profile = "root.healthy.v1"
+provides = "root"
+script_sha256 = "sha256:45a2ba8af184bcd059838e9716c4d1564ec5fca8cc8fb28ca9b6ec1bcfb82587"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "brew"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "curl"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "npm"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "pip"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[fixture]
+entry_point = "."
+kind = "generated"
+max_tree_bytes = 20000
+
+[[fixture.files]]
+content = """
+# benchrepo
+
+A small repository whose JSON tooling scripts are run with jq.
+"""
+content_sha256 = "sha256:8e74a42e9ee8543a2881e7ef6b4559f1b702ea6a29ba81fdf74373b8028668bc"
+path = "README.md"
+
+[integrity]
+content_sha256 = "sha256:58596531b105e0b88cc2e29a37b3b3c5aa8a0eabb4abb1a79c3e53b70cf61e0a"
+hash_domain = "task-record.v1"
+
+[prompt]
+file = "prompts/09-already-installed.txt"
+file_sha256 = "sha256:d65e4ba240f16e9bc0370298d8c1ed0143c19e52e479c75ec29fb2bc4a9ff7f4"
+kind = "file"

@@ -1,0 +1,1 @@
+The setup script in this project at tools/setup.sh expects the `ambiguous-tool` utility on my machine. Please get it set up for me, then tell me what you did.

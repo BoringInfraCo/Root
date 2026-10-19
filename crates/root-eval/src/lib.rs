@@ -68,6 +68,18 @@
 //! feasibility-spike scope decision: the report carries
 //! [`ReportVerdict::Deferred`] and never emits an effectiveness verdict.
 //!
+//! Milestone 5 adds the feasibility-matrix driver (`feasibility`):
+//!
+//! - [`run_feasibility_matrix`] executes the ten-task × two-condition × R
+//!   deterministic fake-agent matrix through materializer → supervisor →
+//!   verifier → acceptance → evidence seal → store → report, writes
+//!   `report.txt` / `report.json` / `summary.json` under the evals root, and
+//!   records per-trial secret-hygiene (canary) plus run-level disjoint-root
+//!   and residue checks;
+//! - [`reproduce_feasibility`] rebuilds the report from the sealed store
+//!   read-only and proves it is byte-identical to the stored `report.json`
+//!   without rerunning any agent.
+//!
 //! The store takes an explicit evals root; nothing in this crate touches the
 //! Root directory.
 //!
@@ -140,10 +152,13 @@
 //!
 //! Runner- and plan-level rules — verifier reliability probes (§2.8.1),
 //! family-level `(task_id, version)` uniqueness (§2.10.2), budget dominance
-//! versus `ExperimentSpec` (§2.6), termination totality (§2.9), and the
-//! fake-tool side-channel contract (§2.5.2) — are Phase B/M2 concerns and are
-//! intentionally not implemented here.
+//! versus `ExperimentSpec` (§2.6), and termination totality (§2.9) — are
+//! Phase B/M2 concerns and are intentionally not implemented here. Milestone 5
+//! adds the §2.5.2 fake-tool layer (`fake_tools`: normative profile scripts,
+//! digests, and shim materialization) and the draft-sealing tool (`seal`),
+//! and evaluates the side-channel contract in `acceptance`.
 
+mod acceptance;
 mod canonical;
 mod canonical_json;
 mod condition;
@@ -154,6 +169,8 @@ mod error;
 mod eval_error;
 mod events;
 mod evidence;
+mod fake_tools;
+mod feasibility;
 mod isolation;
 mod materializer;
 mod parse;
@@ -163,6 +180,7 @@ mod report;
 mod runner;
 mod schedule;
 mod schema;
+mod seal;
 mod store;
 mod supervisor;
 mod taxonomy;
@@ -170,6 +188,12 @@ mod trial;
 mod validate;
 mod verifier;
 
+pub use acceptance::{
+    capture_tree_snapshot, commandline_v1, diff_snapshots, evaluate_acceptance, parse_audit_log,
+    read_tree_file, AcceptanceError, AcceptanceErrorKind, AssertionReport, AssertionResult,
+    AuditLine, TreeChange, TreeChangeKind, TreeFile, TreeSnapshot, TrialEvidence, AUDIT_LINE_KEYS,
+    FAKE_TOOL_AUDIT_FILE_NAME, MAX_ARTIFACT_FILE_BYTES, MAX_SNAPSHOT_DEPTH,
+};
 pub use condition::{
     apply_overlay, verify_declared_delta, ConditionOverlay, DeltaError, DeltaErrorKind,
     DeltaExpectation, OverlayAction, OverlayEntry,
@@ -204,18 +228,34 @@ pub use evidence::{
     NORMALIZED_EVENTS_HASH_DOMAIN, REDACTION_JSON_SECRET_KEY, REDACTION_MARKER_PREFIX,
     REDACTION_SECRET_KEY_ASSIGNMENT, SEAL_HASH_DOMAIN,
 };
+pub use fake_tools::{
+    bindings_from_environment, fake_tool_profile_token, materialize_fake_tools, script_sha256,
+    write_profile_shim, FakeToolBinding, FakeToolError, FakeToolErrorKind, FakeToolLayout,
+    ProfileId, ABSENT_PROFILE_TOKEN, INSTALLER_RECORD_DENY_V1_SCRIPT,
+    INSTALLER_RECORD_PASS_V1_SCRIPT, ROOT_HEALTHY_V1_SCRIPT, ROOT_UNHEALTHY_V1_SCRIPT,
+};
+pub use feasibility::{
+    reproduce_feasibility, run_feasibility_matrix, CanaryCheck, ContaminationSummary,
+    FeasibilityConfig, FeasibilityError, FeasibilityErrorKind, FeasibilityRunSummary,
+    ReproduceOutcome, TrialSummary, M5_CANARY_ENV, M5_CANARY_VALUE_PREFIX, M5_CONDITION_BASELINE,
+    M5_CONDITION_TREATMENT, M5_DEFAULT_REPETITIONS, M5_DEFAULT_SEED, M5_EXPERIMENT_ID,
+    M5_FAKE_HARNESS_VERSION, M5_FIXED_CREATED_AT, M5_MARKER_SKILL, M5_OUTPUT_CAP_BYTES,
+    M5_REQUESTED_MODEL,
+};
 pub use isolation::{
     check_no_leak, cleanup_trial, residue_scan, verify_isolation, IsolationError,
     IsolationErrorKind, Residue,
 };
 pub use materializer::{
-    allowed_env, materialize_trial, scrub_env, secret_pattern_hit, MaterializerError,
-    MaterializerErrorKind,
+    allowed_env, materialize_trial, materialize_trial_with_fake_tools, scrub_env,
+    secret_pattern_hit, trial_stub_bin_dir, MaterializerError, MaterializerErrorKind,
+    FAKE_TOOL_AUDIT_RELATIVE_PATH, STUB_BIN_DIR_NAME,
 };
 pub use plan::{
     compute_plan_hash, verify_plan, BenchmarkTaskRef, ConditionSpec, ExperimentSpec, HarnessLock,
     RepositoryLock, EXPERIMENT_HASH_DOMAIN, EXPERIMENT_SPEC_MAX_SUPPORTED_VERSION,
-    EXPERIMENT_SPEC_SCHEMA_VERSION, PINNED_HARNESS_NAME,
+    EXPERIMENT_SPEC_SCHEMA_VERSION, FEASIBILITY_HARNESS_NAME, GENERATED_COMMIT_PREFIX,
+    PINNED_HARNESS_NAME,
 };
 pub use report::{
     build_feasibility_report, ConditionCounts, DiscordantPairs, FeasibilityReport, InvalidBlock,
@@ -230,6 +270,10 @@ pub use schedule::{
     ScheduleTaskRef, MAX_CONDITIONS, MAX_TRIALS,
 };
 pub use schema::*;
+pub use seal::{
+    seal_draft, seal_draft_at, tree_digest_v1, SealError as DraftSealError,
+    SealErrorKind as DraftSealErrorKind,
+};
 pub use store::{
     ArtifactRow, EvalStore, EvidenceRecord, ExecutionRow, ExperimentRow, ExperimentSummary,
     StoreError, StoreErrorKind, StoreIntegrityCheck, StoreIntegrityFailure, StoreIntegrityReport,

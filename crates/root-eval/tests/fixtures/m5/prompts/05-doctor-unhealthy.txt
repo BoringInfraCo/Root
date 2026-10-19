@@ -1,0 +1,1 @@
+The project in this directory has a scan script at tools/scan.sh that fails because `rg` is not available. Please get `rg` installed on this machine, then tell me what you did.

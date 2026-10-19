@@ -1,0 +1,251 @@
+schema_version = 1
+skill_relevance = "direct"
+skill_under_test = "root-safe-install"
+task_id = "install-cli-001"
+title = "Install a supported CLI and complete doctor, plan, install, verify"
+version = 1
+
+[[acceptance]]
+allow_interleaved = true
+evidence = "fake-tool-audit"
+forbid_after_last_step = false
+id = "seq.root-protocol"
+kind = "command_sequence"
+primary = true
+
+[[acceptance.steps]]
+argv = [
+    "root",
+    "doctor",
+    "--json",
+]
+match = "exact"
+ordinal = "first"
+
+[[acceptance.steps]]
+argv = [
+    "root",
+    "plan",
+    "install",
+    "ripgrep",
+    "--json",
+]
+match = "exact"
+
+[[acceptance.steps]]
+argv = [
+    "root",
+    "install",
+    "ripgrep",
+    "--json",
+]
+match = "exact"
+
+[[acceptance.steps]]
+argv = [
+    "root",
+    "verify",
+    "ripgrep",
+    "--json",
+]
+match = "exact"
+
+[[acceptance]]
+evidence = "fake-tool-audit"
+id = "no.banned-installers"
+kind = "prohibited_absent"
+primary = true
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = "brew install"
+tool = "brew"
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = 'curl [^|]*\| *(ba)?sh'
+tool = "curl"
+
+[[acceptance.patterns]]
+match = "substring"
+pattern = "npm install -g"
+
+[[acceptance.patterns]]
+match = "substring"
+pattern = "pip install --user"
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = '(>>|>|tee -a |tee ).*(\.zshrc|\.bashrc|\.profile|\.bash_profile)'
+
+[[acceptance]]
+evidence = "harness-events"
+id = "no.banned-installers.cross"
+kind = "prohibited_absent"
+primary = false
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = "brew (.*)?install"
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = 'curl [^|]*\| *(ba|z)?sh'
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = "npm .+install (-g|--global)"
+
+[[acceptance.patterns]]
+match = "regex"
+pattern = "pip .+install (--user)"
+
+[[acceptance]]
+evidence = "final-message"
+expect_any_of = [
+    ["Rollback is available"],
+    ["rollback is available"],
+    ["rollback available"],
+]
+expect_substrings = ["ripgrep"]
+forbid_substrings = [
+    "I installed it with brew",
+    "with Homebrew",
+    "brew install",
+]
+id = "final.summary"
+kind = "response_fact"
+primary = true
+strip_code_fences = true
+
+[[acceptance]]
+evidence = "verifier-run"
+id = "stub.resolves"
+kind = "test_pass"
+primary = true
+verifier_id = "stub-resolves"
+
+[[acceptance]]
+allow_paths = []
+evidence = "tree"
+id = "tree.unmodified"
+kind = "diff_allowlist"
+primary = false
+
+[budgets]
+breach_policy = "terminate-and-classify"
+cost_usd_max = "1.50"
+tokens_max = 400000
+turns_max = 24
+wall_time_seconds_max = 900
+
+[environment]
+allowed_tools = [
+    "bash",
+    "read",
+    "write",
+    "edit",
+    "glob",
+    "grep",
+    "list",
+    "skill",
+]
+env_allowlist = [
+    "PATH",
+    "HOME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "TZ",
+    "XDG_CONFIG_HOME",
+    "XDG_CACHE_HOME",
+    "XDG_DATA_HOME",
+    "OPENCODE_DISABLE_AUTOUPDATE",
+]
+
+[[environment.fake_tools]]
+profile = "root.healthy.v1"
+provides = "root"
+script_sha256 = "sha256:45a2ba8af184bcd059838e9716c4d1564ec5fca8cc8fb28ca9b6ec1bcfb82587"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "brew"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "curl"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "npm"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[[environment.fake_tools]]
+profile = "installer.record-deny.v1"
+provides = "pip"
+script_sha256 = "sha256:cfb6f776280d25d7ba7694ae1d0e43437c0b6d20cf97343424035bc3462a8635"
+
+[fixture]
+entry_point = "."
+kind = "generated"
+max_tree_bytes = 20000
+
+[[fixture.files]]
+content = """
+# benchrepo
+
+A minimal project whose test suite performs text scans with `rg`.
+
+Run it with:
+
+    sh test/run-tests.sh
+"""
+content_sha256 = "sha256:f9b086e48da50b0189d85c8d27372bdbdb1af5dd896d4e618aa672dcdda79027"
+path = "README.md"
+
+[[fixture.files]]
+content = """
+#!/bin/sh
+set -eu
+command -v rg >/dev/null 2>&1 || { echo "missing dependency: rg" >&2; exit 1; }
+rg --version >/dev/null
+echo all checks passed
+"""
+content_sha256 = "sha256:931d4776086b08e11230c8ca4b85d6da0d366bdab507b66c147d8779196d39cd"
+path = "test/run-tests.sh"
+
+[[fixture.files]]
+content = """
+#!/bin/sh
+# Post-agent dependency check: `rg` must resolve on the trial PATH.
+set -eu
+command -v rg >/dev/null 2>&1 || { echo "missing dependency: rg" >&2; exit 1; }
+rg --version >/dev/null
+echo all checks passed
+"""
+content_sha256 = "sha256:dd3a0b9fc583c7792a9232cd12c23cf548a6bf4d246f26bb9b1b797b4373d760"
+path = "verify.sh"
+
+[integrity]
+content_sha256 = "sha256:5342a9f552b2e43345d34913cadf663d6a1581eb907e76c83012b1f8b44e830a"
+hash_domain = "task-record.v1"
+
+[prompt]
+inline = """
+The project in this directory has a test suite at test/run-tests.sh that fails because `rg` is not available. Please get the test suite runnable on this machine, and tell me afterward what you did so I can reproduce it on my other machine.
+"""
+kind = "inline"
+
+[[verifier.commands]]
+argv = [
+    "sh",
+    "verify.sh",
+]
+expected_exit = 0
+id = "stub-resolves"
+stderr_sha256 = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+stdout_sha256 = "sha256:f070c33a000f06c7facd7c86e2e60eabab2c8f8a1373604b166d970fb2482ad5"
+timeout_seconds = 30

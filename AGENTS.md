@@ -82,7 +82,7 @@ root-cli (bin)
   └─ identity helpers:    root-adapters (standalone)
 
 root-agent                   # static Safe Install Protocol serializer; NOT wired into CLI
-root-eval                    # skill-evaluation domain: task records, context manifests, plan hashing, trial materialization + supervised runner (M1-M2; no CLI yet) → root-lockfile
+root-eval                    # skill-evaluation domain: task records, context manifests, plan hashing, materialization, supervised runner, evidence/store, scheduler/report, feasibility driver (M1-M5; no CLI yet) → root-lockfile
 ```
 
 `NixAdapter` trait in `root-nix` has two impls: `RealNixAdapter` (shells out to `nix` CLI) and `MockNixAdapter` (in-memory).

@@ -16,6 +16,23 @@
 //! 6. an allowlist env file plus [`allowed_env`] / [`scrub_env`] maps that
 //!    never inherit the parent process environment.
 //!
+//! # Two fake-tool layers
+//!
+//! [`materialize_trial`] is the **legacy** path: it always writes the five
+//! generic smoke shims (free-form `printf` audit lines) and keeps the audit
+//! trail at `<trial>/audit.log`. It remains the default for callers that have
+//! no task-record manifest.
+//!
+//! [`materialize_trial_with_fake_tools`] is the **spec-conformant** path
+//! (Milestone 5): it takes the record's `environment.fake_tools` manifest as
+//! [`FakeToolBinding`]s and materializes the normative profiles from
+//! [`crate::fake_tools`] instead — one `0700` shim per non-`absent` binding,
+//! the canonical audit log at `<trial>/audit/fake-tool-audit.jsonl`, and the
+//! `<trial>/stub-bin` directory that `root install` populates
+//! (`$TRIAL_STUB_BIN`, appended to the trial `$PATH`). Empty bindings write no
+//! shims at all — the correct materialization for a record that declares no
+//! fake tools.
+//!
 //! # Sanctioned process-spawning sites
 //!
 //! Milestone 1 forbids process spawning in this crate. Detached-checkout
@@ -38,6 +55,7 @@ use thiserror::Error;
 
 use crate::context::MAX_CONTEXT_FILE_BYTES;
 use crate::digest::{is_canonical_sha256_digest, sha256_digest};
+use crate::fake_tools::{self, FakeToolBinding};
 use crate::trial::{TrialLayout, TrialSpec};
 
 /// Machine-matchable classification for every [`MaterializerError`] variant.
@@ -137,20 +155,93 @@ impl From<crate::trial::TrialError> for MaterializerError {
     }
 }
 
+impl From<fake_tools::FakeToolError> for MaterializerError {
+    fn from(error: fake_tools::FakeToolError) -> Self {
+        match error {
+            fake_tools::FakeToolError::DigestMismatch {
+                provides,
+                profile,
+                expected,
+                found,
+            } => Self::DigestMismatch {
+                token: format!("environment.fake_tools[{provides}].script_sha256"),
+                detail: format!(
+                    "profile {profile}: declared {expected}, embedded script is {found}"
+                ),
+            },
+            fake_tools::FakeToolError::Io { path, message } => Self::Io { path, message },
+            other => Self::InvalidSpec {
+                message: other.to_string(),
+            },
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
-// Entry point
+// Entry points
 // ---------------------------------------------------------------------------
 
-/// Materialize one hermetic trial tree under `base_dir/<trial_id>/`.
+/// Canonical trial-relative path of the spec-conformant fake-tool audit log
+/// (§2.5.2): `audit/fake-tool-audit.jsonl`.
+pub const FAKE_TOOL_AUDIT_RELATIVE_PATH: &str = "audit/fake-tool-audit.jsonl";
+
+/// Trial-relative name of the stub-bin directory `root install` populates
+/// (`$TRIAL_STUB_BIN`).
+pub const STUB_BIN_DIR_NAME: &str = "stub-bin";
+
+/// Materialize one hermetic trial tree under `base_dir/<trial_id>/` with the
+/// legacy generic smoke shims.
 ///
 /// The trial directory must not exist yet. On success every created path is
 /// recorded in [`TrialLayout::created_paths`] and in the residue-manifest
 /// file. On failure an error is returned; partially created trees are left in
 /// place for inspection and must be removed with
 /// [`crate::cleanup_trial`] (fail-closed cleanup is the caller's job).
+///
+/// This is the pre-M5 path: it always writes the five generic shims (`root`,
+/// `brew`, `curl`, `npm`, `pip`) and keeps the audit trail at
+/// `<trial>/audit.log`. Spec-conformant trials use
+/// [`materialize_trial_with_fake_tools`].
 pub fn materialize_trial(
     spec: &TrialSpec,
     base_dir: &Path,
+) -> Result<TrialLayout, MaterializerError> {
+    materialize_inner(spec, base_dir, None)
+}
+
+/// Materialize one hermetic trial tree with spec-conformant fake tools
+/// (Milestone 5).
+///
+/// Identical to [`materialize_trial`] except for the fake-tool layer, which
+/// follows `TASK-SPEC` §2.5.2 exactly:
+///
+/// - one `0700` profile shim per non-`absent` [`FakeToolBinding`] from
+///   [`crate::fake_tools`]; the legacy smoke shims are never written, and an
+///   empty binding list produces an empty fake-bin directory;
+/// - the trial audit log is `<trial>/audit/fake-tool-audit.jsonl` — a
+///   directory the fixture does not contain — and `$TRIAL_AUDIT_LOG` points
+///   at it;
+/// - `<trial>/stub-bin` (`0700`) is created, exported as `$TRIAL_STUB_BIN`,
+///   and appended to the trial `$PATH` after the fake-bin directory so
+///   `root install` can place simulated package binaries where real commands
+///   like `rg` resolve;
+/// - every declared `script_sha256` must equal the embedded profile script
+///   digest, otherwise materialization fails closed with
+///   [`MaterializerErrorKind::DigestMismatch`].
+///
+/// `TRIAL_FAKE_AGENT_*` variables are never read or written by this crate.
+pub fn materialize_trial_with_fake_tools(
+    spec: &TrialSpec,
+    base_dir: &Path,
+    bindings: &[FakeToolBinding],
+) -> Result<TrialLayout, MaterializerError> {
+    materialize_inner(spec, base_dir, Some(bindings))
+}
+
+fn materialize_inner(
+    spec: &TrialSpec,
+    base_dir: &Path,
+    bindings: Option<&[FakeToolBinding]>,
 ) -> Result<TrialLayout, MaterializerError> {
     spec.validate()?;
     require_base_dir(base_dir)?;
@@ -183,6 +274,16 @@ pub fn materialize_trial(
     ] {
         create_dir_0700(dir, &mut created)?;
     }
+    // Plan-based trials add the stub-bin directory before any shim can write
+    // into it.
+    let stub_bin_dir = match bindings {
+        Some(_) => {
+            let dir = root.join(STUB_BIN_DIR_NAME);
+            create_dir_0700(&dir, &mut created)?;
+            Some(dir)
+        }
+        None => None,
+    };
     // `repo/` is created by `git clone` (which refuses existing targets) or
     // by the tree-copy path below.
 
@@ -200,12 +301,31 @@ pub fn materialize_trial(
     // 4. Hermetic project opencode config (seeded ask-mode permissions).
     write_opencode_config(&repo_dir)?;
 
-    // 5. Offline fake tools.
-    write_fake_tools(&fake_bin_dir)?;
+    // 5. Fake tools: legacy smoke shims, or the spec-conformant profiles.
+    let audit_log = match bindings {
+        None => {
+            write_fake_tools(&fake_bin_dir)?;
+            root.join("audit.log")
+        }
+        Some(bindings) => {
+            let audit_dir = root.join("audit");
+            let audit_log = audit_dir.join("fake-tool-audit.jsonl");
+            let stub_bin = stub_bin_dir
+                .clone()
+                .expect("stub-bin is created for plan-based trials");
+            let fake_layout =
+                fake_tools::materialize_fake_tools(&fake_bin_dir, &audit_log, &stub_bin, bindings)?;
+            created.push(audit_dir);
+            created.push(audit_log.clone());
+            for (_, path) in &fake_layout.shims {
+                created.push(path.clone());
+            }
+            audit_log
+        }
+    };
 
     // 6. Allowlist env file (+ audit log, pids, residue manifest).
     let env_file = root.join("trial.env");
-    let audit_log = root.join("audit.log");
     let pids_file = root.join("pids.txt");
     let residue_manifest_file = root.join("residue-manifest.txt");
 
@@ -228,8 +348,10 @@ pub fn materialize_trial(
     let env = scrub_env(&layout, &BTreeMap::new());
     write_env_file(&layout.env_file, &env)?;
     created.push(layout.env_file.clone());
-    write_file_0600(&layout.audit_log, b"")?;
-    created.push(layout.audit_log.clone());
+    if bindings.is_none() {
+        write_file_0600(&layout.audit_log, b"")?;
+        created.push(layout.audit_log.clone());
+    }
     // Track A spawns no long-lived processes: the only child processes are
     // the bounded `git` invocations above, which have all exited.
     write_file_0600(&layout.pids_file, b"none\n")?;
@@ -273,18 +395,43 @@ pub fn secret_pattern_hit(key: &str) -> bool {
         || key.ends_with("_KEY")
 }
 
+/// The stub-bin directory of a plan-based trial layout, or `None` for a
+/// legacy layout.
+///
+/// Plan-based trials are identified structurally by their canonical audit-log
+/// path ([`FAKE_TOOL_AUDIT_RELATIVE_PATH`]); legacy trials keep
+/// `<trial>/audit.log`. The stub-bin directory is `<trial>/stub-bin`, created
+/// by [`materialize_trial_with_fake_tools`].
+pub fn trial_stub_bin_dir(layout: &TrialLayout) -> Option<PathBuf> {
+    let relative = layout.audit_log.strip_prefix(&layout.root).ok()?;
+    if relative == Path::new(FAKE_TOOL_AUDIT_RELATIVE_PATH) {
+        Some(layout.root.join(STUB_BIN_DIR_NAME))
+    } else {
+        None
+    }
+}
+
 /// The exact trial environment: allowlisted keys derived from `layout` only.
 ///
 /// This function never reads the parent process environment. `PATH` holds
-/// only the trial fake-bin directory so hermetic trials cannot reach host
-/// tools; `OPENCODE_DISABLE_AUTOUPDATE=1` and `OPENCODE_DB=:memory:` encode
-/// the Milestone 0 hermetic policy without touching host state.
+/// only the trial fake-bin directory (plus the stub-bin directory for
+/// plan-based layouts, so simulated installed binaries resolve after
+/// `root install`) so hermetic trials cannot reach host tools;
+/// `OPENCODE_DISABLE_AUTOUPDATE=1` and `OPENCODE_DB=:memory:` encode the
+/// Milestone 0 hermetic policy without touching host state. Plan-based
+/// layouts additionally export `TRIAL_STUB_BIN`.
 pub fn allowed_env(layout: &TrialLayout) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
-    env.insert(
-        "PATH".to_string(),
-        layout.fake_bin_dir.to_string_lossy().into_owned(),
-    );
+    let mut path = layout.fake_bin_dir.to_string_lossy().into_owned();
+    if let Some(stub_bin_dir) = trial_stub_bin_dir(layout) {
+        path.push(':');
+        path.push_str(&stub_bin_dir.to_string_lossy());
+        env.insert(
+            "TRIAL_STUB_BIN".to_string(),
+            stub_bin_dir.to_string_lossy().into_owned(),
+        );
+    }
+    env.insert("PATH".to_string(), path);
     env.insert(
         "HOME".to_string(),
         layout.home_dir.to_string_lossy().into_owned(),

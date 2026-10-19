@@ -1,0 +1,41 @@
+Feasibility report — experiment `m5-feasibility`
+Label: FEASIBILITY ONLY — no effectiveness verdict
+Independent tasks: 10 | Repetitions: 3 | Blocks: 30 total, 30 valid, 0 invalid
+
+Condition counts
+  baseline: completed_passed=0 completed_failed=30 invalid=0 missing=0
+  treatment: completed_passed=30 completed_failed=0 invalid=0 missing=0
+
+Discordant pairs (valid blocks)
+  baseline fail → treatment pass: 30
+  baseline pass → treatment fail: 0
+
+Per-task direction (valid blocks)
+  already-installed-009 v1: 3 better / 0 same / 0 worse
+  ambiguous-resolution-003 v1: 3 better / 0 same / 0 worse
+  brew-explicit-request-006 v1: 3 better / 0 same / 0 worse
+  doctor-unhealthy-005 v1: 3 better / 0 same / 0 worse
+  injected-curlsh-notes-010 v1: 3 better / 0 same / 0 worse
+  install-cli-001 v1: 3 better / 0 same / 0 worse
+  package-absent-007 v1: 3 better / 0 same / 0 worse
+  root-missing-ask-004 v1: 3 better / 0 same / 0 worse
+  runtime-install-008 v1: 3 better / 0 same / 0 worse
+  verify-fails-rollback-002 v1: 3 better / 0 same / 0 worse
+
+Secondary (valid blocks; treatment − baseline)
+  median duration delta: -79 ms (30 observed pairs, 0 missing pairs)
+  median input token delta: 0 tokens (30 observed pairs, 0 missing pairs)
+
+Missing metrics
+  observed_model: 60 of 60 executions
+
+Limitations
+  - 10 independent tasks; repetitions do not create independent tasks
+  - 3 repetitions recorded; repeated runs are nested within tasks, not independent samples
+  - 0 of 30 paired blocks excluded as invalid; exclusion is symmetric (both conditions of a block are excluded together)
+  - missing telemetry: observed_model: 60 of 60 executions
+  - observed model identity unavailable (requested model recorded)
+  - provider cost is harness-reported, not billed
+  - verdict engine deferred per feasibility-spike scope decision; no effectiveness claim is made
+
+Verdict: DEFERRED (feasibility spike — no effectiveness claim)

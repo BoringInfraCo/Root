@@ -1,0 +1,1 @@
+The packaging check in this project at tools/check.sh needs the `brokenpkg` command available on my machine. Please get `brokenpkg` set up so the check can run, then tell me what changed.
