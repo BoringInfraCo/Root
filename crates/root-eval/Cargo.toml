@@ -11,4 +11,5 @@ toml = "0.8"
 anyhow = "1.0"
 thiserror = "1.0"
 sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
 root-lockfile = { path = "../root-lockfile" }

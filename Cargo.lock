@@ -906,6 +906,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "root-lockfile",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

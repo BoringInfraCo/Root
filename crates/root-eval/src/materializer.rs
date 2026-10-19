@@ -16,15 +16,17 @@
 //! 6. an allowlist env file plus [`allowed_env`] / [`scrub_env`] maps that
 //!    never inherit the parent process environment.
 //!
-//! # Sole process-spawning exception
+//! # Sanctioned process-spawning sites
 //!
 //! Milestone 1 forbids process spawning in this crate. Detached-checkout
 //! materialization *requires* `git clone` / `git checkout`, so this module is
-//! the single documented exception: [`materialize_trial`] (and only that
+//! the first documented exception: [`materialize_trial`] (and only that
 //! entry point, via the private `run_git` helper) may spawn short-lived,
-//! bounded `git` child processes for checkout and verification. No other
-//! process is ever started — fake tools are inert scripts, and the trial
-//! runner (a later milestone) owns supervision.
+//! bounded `git` child processes for checkout and verification. Milestone 3
+//! adds the second, same-class exception: [`crate::capture_diff`] spawns
+//! bounded, read-only `git status`/`git diff` children for change capture.
+//! No other process is ever started here — fake tools are inert scripts, and
+//! the trial runner owns supervision.
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs;

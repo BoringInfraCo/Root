@@ -30,10 +30,17 @@
 //!
 //! The child inherits **nothing** unless listed: the environment is cleared
 //! (`env_clear`) and rebuilt from the explicit map, `stdin` is null, and `cwd`
-//! is set by the caller (expected to be a fresh trial checkout). `stderr` is
-//! drained on a helper thread and discarded — only stdout bytes feed
-//! [`SupervisedResult::raw_bytes_sha256`] and event parsing — so callers must
-//! not rely on this layer to retain stderr evidence.
+//! is set by the caller (expected to be a fresh trial checkout).
+//!
+//! # Raw stream capture (Milestone 3, Phase A)
+//!
+//! [`SupervisedResult::raw_stdout`] carries the exact stdout bytes consumed
+//! (bounded by [`SupervisorConfig::output_cap_bytes`]) and
+//! [`SupervisedResult::raw_stderr`] carries a bounded best-effort stderr
+//! capture: the helper thread keeps draining after the cap so a chatty child
+//! can never block on a full pipe, but only the first cap bytes are retained.
+//! Both are raw evidence for the artifact store; [`SupervisedResult::events`]
+//! is still the only interpreted view of stdout.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
@@ -73,6 +80,11 @@ const NATURAL_DRAIN_BUDGET: Duration = Duration::from_secs(5);
 /// them promptly, so this budget only binds under extreme scheduling delay.
 const POST_KILL_DRAIN_BUDGET: Duration = Duration::from_secs(2);
 
+/// Upper bound for the stderr helper thread to observe EOF after the child was
+/// reaped. Normally immediate; the budget only binds when a surviving
+/// grandchild still holds the stderr pipe open.
+const STDERR_DRAIN_BUDGET: Duration = Duration::from_secs(1);
+
 /// Move every queued line into `raw_bytes`/`lines`, enforcing the output cap.
 ///
 /// Returns true when the cap fired; on cap the partial remainder (possibly
@@ -111,7 +123,8 @@ impl SupervisorConfig {
 /// from stream content on natural (unkilled) exit: an `error` event or a
 /// nonzero exit is a provider error, an ask-mode rejection tool event with a
 /// zero exit is a denial, anything else is `Completed`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum TerminationKind {
     /// Natural exit with no error event and (when applicable) a zero status.
     Completed,
@@ -138,6 +151,36 @@ impl TerminationKind {
             self,
             Self::TimeoutKilled | Self::CancelledKilled | Self::OutputCapExceeded
         )
+    }
+
+    /// Stable snake-case token used by evidence manifests and eval storage.
+    ///
+    /// Identical to the `serde` representation (`snake_case`), asserted by
+    /// test, so persisted records and in-memory projections never drift.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::TimeoutKilled => "timeout_killed",
+            Self::CancelledKilled => "cancelled_killed",
+            Self::ProviderError => "provider_error",
+            Self::Denied => "denied",
+            Self::SpawnFailed => "spawn_failed",
+            Self::OutputCapExceeded => "output_cap_exceeded",
+        }
+    }
+
+    /// Parse the stable token produced by [`TerminationKind::as_str`].
+    pub fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "completed" => Some(Self::Completed),
+            "timeout_killed" => Some(Self::TimeoutKilled),
+            "cancelled_killed" => Some(Self::CancelledKilled),
+            "provider_error" => Some(Self::ProviderError),
+            "denied" => Some(Self::Denied),
+            "spawn_failed" => Some(Self::SpawnFailed),
+            "output_cap_exceeded" => Some(Self::OutputCapExceeded),
+            _ => None,
+        }
     }
 }
 
@@ -186,6 +229,18 @@ pub struct SupervisedResult {
     pub dropped_lines: Vec<DroppedLine>,
     /// `sha256:<hex>` over the exact stdout bytes consumed.
     pub raw_bytes_sha256: String,
+    /// Exact stdout bytes consumed (bounded by the output cap).
+    ///
+    /// This is the raw execution artifact: callers that persist evidence store
+    /// these bytes content-addressed and keep [`Self::raw_bytes_sha256`] as the
+    /// reference. [`Self::events`] remains the only interpreted view.
+    pub raw_stdout: Vec<u8>,
+    /// Bounded best-effort stderr capture (at most the output cap).
+    ///
+    /// The helper thread keeps draining after the cap so a chatty child cannot
+    /// block on a full pipe, but only the first cap bytes are retained; a
+    /// stderr writer that outlives the child may leave bytes unread.
+    pub raw_stderr: Vec<u8>,
     /// True when the output cap fired (always true with dropped torn tails
     /// after a kill; otherwise false unless the cap fired).
     pub stdout_truncated: bool,
@@ -206,6 +261,20 @@ pub fn run_supervised(
     config: &SupervisorConfig,
 ) -> SupervisedResult {
     let started = Instant::now();
+    // Bounded stderr capture shared with the drain thread. `done` starts true
+    // so the snapshot helper is safe on the pre-spawn failure paths.
+    let stderr_buffer: Arc<std::sync::Mutex<Vec<u8>>> = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let stderr_done = Arc::new(AtomicBool::new(true));
+    let stderr_now = || {
+        let until = Instant::now() + STDERR_DRAIN_BUDGET;
+        while !stderr_done.load(Ordering::SeqCst) && Instant::now() < until {
+            std::thread::sleep(POLL_INTERVAL);
+        }
+        stderr_buffer
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    };
     let finish = |termination: TerminationKind,
                   exit_code: Option<i32>,
                   killed: bool,
@@ -223,6 +292,8 @@ pub fn run_supervised(
             events,
             dropped_lines,
             raw_bytes_sha256: sha256_digest(&raw_bytes),
+            raw_stdout: raw_bytes,
+            raw_stderr: stderr_now(),
             stdout_truncated,
             residue,
         }
@@ -293,17 +364,34 @@ pub fn run_supervised(
     let pgid: u32 = 0;
 
     // Drain stderr on a helper thread so a chatty child can never block on a
-    // full pipe. Bytes are discarded; stdout is the evidence stream.
+    // full pipe, retaining at most `output_cap_bytes` bytes. The thread keeps
+    // reading after the cap (discarding the overflow) and signals completion
+    // through `stderr_done`.
     if let Some(stderr) = child.stderr.take() {
+        let buffer = Arc::clone(&stderr_buffer);
+        let done = Arc::clone(&stderr_done);
+        let cap = config.output_cap_bytes as usize;
+        done.store(false, Ordering::SeqCst);
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stderr);
             let mut chunk = [0u8; 8192];
+            let mut captured = 0usize;
             loop {
                 match reader.read(&mut chunk) {
                     Ok(0) | Err(_) => break,
-                    Ok(_) => {}
+                    Ok(n) => {
+                        if captured < cap {
+                            let take = (cap - captured).min(n);
+                            buffer
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                                .extend_from_slice(&chunk[..take]);
+                            captured += take;
+                        }
+                    }
                 }
             }
+            done.store(true, Ordering::SeqCst);
         });
     }
 
@@ -975,5 +1063,71 @@ echo "VAL=$ROOT_EVAL_TRIAL_VAR"
             assert!(!dropped.reason.contains("parent-secret"));
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn raw_stdout_and_stderr_bytes_are_captured() {
+        let dir = fake_harness_dir(
+            "raw",
+            r#"#!/bin/sh
+echo 'not-ndjson'
+echo 'oops' >&2
+"#,
+        );
+        let config = SupervisorConfig::new(5_000, 1024 * 1024);
+        let result = run_sh(&dir, &config);
+        assert_eq!(result.termination, TerminationKind::Completed);
+        assert_eq!(result.raw_stdout, b"not-ndjson\n");
+        assert_eq!(result.raw_stderr, b"oops\n");
+        assert_eq!(result.raw_bytes_sha256, sha256_digest(&result.raw_stdout));
+        // Plain-text stdout lines remain reported, never silently skipped.
+        assert_eq!(result.dropped_lines.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stderr_capture_is_bounded_by_the_output_cap() {
+        let dir = fake_harness_dir(
+            "stderr-cap",
+            r#"#!/bin/sh
+i=0
+while [ "$i" -lt 5000 ]; do
+  echo 'stderr-padding-padding-padding' >&2
+  i=$((i+1))
+done
+"#,
+        );
+        let config = SupervisorConfig {
+            wall_timeout_ms: 10_000,
+            output_cap_bytes: 256,
+            kill_grace_ms: 100,
+            cancel: None,
+        };
+        let result = run_sh(&dir, &config);
+        assert_eq!(result.termination, TerminationKind::Completed);
+        assert_eq!(result.raw_stderr.len(), 256, "stderr must be capped");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn termination_tokens_match_the_serde_representation() {
+        for kind in [
+            TerminationKind::Completed,
+            TerminationKind::TimeoutKilled,
+            TerminationKind::CancelledKilled,
+            TerminationKind::ProviderError,
+            TerminationKind::Denied,
+            TerminationKind::SpawnFailed,
+            TerminationKind::OutputCapExceeded,
+        ] {
+            let serialized = serde_json::to_value(kind).expect("serializable");
+            assert_eq!(
+                serialized,
+                serde_json::Value::String(kind.as_str().to_string()),
+                "as_str and serde must agree for {kind:?}"
+            );
+            assert_eq!(TerminationKind::from_token(kind.as_str()), Some(kind));
+        }
+        assert_eq!(TerminationKind::from_token("nope"), None);
     }
 }

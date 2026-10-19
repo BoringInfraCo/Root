@@ -27,9 +27,34 @@
 //! `materializer`, `isolation`): fresh per-trial directories, a detached
 //! repository checkout, project skill files for the treatment condition,
 //! hermetic harness config, offline fake tools, and an allowlisted
-//! environment. `materialize_trial` is the crate's single documented
-//! process-spawning exception: it runs bounded `git` child processes for
-//! checkout and verification, and nothing else.
+//! environment. `materialize_trial` and [`capture_diff`] are the crate's
+//! documented process-spawning exceptions: bounded `git` child processes only
+//! (checkout and verification for the former, read-only change capture for the
+//! latter), and nothing else.
+//!
+//! Milestone 3, Phase A adds the evidence and verification layer:
+//!
+//! - `evidence` — the content-addressed artifact store (`<evals_root>/
+//!   artifacts/sha256/<first2>/<hex>`), deterministic pre-persistence
+//!   redaction, and the sealed [`EvidenceManifest`] whose seal covers every
+//!   manifest field and whose artifacts are re-verifiable against the store;
+//! - `diff` — bounded `git status`/`git diff` change capture
+//!   ([`RepoDiff`]) for the scored trial checkout;
+//! - `verifier` — [`run_verifier`], which executes predeclared verifier
+//!   commands through the supervisor between two [`tree_fingerprint`]s so a
+//!   verifier that mutates the scored tree can never pass unnoticed;
+//! - `taxonomy` — [`classify_trial`], the audit's failure/missing-data policy
+//!   as a machine-matchable [`TrialOutcomeClass`].
+//!
+//! Milestone 3, Phase B adds the local evaluation store (`store`): the
+//! separate versioned SQLite database at `<evals_root>/<experiment_id>/
+//! state.db` whose schema makes every execution/trial/config/task/revision/
+//! verifier relationship queryable, with a typed [`StoreError`] taxonomy, a
+//! read-only mode, and an integrity check that re-verifies every stored
+//! evidence manifest against the content-addressed artifact store.
+//!
+//! The store takes an explicit evals root; nothing in this crate touches the
+//! Root directory.
 //!
 //! Resolving a `(task_id, version)` against a benchmark family and sealing
 //! drafts remain family/plan concerns; this crate provides the record-level
@@ -108,10 +133,12 @@ mod canonical;
 mod canonical_json;
 mod condition;
 mod context;
+mod diff;
 mod digest;
 mod error;
 mod eval_error;
 mod events;
+mod evidence;
 mod isolation;
 mod materializer;
 mod parse;
@@ -119,9 +146,12 @@ mod plan;
 mod raw;
 mod runner;
 mod schema;
+mod store;
 mod supervisor;
+mod taxonomy;
 mod trial;
 mod validate;
+mod verifier;
 
 pub use condition::{
     apply_overlay, verify_declared_delta, ConditionOverlay, DeltaError, DeltaErrorKind,
@@ -134,6 +164,10 @@ pub use context::{
     ResolvedSkill, SkillSource, BUILTIN_SKILL_NAMES, CONTEXT_HASH_DOMAIN, MAX_CONTEXT_FILE_BYTES,
     MAX_SCAN_DEPTH,
 };
+pub use diff::{
+    capture_diff, DiffCaps, DiffError, DiffErrorKind, RepoDiff, DEFAULT_DIFF_TIMEOUT_MS,
+    DIFF_HASH_DOMAIN, MAX_DIFF_BYTES,
+};
 pub use digest::{
     is_canonical_sha256_digest, is_pending_sentinel, sha256_digest, DIGEST_PREFIX, PENDING_SENTINEL,
 };
@@ -143,6 +177,15 @@ pub use events::{
     parse_ndjson_line, EventParseError, EventParseErrorKind, NormalizedEvent, StepTokens,
     StreamError, ToolCall, ASK_REJECT_MESSAGE, MODEL_OBSERVED_LIMITATION, SOURCE_ERROR,
     SOURCE_STEP_FINISH, SOURCE_STEP_START, SOURCE_TEXT, SOURCE_TOOL_USE,
+};
+pub use evidence::{
+    normalized_events_digest, redact_bytes, seal_manifest, seal_projection, verify_artifacts,
+    verify_seal, ArtifactRef, ArtifactStore, EvidenceError, EvidenceErrorKind, EvidenceManifest,
+    ExecutionDigest, RedactionEvent, SealError, SealErrorKind, SealInputs, VerifierDigest,
+    ARTIFACT_SHARD_DIR, ARTIFACT_STORE_DIR, EVIDENCE_MAX_SUPPORTED_VERSION,
+    EVIDENCE_SCHEMA_VERSION, JSON_SECRET_KEYS, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_LOGICAL_NAME_LEN,
+    NORMALIZED_EVENTS_HASH_DOMAIN, REDACTION_JSON_SECRET_KEY, REDACTION_MARKER_PREFIX,
+    REDACTION_SECRET_KEY_ASSIGNMENT, SEAL_HASH_DOMAIN,
 };
 pub use isolation::{
     check_no_leak, cleanup_trial, residue_scan, verify_isolation, IsolationError,
@@ -159,14 +202,27 @@ pub use plan::{
 };
 pub use runner::{run_trial, TrialRunRecord, TrialRunRequest, UsageTotals};
 pub use schema::*;
+pub use store::{
+    ArtifactRow, EvalStore, EvidenceRecord, ExecutionRow, ExperimentRow, ExperimentSummary,
+    StoreError, StoreErrorKind, StoreIntegrityCheck, StoreIntegrityFailure, StoreIntegrityReport,
+    TrialFull, TrialRow, TrialState, VerificationRow, EVAL_STORE_FILE_NAME,
+    EVAL_STORE_MAX_SUPPORTED_VERSION, EVAL_STORE_SCHEMA_VERSION, MAX_EVAL_STORE_ID_LEN,
+};
 pub use supervisor::{
     cancel_flag, run_supervised, CancelFlag, DroppedLine, ResidueReport, SupervisedResult,
     SupervisorConfig, TerminationKind, DEFAULT_KILL_GRACE_MS,
 };
+pub use taxonomy::{classify_trial, TrialOutcomeClass};
 pub use trial::{
     validate_trial_id, TrialError, TrialErrorKind, TrialLayout, TrialSpec, MAX_TRIAL_ID_LEN,
 };
 pub use validate::{is_contained_relative_path, is_relative_glob, is_task_identifier};
+pub use verifier::{
+    run_verifier, tree_fingerprint, VerifierError, VerifierErrorKind, VerifierOutcome,
+    VerifierSpec, VerifierStep, VerifierVerdict, DEFAULT_VERIFIER_OUTPUT_CAP_BYTES,
+    DEFAULT_VERIFIER_TIMEOUT_MS, MAX_FINGERPRINT_DEPTH, MAX_FINGERPRINT_FILE_BYTES,
+    TREE_FINGERPRINT_DOMAIN,
+};
 
 /// Task-format schema version emitted and accepted by this crate (§2.2).
 pub const TASK_SPEC_SCHEMA_VERSION: u32 = 1;
