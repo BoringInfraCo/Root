@@ -1,0 +1,13 @@
+== baseline (no flags) ==
+base: s_home_agents,s_home_claude,s_home_opencode,s_project,s_walkup_agents,s_walkup_claude,s_xdg
+== OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1 ==
+flag-claude-skills: s_home_agents,s_home_opencode,s_project,s_walkup_agents,s_xdg
+== OPENCODE_DISABLE_EXTERNAL_SKILLS=1 (bonus) ==
+flag-external-skills: s_home_opencode,s_project,s_xdg
+== OPENCODE_DISABLE_PROJECT_CONFIG=1 ==
+flag-project-config: s_home_agents,s_home_claude,s_home_opencode,s_walkup_agents,s_walkup_claude,s_xdg
+== OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1 ==
+flag-claude-prompt: s_home_agents,s_home_claude,s_home_opencode,s_project,s_walkup_agents,s_walkup_claude,s_xdg
+== all three flags together ==
+flag-all: s_home_agents,s_home_opencode,s_walkup_agents,s_xdg
+P2-SKILLS DONE

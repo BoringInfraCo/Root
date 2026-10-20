@@ -1,0 +1,14 @@
+{
+  "per_name": {
+    "node": {
+      "bytes_in": 6073,
+      "bytes_out": 4958
+    },
+    "opencode": {
+      "bytes_in": 2340987,
+      "bytes_out": 33696133
+    }
+  },
+  "total_bytes_in": 2347060,
+  "total_bytes_out": 33701091
+}

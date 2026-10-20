@@ -1,0 +1,31 @@
+### I1 project AGENTS.md, no flags
+I1: tokens=- bare=['PRJ7A2F'] tools=[] errs=[]
+   answer: 'PRJ7A2F'
+### I2 project AGENTS.md + OPENCODE_DISABLE_PROJECT_CONFIG
+I2: tokens=- bare=- tools=[] errs=[]
+   answer: 'NONE'
+### I3 global ~/.claude/CLAUDE.md fallback
+I3: tokens=- bare=['CLB9C4D'] tools=[] errs=[]
+   answer: 'CLB9C4D'
+### I4 global CLAUDE.md fallback + OPENCODE_DISABLE_CLAUDE_CODE_PROMPT
+I4: tokens=- bare=- tools=[] errs=[]
+   answer: 'NONE'
+### I5 XDG AGENTS.md + ~/.claude/CLAUDE.md
+I5: tokens=- bare=['XDG3E8B'] tools=[] errs=[]
+   answer: 'XDG3E8B'
+### I6 XDG AGENTS.md + ~/.claude/CLAUDE.md + DISABLE_CLAUDE_CODE_PROMPT
+I6: tokens=- bare=['XDG3E8B'] tools=[] errs=[]
+   answer: 'XDG3E8B'
+### I7 project AGENTS.md + global CLAUDE.md fallback
+I7: tokens=- bare=['CLB9C4D', 'PRJ7A2F'] tools=[] errs=[]
+   answer: 'CLB9C4D, PRJ7A2F'
+### I8 project CLAUDE.md only
+I8: tokens=- bare=- tools=[] errs=[]
+   answer: 'PCLA6H1'
+### I9 project AGENTS.md + project CLAUDE.md
+I9: tokens=- bare=['PRJ7A2F'] tools=[] errs=[]
+   answer: 'PRJ7A2F'
+### I10 project AGENTS.md, instance dir = cwd/sub/deep
+I10: tokens=- bare=['PRJ7A2F'] tools=[] errs=[]
+   answer: 'PRJ7A2F'
+P2C DONE

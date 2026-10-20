@@ -1,0 +1,1 @@
+[93m[1m! [0mpermission requested: external_directory (/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/B3_base_retry/bin/*); auto-rejecting

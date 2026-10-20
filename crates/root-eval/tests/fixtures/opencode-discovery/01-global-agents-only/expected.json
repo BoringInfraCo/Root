@@ -26,7 +26,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:18063accd87f25bc5b3202bd198cd29b233f1a1b90b9c26c8b732238ed74addf"
+        "reproducible": true,
+        "manifest_sha256": "sha256:8eb785670c10dd3a501035503375668cce94a907b39dcf3f5a349b905494d992"
       }
     }
   ]

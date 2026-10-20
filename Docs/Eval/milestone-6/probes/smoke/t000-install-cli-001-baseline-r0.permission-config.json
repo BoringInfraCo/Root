@@ -1,0 +1,1 @@
+{"domain":"permission-config.v1","effective_permission":{"permission":{"*":{"*":"allow"}}},"seeding":"allow_all"}

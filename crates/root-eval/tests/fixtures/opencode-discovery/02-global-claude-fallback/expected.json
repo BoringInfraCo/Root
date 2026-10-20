@@ -26,7 +26,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:450b7ea8b711acb658edf91f602e16c71110519c2d46bd38b57c1c9ff854325f"
+        "reproducible": true,
+        "manifest_sha256": "sha256:3ed20f072415d41833b9e7e10408ebb2c2b0f499aa247cd83e382d3816276b82"
       }
     },
     {
@@ -45,7 +46,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:51b47dec488bfd108f6ab7afd85e1a9dedca7165515ad341465244604ab899f6"
+        "reproducible": true,
+        "manifest_sha256": "sha256:f726837c4337778a1b64067b6006bbe78634764aaffc517830c899b2fd65a94d"
       }
     }
   ]

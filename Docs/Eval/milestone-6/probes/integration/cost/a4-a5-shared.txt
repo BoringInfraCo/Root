@@ -1,0 +1,45 @@
+############ A4 SHARED pre-warmed npm cache reused across TWO sequential trials
+--- A4 trial 1
+    wall_ms=6259
+    shared_cache_before=0
+    shared_cache_after=0
+    shared_cache_delta=0
+    config_node_modules_bytes=54901253
+    models_json_bytes=5825527
+    trial_total_bytes=66495970
+    ndjson_types="type":"step_finish" "type":"step_start" "type":"text" 
+    text=ok|
+
+--- A4 trial 2
+    wall_ms=4398
+    shared_cache_before=0
+    shared_cache_after=0
+    shared_cache_delta=0
+    config_node_modules_bytes=54901253
+    models_json_bytes=5825527
+    trial_total_bytes=66458889
+    ndjson_types="type":"step_finish" "type":"step_start" "type":"text" 
+    text=ok|
+
+############ A5 models.json: size + SHARED READ-ONLY reuse (one shared file, many trials)
+  shared models.json bytes=5825527  mode=-r--r--r--
+--- A5 trial 1 (hardlinked shared read-only models.json)
+    wall_ms=4507
+    models_json_bytes_before=5825527 after=5825527
+    models_json_mode=-r--r--r--
+    shared_file_mode=-r--r--r--
+    inode_shared=212976024 inode_shared_file=212976024
+    text=ok|
+    stderr=
+
+--- A5 trial 2 (hardlinked shared read-only models.json)
+    wall_ms=4775
+    models_json_bytes_before=5825527 after=5825527
+    models_json_mode=-r--r--r--
+    shared_file_mode=-r--r--r--
+    inode_shared=212976024 inode_shared_file=212976024
+    text=ok|
+    stderr=
+
+  shared models.json mode after both trials: -r--r--r--
+A4/A5 DONE

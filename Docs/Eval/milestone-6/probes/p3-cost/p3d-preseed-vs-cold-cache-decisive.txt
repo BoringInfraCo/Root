@@ -1,0 +1,10 @@
+seeded node_modules bytes = 54901231
+cacheA (seeding only) bytes = 98557643
+cacheB (cold, opencode-only) bytes before = 0
+wall_s=4
+cacheB delta (bytes opencode itself fetched) = 39413132
+cacheB bytes after = 39413132
+config node_modules after = 54901231
+--- text output ---
+'</think>ok'
+P3D DONE

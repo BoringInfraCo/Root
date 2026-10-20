@@ -1,0 +1,37 @@
+############ A6-1 COLD shared cache, no skill (only global target), global NOT seeded
+--- variant=cold-noskill-globalunseeded (seed_global=no seed_project_nm=no skill=no)
+    wall_ms=4749
+    shared_npmcache_delta=39462284
+    project_nm_bytes=0
+    global_nm_bytes=0
+    cwd_bytes=0
+    trial_total_bytes=15629198
+
+############ A6-2 COLD shared cache, WITH skill (global + project targets), neither seeded
+--- variant=cold-skill-bothunseeded (seed_global=no seed_project_nm=no skill=yes)
+    wall_ms=4049
+    shared_npmcache_delta=245760
+    project_nm_bytes=0
+    global_nm_bytes=0
+    cwd_bytes=3305
+    trial_total_bytes=15533677
+
+############ A6-3 WARM shared cache (now populated), WITH skill, global seeded, project NOT seeded
+--- variant=warm-skill-projunseeded (seed_global=yes seed_project_nm=no skill=yes)
+    wall_ms=6509
+    shared_npmcache_delta=48272959
+    project_nm_bytes=0
+    global_nm_bytes=54901253
+    cwd_bytes=3305
+    trial_total_bytes=70548871
+
+############ A6-4 WARM shared cache, WITH skill, global seeded, project node_modules ALSO seeded
+--- variant=warm-skill-projseeded (seed_global=yes seed_project_nm=yes skill=yes)
+    wall_ms=5109
+    shared_npmcache_delta=12685
+    project_nm_bytes=54895981
+    global_nm_bytes=54901253
+    cwd_bytes=54906330
+    trial_total_bytes=125414652
+
+A6 DONE

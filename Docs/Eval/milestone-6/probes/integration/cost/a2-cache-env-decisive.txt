@@ -1,0 +1,28 @@
+--- variant=lowercase
+    dedicated cache dir = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a2c-lowercase
+    wall_ms=4617  plugin_install_landed=NO
+    dedicated_cache_bytes=41750245
+    home_dot_npm_bytes=0
+    config_node_modules_bytes=0
+    stderr: 
+
+--- variant=uppercase
+    dedicated cache dir = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a2c-uppercase
+    wall_ms=9914  plugin_install_landed=YES
+    dedicated_cache_bytes=98525434
+    home_dot_npm_bytes=0
+    config_node_modules_bytes=54901253
+    stderr: 
+
+--- variant=none
+    dedicated cache dir = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a2c-none
+    wall_ms=6906  plugin_install_landed=YES
+    dedicated_cache_bytes=0
+    home_dot_npm_bytes=93095685
+    config_node_modules_bytes=22602496
+    stderr: 
+
+############ A2d host-npm cross-check (same two env vars, host npm)
+  host-npm variant=lowercase -> npm config get cache = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/out/a2d-lowercase/cache
+  host-npm variant=uppercase -> npm config get cache = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/out/a2d-uppercase/cache
+A2 DECISIVE DONE

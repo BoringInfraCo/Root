@@ -1,0 +1,6 @@
+0	step_start
+1	tool_use	tool=skill	status=completed	dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p1b/cwd/.opencode/skill/dup	name=dup	MARKER: PROJECT-SKILL
+2	step_finish	reason=tool-calls	tokens={"total": 7998, "input": 6169, "output": 37, "reasoning": 0, "cache": {"write": 0, "read": 1792}}	cost=0
+3	step_start
+4	text	The first heading is `# Skill: dup`.
+5	step_finish	reason=stop	tokens={"total": 8279, "input": 198, "output": 11, "reasoning": 134, "cache": {"write": 0, "read": 7936}}	cost=0

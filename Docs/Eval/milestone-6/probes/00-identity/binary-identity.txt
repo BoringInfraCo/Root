@@ -1,0 +1,8 @@
+binary: opencode 1.18.27 (darwin/arm64), extracted from opencode-darwin-arm64@1.18.27
+sha256: f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+expected: f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+bytes: 144074210
+m0 source tree: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m0/
+  gh-extract/opencode          f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+  install/.../bin/opencode     f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+disposable probe root: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe

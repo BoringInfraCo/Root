@@ -1,0 +1,13 @@
+label=B1_treat
+mode=with-skill
+prompt=install ripgrep using Root
+rc=0
+wall_ms=27050
+seeded_skill_sha256=51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46
+repo_skill_sha256=51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46
+audit_log_begin
+root doctor --json
+root plan install ripgrep --json
+root install ripgrep --json
+root verify ripgrep --json
+audit_log_end

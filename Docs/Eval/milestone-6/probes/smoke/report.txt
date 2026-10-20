@@ -1,0 +1,32 @@
+Feasibility report — experiment `m5-feasibility`
+Label: INSUFFICIENT EVIDENCE (feasibility)
+Independent tasks: 1 | Repetitions: 1 | Blocks: 1 total, 1 valid, 0 invalid
+
+Condition counts
+  baseline: completed_passed=0 completed_failed=1 invalid=0 missing=0
+  treatment: completed_passed=1 completed_failed=0 invalid=0 missing=0
+
+Discordant pairs (valid blocks)
+  baseline fail → treatment pass: 1
+  baseline pass → treatment fail: 0
+
+Per-task direction (valid blocks)
+  install-cli-001 v1: 1 better / 0 same / 0 worse
+
+Secondary (valid blocks; treatment − baseline)
+  median duration delta: 470 ms (1 observed pairs, 0 missing pairs)
+  median input token delta: 10044 tokens (1 observed pairs, 0 missing pairs)
+
+Missing metrics
+  observed_model: 2 of 2 executions
+
+Limitations
+  - 1 independent task; repetitions do not create independent tasks
+  - 1 repetition recorded; repeated runs are nested within tasks, not independent samples
+  - 0 of 1 paired blocks excluded as invalid; exclusion is symmetric (both conditions of a block are excluded together)
+  - missing telemetry: observed_model: 2 of 2 executions
+  - observed model identity unavailable (requested model recorded)
+  - provider cost is harness-reported, not billed
+  - verdict engine deferred per feasibility-spike scope decision; no effectiveness claim is made
+
+Verdict: DEFERRED (feasibility spike — no effectiveness claim)

@@ -15,6 +15,11 @@
 //!   treat it without ever counting it as agent failure.
 //! - **Infrastructure failure before the agent starts** is invalid:
 //!   `SpawnFailed` → [`TrialOutcomeClass::SpawnFailed`].
+//! - **Host contamination** is invalid: a trial whose tree carries host state
+//!   (a symlink out of the trial root, or a host-sized file in the trial's
+//!   stub directories — see [`crate::leakage`]) measures the host, not the
+//!   agent, so it is [`TrialOutcomeClass::HostContamination`]: never a pass
+//!   and never a fail.
 //! - **Verifier mutation or unreliability** invalidates the trial:
 //!   [`VerifierOutcome::mutation_detected`] →
 //!   [`TrialOutcomeClass::VerifierMutation`]; a verifier timeout →
@@ -82,6 +87,10 @@ pub enum TrialOutcomeClass {
     /// (fingerprint failure, empty spec, verifier spawn failure, cap kill):
     /// invalid trial.
     InvalidInfrastructure,
+    /// The trial tree carries host state (a symlink out of the trial root, or
+    /// a host-sized file in the trial's stub directories): the measurement is
+    /// compromised, so the trial is invalid — never a pass and never a fail.
+    HostContamination,
 }
 
 impl TrialOutcomeClass {
@@ -99,6 +108,7 @@ impl TrialOutcomeClass {
             Self::VerifierFailed => "verifier_failed",
             Self::VerifierMutation => "verifier_mutation",
             Self::InvalidInfrastructure => "invalid_infrastructure",
+            Self::HostContamination => "host_contamination",
         }
     }
 
@@ -116,6 +126,7 @@ impl TrialOutcomeClass {
             "verifier_failed" => Some(Self::VerifierFailed),
             "verifier_mutation" => Some(Self::VerifierMutation),
             "invalid_infrastructure" => Some(Self::InvalidInfrastructure),
+            "host_contamination" => Some(Self::HostContamination),
             _ => None,
         }
     }
@@ -146,6 +157,7 @@ impl TrialOutcomeClass {
                 | Self::VerifierFailed
                 | Self::VerifierMutation
                 | Self::InvalidInfrastructure
+                | Self::HostContamination
         )
     }
 
@@ -348,6 +360,7 @@ mod tests {
             TrialOutcomeClass::VerifierFailed,
             TrialOutcomeClass::VerifierMutation,
             TrialOutcomeClass::InvalidInfrastructure,
+            TrialOutcomeClass::HostContamination,
         ];
         for class in all {
             let buckets = [
@@ -379,6 +392,7 @@ mod tests {
             TrialOutcomeClass::VerifierFailed,
             TrialOutcomeClass::VerifierMutation,
             TrialOutcomeClass::InvalidInfrastructure,
+            TrialOutcomeClass::HostContamination,
         ] {
             let serialized = serde_json::to_value(class).expect("serializable");
             assert_eq!(

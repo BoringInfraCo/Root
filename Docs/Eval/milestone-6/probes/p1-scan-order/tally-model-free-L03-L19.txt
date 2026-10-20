@@ -1,0 +1,78 @@
+### L03 near .opencode vs far .opencode (git root)  [instance=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/L03/worktree/app]
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+### L09 near .agents/skills vs far .agents/skills
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-NEAR /worktree/app/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-FAR /worktree/.agents/skills/dup/SKILL.md
+AGENTS-NEAR /worktree/app/.agents/skills/dup/SKILL.md
+### L10 near .claude/skills vs far .claude/skills
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-NEAR /worktree/app/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-FAR /worktree/.claude/skills/dup/SKILL.md
+CLAUDE-NEAR /worktree/app/.claude/skills/dup/SKILL.md
+### L16 CONTROL only far .opencode present
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+FURTHEST-DOT-OPENCODE /worktree/.opencode/skill/dup/SKILL.md
+### L17 CONTROL only .opencode ABOVE the git root
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+### L18 CONTROL only near .opencode present
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+NEAREST-DOT-OPENCODE /worktree/app/.opencode/skill/dup/SKILL.md
+### L19 CONTROL no git repo, only outer .opencode
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+OUTER-NO-GIT /worktree/.opencode/skill/dup/SKILL.md
+P1F-B DONE

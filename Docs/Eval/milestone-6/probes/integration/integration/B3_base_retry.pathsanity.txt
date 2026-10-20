@@ -1,0 +1,12 @@
+root -> /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/B3_base_retry/bin/root
+brew -> /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/B3_base_retry/bin/brew
+npm -> NOTFOUND
+node -> NOTFOUND
+git -> NOTFOUND
+curl -> NOTFOUND
+nix -> NOTFOUND
+cargo -> NOTFOUND
+rg -> NOTFOUND
+python3 -> NOTFOUND
+sed -> NOTFOUND
+awk -> NOTFOUND

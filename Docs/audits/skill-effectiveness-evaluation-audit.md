@@ -997,6 +997,12 @@ An independent review of this audit verified 17 spot-checked claims directly aga
 
 Rationale: the audit itself establishes that ten tasks can only ever validate feasibility (config separation, execution, evidence, verifier correctness, reporting) and can never support an effectiveness claim; building the full verdict engine before that is proven is spending credibility budget on machinery the first run cannot legitimately use.
 
+### Approval ledger
+
+- **2026-10-18 — golden captures:** user approved all six zero-cost golden event captures plus one M0 commit covering audit corrections, `AGENTS.md` hygiene, and the `Docs/Eval/` deliverables. Executed; provider cost $0.
+- **2026-10-19 — scope decision:** user approved the feasibility-spike scope (verdict engine deferred; paired counts and honest feasibility labels only).
+- **2026-10-19 — real-model gate:** after Milestone 5's postmortem, user approved one real OpenCode 1.18.27 run over the same ten tasks — $0 provider cost via the version's free built-in default model — with the two queued hygiene items handled first (verifier environments without the host `PATH` tail; live conformance of the M1 discovery assumptions against the real binary). Explicitly still out of scope: the verdict engine, additional tasks, a second harness, parallel execution, and a CLI surface.
+
 ### Milestone 0 execution status
 
 Executed 2026-10-18; **gate passed** — see `Docs/Eval/milestone-0/MILESTONE-0.md`. Pin confirmed (`opencode-ai@1.18.27`, npm + GitHub, 2026-09-02), exact binary hash `f35111b7…b6` verified across three channels, event schema frozen from source (`run --format json` NDJSON), and the adapter verdict is **buildable** with three designed-around gaps: no terminal event (EOF + exit settling), no observed-model field in the stream (request-side identity for MVP), and non-hermetic defaults (per-trial HOME/XDG scoping, `--pure`, seeded permissions). Material surprise: 1.18.27 auto-provisions a **free built-in default provider** (`opencode/big-pickle`) — conformance captures cost $0 at the provider; there is no default provider-missing error path, so error fixtures must force selection. Cost-bearing golden sessions are therefore zero-spend and await explicit user approval as planned.

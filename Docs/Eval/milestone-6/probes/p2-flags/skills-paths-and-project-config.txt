@@ -1,0 +1,11 @@
+== A: project opencode.json skills.paths only ==
+A-base: sp_proj
+A-disable-project-config: (none)
+== B: .opencode/opencode.json skills.paths only ==
+B-base: sp_dot
+B-disable-project-config: (none)
+== C: project opencode.json vs XDG global opencode.json ==
+C-base: sp_proj
+== D: project opencode.json vs ~/.opencode/opencode.json ==
+D-base: sp_hpath
+P2B2 DONE

@@ -1,0 +1,35 @@
+############ A1 COLD (fresh npm cache + fresh config dir)
+trial=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/a1cold2
+cache dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a1cache
+run wall_ms=3961  (run only; install continues in background)
+install landed: NO
+label=a1cold
+wall_ms_run=3961
+npm_cache_before=0
+npm_cache_after=41766629
+npm_cache_delta=41766629
+models_json_bytes=5825144
+config_bytes=113
+config_node_modules_bytes=0
+data_bytes=931162
+tmp_bytes=4822976
+trial_total_bytes=11579766
+nettop (opencode): {"per_name":{},"total_bytes_in":0,"total_bytes_out":0}
+
+############ A2 which npm cache env var does opencode honor?
+--- variant=lowercase cache_dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a2-lowercase
+  wall_ms=29  dedicated_cache_bytes=0  home_dot_npm_bytes=0  config_nm_bytes=0
+--- variant=uppercase cache_dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a2-uppercase
+  wall_ms=28  dedicated_cache_bytes=0  home_dot_npm_bytes=0  config_nm_bytes=0
+
+############ A3 pre-seeded config dir (node_modules already present)
+label=a3preseed
+wall_ms=3614
+npm_cache_before=0
+npm_cache_after=0
+npm_cache_delta=0
+config_node_modules_bytes=54901253
+models_json_bytes=5825527
+trial_total_bytes=66397103
+
+A DONE

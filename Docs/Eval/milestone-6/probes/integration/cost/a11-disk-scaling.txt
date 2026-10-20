@@ -1,0 +1,22 @@
+############ A11 disk scaling for a 60-trial batch (NO opencode runs)
+
+  -- shared assets created ONCE --
+     shared warm npm cache (a6cache)   : 86092 KB
+     shared config template (node_modules): 62776 KB
+     shared models.json                  : 5692 KB
+     shared rg binary                    : 4352 KB
+     TOTAL shared                        : 158912 KB
+
+  -- per-trial materialized bytes (APFS clone) --
+     apparent bytes (stat sum)           : 119683333
+     du -sk of ONE trial                 : 135152 KB
+
+  -- 60 such trials materialized, then du the batch --
+     batch du -sk (60 trials, APFS clones): 8108880 KB
+     batch apparent bytes (stat sum)      : 7180805460
+     => per-trial marginal disk (batch/60): 135148 KB
+
+  -- 60 trials materialized WITHOUT clones (full copies) for comparison --
+     3 trials full-copy du -sk            : 376488 KB  => per-trial 125496 KB
+     => extrapolated 60 trials full copy  : 7529760 KB
+A11 DONE

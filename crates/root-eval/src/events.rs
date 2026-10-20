@@ -26,6 +26,21 @@
 //!   [`EventParseError::InvalidShape`] for envelopes that fail structural
 //!   validation. Callers surface these (e.g. in trial `missing_telemetry`)
 //!   rather than dropping lines.
+//!
+//! # Live-harness reads (M6)
+//!
+//! The M0 contract froze the *envelope* shapes; the M6 integration probe
+//! (`Docs/Eval/milestone-6/INTEGRATION-PROBE.md` §B.2) replayed 390 real
+//! NDJSON lines through this parser and found **zero hard incompatibilities**
+//! and three *missing reads*. They are now read:
+//!
+//! - [`ToolCall::metadata`] carries `part.state.metadata` verbatim, so a
+//!   harness can assert **which** directory a skill loaded from
+//!   ([`ToolCall::metadata_dir`]) and which skill ([`ToolCall::metadata_name`]).
+//! - [`NormalizedEvent::reason`] carries `part.reason` (`"stop"` vs
+//!   `"tool-calls"`), the only finish signal the frozen contract has.
+//! - [`turn_state`] classifies how a turn ended ([`TurnState`]), so a
+//!   truncated turn is distinguishable from a completed one.
 
 use serde_json::Value;
 use thiserror::Error;
@@ -46,6 +61,18 @@ pub const SOURCE_ERROR: &str = "error";
 /// Exact `ask`-mode auto-reject denial message frozen live at `1.18.27`
 /// (golden `05c`).
 pub const ASK_REJECT_MESSAGE: &str = "The user rejected permission to use this specific tool call.";
+
+/// The only `step_finish.part.reason` value that **terminates** a turn: the
+/// model declared the turn finished.
+///
+/// Every other reason (notably [`FINISH_REASON_TOOL_CALLS`]) means the turn
+/// was still open when the stream ended.
+pub const FINISH_REASON_STOP: &str = "stop";
+
+/// `step_finish.part.reason` value meaning "the model asked for another tool
+/// call": the turn continues, so a stream that ends right after it is
+/// **truncated**, not completed.
+pub const FINISH_REASON_TOOL_CALLS: &str = "tool-calls";
 
 /// M0 identity policy: the harness NDJSON stream carries no provider/model
 /// identity anywhere, so the observed model is always unavailable. The trial
@@ -116,6 +143,50 @@ pub struct ToolCall {
     /// `state.error` message, present for error-status calls (including the
     /// [`ASK_REJECT_MESSAGE`] ask-mode denial family).
     pub error: Option<String>,
+    /// `state.metadata` verbatim.
+    ///
+    /// The harness attaches an arbitrary JSON object per tool: the `skill`
+    /// tool carries `{name, dir, truncated}` (the directory the skill was
+    /// loaded from), `bash` carries `{output, exit, truncated}`, `glob`
+    /// carries `{count, truncated}`, and an error-status call usually carries
+    /// none. The raw JSON is preserved exactly — nothing is dropped, renamed,
+    /// or re-typed — so a harness can assert on tool-specific metadata this
+    /// parser knows nothing about.
+    ///
+    /// `None` when the event carries no `state.metadata` (or carries it as
+    /// JSON `null`).
+    pub metadata: Option<Value>,
+}
+
+impl ToolCall {
+    /// A string field of [`Self::metadata`], when the metadata object carries
+    /// that key as a string.
+    ///
+    /// Returns `None` for a missing key, a non-string value, or a call with
+    /// no metadata at all.
+    pub fn metadata_str(&self, key: &str) -> Option<&str> {
+        self.metadata
+            .as_ref()
+            .and_then(Value::as_object)
+            .and_then(|object| object.get(key))
+            .and_then(Value::as_str)
+    }
+
+    /// `metadata.dir` — the directory the tool loaded from.
+    ///
+    /// For the `skill` tool this is the skill directory the harness resolved
+    /// (e.g. `.../.opencode/skill/root`), which is how a trial proves *which*
+    /// copy of a skill was loaded.
+    pub fn metadata_dir(&self) -> Option<&str> {
+        self.metadata_str("dir")
+    }
+
+    /// `metadata.name` — the name the tool loaded.
+    ///
+    /// For the `skill` tool this is the skill name (e.g. `root`).
+    pub fn metadata_name(&self) -> Option<&str> {
+        self.metadata_str("name")
+    }
 }
 
 /// Token/cost buckets carried by a `step_finish` event.
@@ -162,6 +233,14 @@ pub struct NormalizedEvent {
     pub tokens: Option<StepTokens>,
     /// Set for `step_finish` events carrying `part.cost`.
     pub cost: Option<f64>,
+    /// `part.reason` — why the step ended.
+    ///
+    /// Set for `step_finish` events: `"stop"` when the model finished the
+    /// turn, `"tool-calls"` when it asked for another tool call (the turn
+    /// continues). This is the **only** finish signal the frozen contract
+    /// has — there is no terminal event — so it is what distinguishes a
+    /// completed turn from a truncated one (see [`turn_state`]).
+    pub reason: Option<String>,
     /// Set for `error` events.
     pub error: Option<StreamError>,
     /// `sha256:<hex>` of the raw NDJSON line bytes.
@@ -180,6 +259,118 @@ impl NormalizedEvent {
         self.tool.as_ref().is_some_and(|tool| {
             tool.status == "error" && tool.error.as_deref() == Some(ASK_REJECT_MESSAGE)
         })
+    }
+}
+
+/// How a harness turn ended, as classified by [`turn_state`].
+///
+/// The frozen `1.18.27` contract has **no terminal event**: a stream settles
+/// at EOF + process exit and the only finish signal is
+/// `step_finish.part.reason`. [`turn_state`] turns that signal into exactly
+/// one of these two states.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TurnState {
+    /// The turn reached a terminal finish signal.
+    ///
+    /// See [`turn_state`] for the two ways this happens.
+    Completed {
+        /// `part.reason` of the **last** `step_finish` event in the stream
+        /// (`None` when the stream carried no `step_finish` at all).
+        reason: Option<String>,
+        /// Whether the stream carried at least one `step_finish` event.
+        ///
+        /// `false` only for a stream that completed on a trailing `text`
+        /// event without ever closing its step.
+        step_finish_seen: bool,
+    },
+    /// The stream ended while the turn was still open.
+    ///
+    /// See [`turn_state`] for the exact enumeration. The stream is
+    /// truncated — nothing is inferred about why.
+    Truncated {
+        /// `source_event_type` of the **last** event in the stream; `None`
+        /// when the stream was empty.
+        last_event_type: Option<String>,
+    },
+}
+
+impl TurnState {
+    /// True when the turn completed ([`TurnState::Completed`]).
+    pub fn is_completed(&self) -> bool {
+        matches!(self, Self::Completed { .. })
+    }
+
+    /// True when the stream ended without the turn completing
+    /// ([`TurnState::Truncated`]).
+    pub fn is_truncated(&self) -> bool {
+        matches!(self, Self::Truncated { .. })
+    }
+}
+
+/// Classify how a harness turn ended.
+///
+/// # Semantics
+///
+/// The frozen contract has **no terminal event** — a stream settles at EOF +
+/// process exit, and the only finish signal is `step_finish.part.reason`
+/// (M0 `UPSTREAM-CONTRACT.md`: "finish signal ✓ (path) —
+/// `step_finish.part.reason` + stream EOF + exit code; no dedicated terminal
+/// event"). This helper classifies a parsed stream against that signal:
+///
+/// - **[`TurnState::Completed`]** — the stream carries a *terminal* finish
+///   signal, which is one of:
+///   1. the last `step_finish` event carries `part.reason == "stop"`
+///      ([`FINISH_REASON_STOP`]) — the model declared the turn finished; or
+///   2. the stream's **last event is a `text` event** — the assistant's
+///      closing message arrived and the closing `step_finish` was never
+///      flushed.
+/// - **[`TurnState::Truncated`]** — everything else. The stream ended while
+///   the turn was still open. Concretely, the stream:
+///   1. ended right after a `step_finish` whose reason is
+///      `"tool-calls"` ([`FINISH_REASON_TOOL_CALLS`]) — the model asked for
+///      another tool call and the stream stopped there (the M6 probe's
+///      `B2_base`/`C_run2` baseline runs are real examples);
+///   2. ended mid-step (`step_start` with no closing `step_finish`, or a
+///      `tool_use` with no closing `step_finish`) — the M0 `06-timeout`
+///      capture is a real example;
+///   3. carried only a provider `error` envelope (the stream stopped at the
+///      error instead of completing the turn);
+///   4. was empty.
+///
+/// "Truncated" is a statement about the **stream**, never about the run's
+/// success or failure: a provider failure that never reached the NDJSON (the
+/// M6 probe's `ProviderHeaderTimeoutError`) truncates the stream exactly like
+/// a kill path does, and **no error event is invented for it**. Use
+/// [`NormalizedEvent::error`] to tell a provider error envelope apart from a
+/// cut-off stream.
+///
+/// A finish reason other than [`FINISH_REASON_STOP`] is **not** treated as
+/// terminal: completion is only ever claimed when positively observed, so an
+/// unknown reason degrades to [`TurnState::Truncated`] instead of a false
+/// "completed".
+pub fn turn_state(events: &[NormalizedEvent]) -> TurnState {
+    let last_step_finish = events
+        .iter()
+        .rev()
+        .find(|event| event.source_event_type == SOURCE_STEP_FINISH);
+    let reason = last_step_finish.and_then(|event| event.reason.clone());
+    let step_finish_seen = last_step_finish.is_some();
+    let terminal_finish = reason
+        .as_deref()
+        .is_some_and(|finish| finish == FINISH_REASON_STOP);
+    let ends_with_text = events
+        .last()
+        .is_some_and(|event| event.source_event_type == SOURCE_TEXT);
+
+    if terminal_finish || ends_with_text {
+        TurnState::Completed {
+            reason,
+            step_finish_seen,
+        }
+    } else {
+        TurnState::Truncated {
+            last_event_type: events.last().map(|event| event.source_event_type.clone()),
+        }
     }
 }
 
@@ -237,6 +428,7 @@ pub fn parse_ndjson_line(line: &str, sequence: u64) -> Result<NormalizedEvent, E
         text: None,
         tokens: None,
         cost: None,
+        reason: None,
         error: None,
         raw_line_hash: sha256_digest(line.as_bytes()),
     };
@@ -264,6 +456,13 @@ pub fn parse_ndjson_line(line: &str, sequence: u64) -> Result<NormalizedEvent, E
             if let Some(cost) = part.get("cost") {
                 event.cost = Some(parse_cost(cost, sequence, &event_type)?);
             }
+            // `part.reason` is the contract's only finish signal ("stop" vs
+            // "tool-calls"); a non-string value is treated as absent rather
+            // than as a parse failure.
+            event.reason = part
+                .get("reason")
+                .and_then(Value::as_str)
+                .map(str::to_string);
         }
         SOURCE_TOOL_USE => {
             let part = require_part(object, sequence, &event_type)?;
@@ -402,6 +601,13 @@ fn parse_tool(
         .get("error")
         .and_then(Value::as_str)
         .map(str::to_string);
+    // `state.metadata` is an arbitrary per-tool JSON object (the `skill`
+    // tool carries `{name, dir, truncated}`); it is preserved verbatim so a
+    // harness can assert on fields this parser knows nothing about.
+    let metadata = match state.get("metadata") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(value.clone()),
+    };
     Ok(ToolCall {
         name,
         call_id,
@@ -409,6 +615,7 @@ fn parse_tool(
         output_str,
         status,
         error,
+        metadata,
     })
 }
 
@@ -566,6 +773,135 @@ mod tests {
         assert_eq!(events[0].source_event_type, SOURCE_STEP_START);
         assert_eq!(events[0].session_id, "ses_eaf8d11fbffem3iZGxG695z03X");
         assert!(events[0].tokens.is_none());
+    }
+
+    // -----------------------------------------------------------------------
+    // M6 live-harness reads
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn state_metadata_is_read_verbatim_with_dir_and_name_accessors() {
+        let events = parse_all("03-skill/stdout.ndjson");
+        let tool = events[1].tool.as_ref().expect("skill tool_use parses");
+        // The golden capture already carries `state.metadata` — the M6 probe
+        // showed the parser simply never read it.
+        let metadata = tool.metadata.as_ref().expect("metadata is read");
+        assert_eq!(metadata["name"], "root");
+        assert_eq!(metadata["truncated"], false);
+        assert_eq!(tool.metadata_name(), Some("root"));
+        let dir = tool.metadata_dir().expect("metadata carries the directory");
+        assert!(
+            dir.ends_with("/cwd/.opencode/skill/root"),
+            "the skill directory must be observable: {dir}"
+        );
+        assert_eq!(metadata["dir"], dir);
+        // Unknown keys survive untouched.
+        assert!(metadata.get("truncated").is_some());
+    }
+
+    #[test]
+    fn a_tool_without_metadata_reads_as_none() {
+        let events = parse_all("05-denial/05c-ask-reject-shape/stdout.ndjson");
+        let tool = events[1].tool.as_ref().expect("tool_use parses");
+        assert!(tool.metadata.is_none());
+        assert!(tool.metadata_dir().is_none());
+        assert!(tool.metadata_name().is_none());
+        assert!(tool.metadata_str("anything").is_none());
+    }
+
+    #[test]
+    fn step_finish_reason_is_read() {
+        let events = parse_all("01-no-tool/stdout.ndjson");
+        let finish = events
+            .iter()
+            .find(|event| event.source_event_type == SOURCE_STEP_FINISH)
+            .expect("step_finish");
+        assert_eq!(finish.reason.as_deref(), Some(FINISH_REASON_STOP));
+        // Non-step_finish events carry no reason.
+        assert!(events[0].reason.is_none());
+        assert!(events[1].reason.is_none());
+    }
+
+    #[test]
+    fn turn_state_classifies_the_m0_golden_captures() {
+        // Completed: the last step_finish says the model stopped.
+        for name in [
+            "01-no-tool/stdout.ndjson",
+            "02-tool/stdout.ndjson",
+            "03-skill/stdout.ndjson",
+            "05-denial/stdout.ndjson",
+            "07-db-memory-optional/stdout.ndjson",
+        ] {
+            let events = parse_all(name);
+            assert_eq!(
+                turn_state(&events),
+                TurnState::Completed {
+                    reason: Some(FINISH_REASON_STOP.to_string()),
+                    step_finish_seen: true,
+                },
+                "{name} completes"
+            );
+        }
+
+        // Truncated: the stream stopped on a "tool-calls" finish reason.
+        let ask_reject = parse_all("05-denial/05c-ask-reject-shape/stdout.ndjson");
+        assert_eq!(
+            turn_state(&ask_reject),
+            TurnState::Truncated {
+                last_event_type: Some(SOURCE_STEP_FINISH.to_string()),
+            }
+        );
+
+        // Truncated: the M0 kill-path capture (a lone `step_start`).
+        let timeout = parse_all("06-timeout/stdout.ndjson");
+        assert_eq!(
+            turn_state(&timeout),
+            TurnState::Truncated {
+                last_event_type: Some(SOURCE_STEP_START.to_string()),
+            }
+        );
+
+        // Truncated: a provider error envelope is not a completed turn.
+        let provider_error = parse_all("04-provider-error/stdout.ndjson");
+        assert_eq!(
+            turn_state(&provider_error),
+            TurnState::Truncated {
+                last_event_type: Some(SOURCE_ERROR.to_string()),
+            }
+        );
+
+        // Truncated: an empty stream has no last event at all.
+        assert_eq!(
+            turn_state(&[]),
+            TurnState::Truncated {
+                last_event_type: None,
+            }
+        );
+    }
+
+    #[test]
+    fn turn_state_treats_a_trailing_text_event_as_completed() {
+        // A stream that ends on the assistant's closing message, with no
+        // closing step_finish, still completed.
+        let events = vec![
+            parse_ndjson_line(
+                r#"{"type":"step_start","timestamp":1,"sessionID":"s","part":{"type":"step-start"}}"#,
+                0,
+            )
+            .expect("step_start"),
+            parse_ndjson_line(
+                r#"{"type":"text","timestamp":2,"sessionID":"s","part":{"type":"text","text":"done"}}"#,
+                1,
+            )
+            .expect("text"),
+        ];
+        assert_eq!(
+            turn_state(&events),
+            TurnState::Completed {
+                reason: None,
+                step_finish_seen: false,
+            }
+        );
     }
 
     #[test]

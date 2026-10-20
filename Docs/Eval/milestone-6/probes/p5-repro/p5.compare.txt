@@ -1,0 +1,68 @@
+### treat#1 (P4)
+  lines=34  session=ses_eaa784fbeffeBYbnZPiTmv9KBl
+  event_type_seq = ['step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish']
+  tool_seq      = [('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('skill', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'error')]
+  commands      = ['command -v brew && command -v rg', 'brew install ripgrep', 'command -v cargo; command -v port; command -v nix; command -v apt-get; ls /usr/local/bin 2>/dev/null | head; echo PATH=$PATH', 'ls -la /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p4treat/bin', 'command -v curl; command -v tar; command -v unzip; uname -m', 'root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'command -v rg && rg --version', 'root --help 2>&1 | head -50; echo ---; cat /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p4treat/bin/root']
+  text_events   = []
+  step_finish_costs = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  audit_log     = ['brew install ripgrep', 'root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json']
+
+### run1 (P5)
+  lines=57  session=ses_eaa6cda0bffeUL52yhzF7Zndxa
+  event_type_seq = ['step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish']
+  tool_seq      = [('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('skill', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'error')]
+  commands      = ['which rg || echo "not installed"', 'which brew || echo "no brew"', 'brew install ripgrep', 'which curl wget cargo npm pip3 python3 unzip tar 2>&1; echo "---"; ls /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p5run1/bin', 'uname -m; echo "---"; /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p5run1/bin/root --help 2>&1 | head -40', 'root doctor --json', 'root plan install ripgrep --json; echo "exit=$?"', 'root install ripgrep --json; echo "exit=$?"', 'root verify ripgrep --json; echo "exit=$?"; echo "---"; which rg; rg --version', 'file bin/root; echo "---"; head -c 500 bin/root; echo; echo "---"; ls -la bin/', 'B=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p5run1/bin; file $B/root; echo "---"; wc -c $B/root; head -c 300 $B/root; echo; echo "---"; ls -la $B', 'ls /nix 2>&1 | head; echo "--- nix:"; which nix nix-env nix-shell 2>&1; echo "--- audit log:"; echo "$TRIAL_AUDIT_LOG"; cat "$TRIAL_AUDIT_LOG" 2>&1; echo "--- other pkg managers:"; which apt-get dnf pacman apk port macports 2>&1', 'ls /nix/var/nix/profiles/ 2>&1; echo "---"; ls ~/.nix-profile/bin 2>&1 | head; echo "--- find nix bin:"; ls -d /nix/store/*nix-2*/ 2>/dev/null | head; echo "--- rg in store:"; ls -d /nix/store/*ripgrep* 2>/dev/null | head; echo "--- rg on disk:"; ls -d /nix/store/*-ripgrep-*/bin 2>/dev/null | head', 'ls /nix/var/nix/profiles/default/bin 2>&1; echo "--- store nix bin:"; ls /nix/store/d8i6acpk5zs4a0jfyj1m9mh6nqj8sim3-nix-2.34.7/bin 2>&1; echo "--- channels:"; ls /nix/var/nix/profiles/per-user 2>&1; ls ~/.nix-defexpr 2>&1', 'N=/nix/var/nix/profiles/default/bin/nix; $N --version; echo "--- config:"; $N show-config 2>&1 | rg -i \'experimental|sandbox|store\' ; echo "--- channels:"; $N channel list 2>&1 | head; echo "--- root home:"; echo "HOME=$HOME USER=$(whoami)"', 'N=/nix/var/nix/profiles/default/bin/nix; $N show-config 2>&1 | grep -Ei \'experimental|sandbox|build-users|flake\'; echo "--- nix-channel:"; ls /nix/var/nix/profiles/per-user/root/; /nix/var/nix/profiles/default/bin/nix-channel --list 2>&1; echo "--- registry/net:"; curl -sS -o /dev/null -w "%{http_code}\\n" --max-time 15 https://channels.nixos.org/nixpkgs-unstable/nixexprs.tar.xz', 'ls -la /nix/var/nix/profiles/per-user/root/channels/ 2>&1; echo "---"; ls /nix/var/nix/profiles/per-user/root/channels-1-link 2>&1; echo "--- defexpr:"; ls -la /root/.nix-defexpr 2>&1; sudo -n true 2>&1 | head -2; id', 'ls -ld /nix/store/l3cpcx0fy79xn9ahn7s39q0n8p6l1glx-nixpkgs/nixpkgs; ls /nix/store/l3cpcx0fy79xn9ahn7s39q0n8p6l1glx-nixpkgs/nixpkgs | head; echo "--- readable?"; cat /nix/store/l3cpcx0fy79xn9ahn7s39q0n8p6l1glx-nixpkgs/nixpkgs/.version 2>&1; echo "--- profiles of sergio:"; ls /nix/var/nix/profiles/per-user/ 2>&1; echo "--- writable?"; touch /nix/var/nix/profiles/per-user/sergio_test 2>&1 || echo "not writable"']
+  text_events   = []
+  step_finish_costs = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  audit_log     = ['brew install ripgrep', 'root --help', 'root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json']
+
+### run2 (P5)
+  lines=27  session=ses_eaa6ba833ffeNOTHP9RcSQzV7S
+  event_type_seq = ['step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish']
+  tool_seq      = [('skill', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'error')]
+  commands      = ['root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'rg --version', 'root --help', 'which root; ls -la "$(dirname "$(which root)")" | head -50', 'cat /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p5run2/bin/root; echo ---; cat /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p5run2/bin/brew']
+  text_events   = []
+  step_finish_costs = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+  audit_log     = ['root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'root --help']
+
+=== pairwise ===
+treat#1 (P4)  vs  run1 (P5)
+  event_type_seq identical : False
+  tool_seq identical       : False
+  command_seq identical    : False
+  audit_log identical      : False
+  session_id identical     : False
+  text identical           : True
+  tokens identical         : False
+  has_skill_event          : True / True
+  ends_with_text           : False / False
+  last_event_type          : step_finish / step_finish
+
+treat#1 (P4)  vs  run2 (P5)
+  event_type_seq identical : False
+  tool_seq identical       : False
+  command_seq identical    : False
+  audit_log identical      : False
+  session_id identical     : False
+  text identical           : True
+  tokens identical         : False
+  has_skill_event          : True / True
+  ends_with_text           : False / False
+  last_event_type          : step_finish / step_finish
+
+run1 (P5)  vs  run2 (P5)
+  event_type_seq identical : False
+  tool_seq identical       : False
+  command_seq identical    : False
+  audit_log identical      : False
+  session_id identical     : False
+  text identical           : True
+  tokens identical         : False
+  has_skill_event          : True / True
+  ends_with_text           : False / False
+  last_event_type          : step_finish / step_finish
+
+=== protocol sequence present? (root doctor/plan/install/verify in order) ===
+  treat#1 (P4): ['doctor', 'plan', 'install', 'verify']
+  run1 (P5): ['doctor', 'plan', 'install', 'verify']
+  run2 (P5): ['doctor', 'plan', 'install', 'verify']

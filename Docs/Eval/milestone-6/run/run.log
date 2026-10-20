@@ -1,0 +1,1 @@
+error: contamination check failed: contamination checks failed (see /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-runs/r1/summary.json); canary_clean=true, roots_distinct=true, roots_pairwise_disjoint=true, roots_contained=true, roots_outside_store=true, residue_clean=false, host_leakage_clean=false

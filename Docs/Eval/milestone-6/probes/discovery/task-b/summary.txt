@@ -1,0 +1,18 @@
+# TASK B - skill visibility under the OPENCODE_DISABLE_* flags
+
+  NONE                                                    ['agentsskill', 'claudeskill', 'customize-opencode', 'ocskill', 'projagentsskill', 'projclaudeskill']
+  OPENCODE_DISABLE_CLAUDE_CODE_1                          ['agentsskill', 'customize-opencode', 'ocskill', 'projagentsskill']
+  OPENCODE_DISABLE_CLAUDE_CODE_PROMPT_1                   ['agentsskill', 'claudeskill', 'customize-opencode', 'ocskill', 'projagentsskill', 'projclaudeskill']
+  OPENCODE_DISABLE_CLAUDE_CODE_SKILLS_1                   ['agentsskill', 'customize-opencode', 'ocskill', 'projagentsskill']
+  OPENCODE_DISABLE_CLAUDE_CODE_SKILLS_1_OPENCODE_DISABLE_EXTERNAL_SKILLS_1 ['customize-opencode', 'ocskill']
+  OPENCODE_DISABLE_EXTERNAL_SKILLS_1                      ['customize-opencode', 'ocskill']
+
+# TASK B - skills under OPENCODE_DISABLE_CLAUDE_CODE_SKILLS (model-driven run)
+  b1-off: claudeskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/home/.claude/skills/claudeskill), agentsskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/home/.agents/skills/agentsskill), projclaudeskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/cwd/.claude/skills/projclaudeskill), projagentsskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/cwd/.agents/skills/projagentsskill), ocskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/cwd/.opencode/skill/ocskill)
+  b1-on: agentsskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/home/.agents/skills/agentsskill), projagentsskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/cwd/.agents/skills/projagentsskill), ocskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb1/cwd/.opencode/skill/ocskill)
+
+# TASK B - project .opencode discovery under OPENCODE_DISABLE_PROJECT_CONFIG
+  b2-off:  | Instructions from: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/discovery/trials/b2/cwd/AGENTS.md
+  b2-off: projskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb2/cwd/.opencode/skill/projskill), explicitskill=completed(/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencodeb2/cwd/.opencode/explicit) | - projskill: `/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/discovery/trials/b2/cwd/.opencode/skill/projskill` / - explicitskill: `
+  b2-on:  | There are no lines starting with 'Instructions from:' in the instructions. / Output: NONE
+  b2-on: None=error(None), None=error(None) | The user asks to use "projskill" skill and "explicitskill" skill. But the available skills list only shows "customize-opencode". Maybe there are project skills 

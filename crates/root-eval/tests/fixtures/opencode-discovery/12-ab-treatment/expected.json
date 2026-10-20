@@ -38,12 +38,14 @@
             "source": "opencode-config-dir",
             "file": "base/project/.opencode/skill/foo/SKILL.md",
             "token": "project:.opencode/skill/foo/SKILL.md",
-            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:6b667d04d05432dbbdaf430bcdecd057cf981a1f4da084cce1707042089a78a9"
+        "reproducible": true,
+        "manifest_sha256": "sha256:ea2f06087b85f0d646415e2072c7e1988cf9a88496687aa8b8fe59930c05a7eb"
       }
     },
     {
@@ -82,19 +84,22 @@
             "source": "opencode-config-dir",
             "file": "treatment-added/project/.opencode/skill/foo/SKILL.md",
             "token": "project:.opencode/skill/foo/SKILL.md",
-            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3",
+            "ambiguous": false
           },
           {
             "name": "root",
             "source": "opencode-config-dir",
             "file": "treatment-added/project/.opencode/skill/root/SKILL.md",
             "token": "project:.opencode/skill/root/SKILL.md",
-            "sha256": "sha256:51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46"
+            "sha256": "sha256:51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:fd0239265569652e850616af10c848093358b7d9dccfb5194bc2f450e908a5e2"
+        "reproducible": true,
+        "manifest_sha256": "sha256:0de1e97e330745275c704cf4cb193561ba1b50bc41744dbf597e24bbf6ad3449"
       }
     },
     {
@@ -133,26 +138,30 @@
             "source": "opencode-config-dir",
             "file": "treatment-extra/project/.opencode/skill/foo/SKILL.md",
             "token": "project:.opencode/skill/foo/SKILL.md",
-            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3"
+            "sha256": "sha256:8f43a204180ebd9a3374bf554c43dae42042839f3900fc9cfb616e45397dc3b3",
+            "ambiguous": false
           },
           {
             "name": "other",
             "source": "opencode-config-dir",
             "file": "treatment-extra/project/.opencode/skill/other/SKILL.md",
             "token": "project:.opencode/skill/other/SKILL.md",
-            "sha256": "sha256:3b9bab8dad5cfafc2f99614b0abeda5ff15fa32e2728953eaf907e66cc9ee854"
+            "sha256": "sha256:3b9bab8dad5cfafc2f99614b0abeda5ff15fa32e2728953eaf907e66cc9ee854",
+            "ambiguous": false
           },
           {
             "name": "root",
             "source": "opencode-config-dir",
             "file": "treatment-extra/project/.opencode/skill/root/SKILL.md",
             "token": "project:.opencode/skill/root/SKILL.md",
-            "sha256": "sha256:51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46"
+            "sha256": "sha256:51297a76e3afb5949596f9c3a605c4f9dc80cb3a48bcc3a78735f0615e581a46",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:f2c901398b75a32785670920c5a3a86871dbd8e359b280dbe00346a70567078a"
+        "reproducible": true,
+        "manifest_sha256": "sha256:54f621dc93b4570ac6d218214a9d62d339d3dec3e714f906e581009d46b775db"
       }
     },
     {
@@ -191,12 +200,14 @@
             "source": "opencode-config-dir",
             "file": "treatment-modified/project/.opencode/skill/foo/SKILL.md",
             "token": "project:.opencode/skill/foo/SKILL.md",
-            "sha256": "sha256:315e827039435868629c11556db8e2574b4f7c0f42266c26524597cbf7172cbf"
+            "sha256": "sha256:315e827039435868629c11556db8e2574b4f7c0f42266c26524597cbf7172cbf",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:4981d86e1909fde83483fc15745d5e0d46561fbff8c79bce6739356bf6be179b"
+        "reproducible": true,
+        "manifest_sha256": "sha256:1a391a1e495387b3a562da8fa2655662316e326ab0359bd6a59212d3ab56c24c"
       }
     },
     {
@@ -232,7 +243,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:b391331b8d81799d154c8f4fa68f5bd69ffda36bbb33cada6b37acdae96d47ae"
+        "reproducible": true,
+        "manifest_sha256": "sha256:7668319a6c732c13bce7d9a8c80db3a456431399233926faa9c5edfd515a2ce5"
       }
     }
   ]

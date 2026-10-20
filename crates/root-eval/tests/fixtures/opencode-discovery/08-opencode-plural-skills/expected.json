@@ -19,12 +19,14 @@
             "source": "opencode-config-dir",
             "file": "project/.opencode/skills/plural-skill/SKILL.md",
             "token": "project:.opencode/skills/plural-skill/SKILL.md",
-            "sha256": "sha256:55aa4e8450cab838ed62d84aa7ae0d60cd6736fdb28c284cedd02eaf2732c5d7"
+            "sha256": "sha256:55aa4e8450cab838ed62d84aa7ae0d60cd6736fdb28c284cedd02eaf2732c5d7",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:80902882cb0eeb6e578ca7e19df08f3651232125343b12f93220c0baf36706d8"
+        "reproducible": true,
+        "manifest_sha256": "sha256:e0ecb6180a25d64eb065e106695064464c84c22154caec6ad15363d86263dd2c"
       }
     }
   ]

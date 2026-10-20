@@ -1,0 +1,12 @@
+label=C_run2
+wall_ms=50783
+registry_bytes_pulled=0
+audit_log_begin
+root doctor --json
+root plan install ripgrep --json
+root install ripgrep --json
+root verify ripgrep --json
+root --help
+root plan install ripgrep
+root verify ripgrep
+audit_log_end

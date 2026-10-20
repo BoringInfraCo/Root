@@ -198,6 +198,15 @@ pub struct TrialLayout {
     pub pids_file: PathBuf,
     /// Residue manifest listing every created path.
     pub residue_manifest_file: PathBuf,
+    /// The permission posture seeded into the trial's project config.
+    ///
+    /// Harness-aware (M6 P0 fix): the fake-agent path seeds
+    /// [`PermissionSeeding::AskMode`], the real OpenCode path seeds
+    /// [`PermissionSeeding::AllowAll`].
+    pub permission_seeding: crate::materializer::PermissionSeeding,
+    /// The effective permission set, verbatim JSON — exactly the body
+    /// written to the trial's project `opencode.json`.
+    pub effective_permission: String,
     /// Every path created by materialization, in creation order.
     pub created_paths: Vec<PathBuf>,
 }

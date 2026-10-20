@@ -1,0 +1,281 @@
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/B1_treat.ndjson
+total non-empty lines: 17
+lines the Rust parser ACCEPTS: 17
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 5, 'tool_use': 5, 'step_finish': 5, 'text': 2}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 5
+    ('step_start', 'step-start'): 5
+    ('text', 'text'): 2
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (5 occurrence(s))
+    text.time  (2 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/B2_base.ndjson
+total non-empty lines: 14
+lines the Rust parser ACCEPTS: 14
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 4, 'tool_use': 6, 'step_finish': 4}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 4
+    ('step_start', 'step-start'): 4
+    ('tool_use', 'tool'): 6
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (4 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (6 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/B3_base_retry.ndjson
+total non-empty lines: 10
+lines the Rust parser ACCEPTS: 10
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 3, 'tool_use': 4, 'step_finish': 3}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 3
+    ('step_start', 'step-start'): 3
+    ('tool_use', 'tool'): 4
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (3 occurrence(s))
+    tool_use.metadata  (3 occurrence(s))
+    tool_use.time  (4 occurrence(s))
+    tool_use.title  (3 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/b_treat.ndjson
+total non-empty lines: 21
+lines the Rust parser ACCEPTS: 21
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 7, 'tool_use': 6, 'step_finish': 7, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 7
+    ('step_start', 'step-start'): 7
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 6
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (7 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (6 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/brg-not-seeded.ndjson
+total non-empty lines: 21
+lines the Rust parser ACCEPTS: 21
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 7, 'tool_use': 6, 'step_finish': 7, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 7
+    ('step_start', 'step-start'): 7
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 6
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (7 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (6 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/brg-bin-seeded.ndjson
+total non-empty lines: 39
+lines the Rust parser ACCEPTS: 39
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 11, 'tool_use': 14, 'step_finish': 11, 'text': 3}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 11
+    ('step_start', 'step-start'): 11
+    ('text', 'text'): 3
+    ('tool_use', 'tool'): 14
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (11 occurrence(s))
+    text.time  (3 occurrence(s))
+    tool_use.metadata  (12 occurrence(s))
+    tool_use.time  (14 occurrence(s))
+    tool_use.title  (12 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/brg-path-shim.ndjson
+total non-empty lines: 18
+lines the Rust parser ACCEPTS: 18
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 6, 'tool_use': 5, 'step_finish': 6, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 6
+    ('step_start', 'step-start'): 6
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (6 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/variance/C_run1.ndjson
+total non-empty lines: 39
+lines the Rust parser ACCEPTS: 39
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 11, 'tool_use': 15, 'step_finish': 11, 'text': 2}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 11
+    ('step_start', 'step-start'): 11
+    ('text', 'text'): 2
+    ('tool_use', 'tool'): 15
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (11 occurrence(s))
+    text.time  (2 occurrence(s))
+    tool_use.metadata  (13 occurrence(s))
+    tool_use.time  (15 occurrence(s))
+    tool_use.title  (13 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/variance/C_run2.ndjson
+total non-empty lines: 30
+lines the Rust parser ACCEPTS: 30
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 10, 'tool_use': 10, 'step_finish': 10}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 10
+    ('step_start', 'step-start'): 10
+    ('tool_use', 'tool'): 10
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (10 occurrence(s))
+    tool_use.metadata  (9 occurrence(s))
+    tool_use.time  (10 occurrence(s))
+    tool_use.title  (9 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a7-recommended.ndjson
+total non-empty lines: 28
+lines the Rust parser ACCEPTS: 28
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 9, 'tool_use': 10, 'step_finish': 9}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 9
+    ('step_start', 'step-start'): 9
+    ('tool_use', 'tool'): 10
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (9 occurrence(s))
+    tool_use.metadata  (8 occurrence(s))
+    tool_use.time  (10 occurrence(s))
+    tool_use.title  (8 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a8trial1.ndjson
+total non-empty lines: 43
+lines the Rust parser ACCEPTS: 43
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 12, 'tool_use': 12, 'step_finish': 12, 'text': 7}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 12
+    ('step_start', 'step-start'): 12
+    ('text', 'text'): 7
+    ('tool_use', 'tool'): 12
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (12 occurrence(s))
+    text.time  (7 occurrence(s))
+    tool_use.metadata  (12 occurrence(s))
+    tool_use.time  (12 occurrence(s))
+    tool_use.title  (12 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a8trial2.ndjson
+total non-empty lines: 20
+lines the Rust parser ACCEPTS: 20
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 6, 'tool_use': 5, 'step_finish': 6, 'text': 3}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 6
+    ('step_start', 'step-start'): 6
+    ('text', 'text'): 3
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (6 occurrence(s))
+    text.time  (3 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a9trial1.ndjson
+total non-empty lines: 18
+lines the Rust parser ACCEPTS: 18
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 6, 'tool_use': 5, 'step_finish': 6, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 6
+    ('step_start', 'step-start'): 6
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (6 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a9trial2.ndjson
+total non-empty lines: 18
+lines the Rust parser ACCEPTS: 18
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 6, 'tool_use': 5, 'step_finish': 6, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 6
+    ('step_start', 'step-start'): 6
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (6 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a9trial3.ndjson
+total non-empty lines: 18
+lines the Rust parser ACCEPTS: 18
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 6, 'tool_use': 5, 'step_finish': 6, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 6
+    ('step_start', 'step-start'): 6
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (6 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a10trial1.ndjson
+total non-empty lines: 18
+lines the Rust parser ACCEPTS: 18
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 5, 'tool_use': 5, 'step_finish': 5, 'text': 3}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 5
+    ('step_start', 'step-start'): 5
+    ('text', 'text'): 3
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (5 occurrence(s))
+    text.time  (3 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))
+
+file: /Users/sergio/Documents/Developer/BoringInfraCo/Root/Docs/Eval/milestone-6/probes/integration/integration/a10trial2.ndjson
+total non-empty lines: 18
+lines the Rust parser ACCEPTS: 18
+lines the Rust parser REJECTS: 0
+envelope type histogram: {'step_start': 6, 'tool_use': 5, 'step_finish': 6, 'text': 1}
+(envelope type, part.type) histogram:
+    ('step_finish', 'step-finish'): 6
+    ('step_start', 'step-start'): 6
+    ('text', 'text'): 1
+    ('tool_use', 'tool'): 5
+part fields NOT READ by crates/root-eval/src/events.rs (silently dropped):
+    step_finish.reason  (6 occurrence(s))
+    text.time  (1 occurrence(s))
+    tool_use.metadata  (5 occurrence(s))
+    tool_use.time  (5 occurrence(s))
+    tool_use.title  (5 occurrence(s))

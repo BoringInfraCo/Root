@@ -1,0 +1,214 @@
+{
+  "case": "18-flag-gates-external-skills",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "default",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "agents-global",
+            "source": "agents-global",
+            "file": "home/.agents/skills/agents-global-skill/SKILL.md",
+            "token": "home:.agents/skills/agents-global-skill/SKILL.md",
+            "sha256": "sha256:76301b20caa7faf25b1da355e5a2f7c665d9cee3ad8859f96093c9b3f9b28001",
+            "ambiguous": false
+          },
+          {
+            "name": "claude-global",
+            "source": "claude-global",
+            "file": "home/.claude/skills/claude-global-skill/SKILL.md",
+            "token": "home:.claude/skills/claude-global-skill/SKILL.md",
+            "sha256": "sha256:87a25dfa04c133a2959c48725f52451295287fb102e7a6168a43f484b3ad2be2",
+            "ambiguous": false
+          },
+          {
+            "name": "project-agents",
+            "source": "agents-walkup",
+            "file": "project/.agents/skills/project-agents-skill/SKILL.md",
+            "token": "project:.agents/skills/project-agents-skill/SKILL.md",
+            "sha256": "sha256:b46bf9c0c5eecb2b9108903e031f197efc4af0da77b9d6f9cd2c080421b847c4",
+            "ambiguous": false
+          },
+          {
+            "name": "project-claude",
+            "source": "claude-walkup",
+            "file": "project/.claude/skills/project-claude-skill/SKILL.md",
+            "token": "project:.claude/skills/project-claude-skill/SKILL.md",
+            "sha256": "sha256:e9308f0a24aa85c92a63ac24bea74e55f1ff8716c37f07e3a9544f578a00d2e9",
+            "ambiguous": false
+          },
+          {
+            "name": "project-oc",
+            "source": "opencode-config-dir",
+            "file": "project/.opencode/skill/project-oc-skill/SKILL.md",
+            "token": "project:.opencode/skill/project-oc-skill/SKILL.md",
+            "sha256": "sha256:8d2cc578cea834cf1c531677ab78f156ce2f1a66f278e9f76fdf6e7d1f7ecb0a",
+            "ambiguous": false
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:70be3471004bb6c1234d1672770f06d01266118e2dc9d1d94be0929f4d6d9714"
+      }
+    },
+    {
+      "name": "disable-claude-skills",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {
+        "disable_claude_code_skills": true
+      },
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "agents-global",
+            "source": "agents-global",
+            "file": "home/.agents/skills/agents-global-skill/SKILL.md",
+            "token": "home:.agents/skills/agents-global-skill/SKILL.md",
+            "sha256": "sha256:76301b20caa7faf25b1da355e5a2f7c665d9cee3ad8859f96093c9b3f9b28001",
+            "ambiguous": false
+          },
+          {
+            "name": "project-agents",
+            "source": "agents-walkup",
+            "file": "project/.agents/skills/project-agents-skill/SKILL.md",
+            "token": "project:.agents/skills/project-agents-skill/SKILL.md",
+            "sha256": "sha256:b46bf9c0c5eecb2b9108903e031f197efc4af0da77b9d6f9cd2c080421b847c4",
+            "ambiguous": false
+          },
+          {
+            "name": "project-oc",
+            "source": "opencode-config-dir",
+            "file": "project/.opencode/skill/project-oc-skill/SKILL.md",
+            "token": "project:.opencode/skill/project-oc-skill/SKILL.md",
+            "sha256": "sha256:8d2cc578cea834cf1c531677ab78f156ce2f1a66f278e9f76fdf6e7d1f7ecb0a",
+            "ambiguous": false
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:b9ff5765117b28f10f1b4f41507ff1a528c1f0042df66e24d7e15bc9fec60a8d"
+      }
+    },
+    {
+      "name": "disable-external-skills",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {
+        "disable_external_skills": true
+      },
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "project-oc",
+            "source": "opencode-config-dir",
+            "file": "project/.opencode/skill/project-oc-skill/SKILL.md",
+            "token": "project:.opencode/skill/project-oc-skill/SKILL.md",
+            "sha256": "sha256:8d2cc578cea834cf1c531677ab78f156ce2f1a66f278e9f76fdf6e7d1f7ecb0a",
+            "ambiguous": false
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:9c729ebfa6faf2908ac9feeec76b9324216f1ace32cc2723424640c742fdcf32"
+      }
+    },
+    {
+      "name": "disable-claude-code",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {
+        "disable_claude_code": true
+      },
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "agents-global",
+            "source": "agents-global",
+            "file": "home/.agents/skills/agents-global-skill/SKILL.md",
+            "token": "home:.agents/skills/agents-global-skill/SKILL.md",
+            "sha256": "sha256:76301b20caa7faf25b1da355e5a2f7c665d9cee3ad8859f96093c9b3f9b28001",
+            "ambiguous": false
+          },
+          {
+            "name": "project-agents",
+            "source": "agents-walkup",
+            "file": "project/.agents/skills/project-agents-skill/SKILL.md",
+            "token": "project:.agents/skills/project-agents-skill/SKILL.md",
+            "sha256": "sha256:b46bf9c0c5eecb2b9108903e031f197efc4af0da77b9d6f9cd2c080421b847c4",
+            "ambiguous": false
+          },
+          {
+            "name": "project-oc",
+            "source": "opencode-config-dir",
+            "file": "project/.opencode/skill/project-oc-skill/SKILL.md",
+            "token": "project:.opencode/skill/project-oc-skill/SKILL.md",
+            "sha256": "sha256:8d2cc578cea834cf1c531677ab78f156ce2f1a66f278e9f76fdf6e7d1f7ecb0a",
+            "ambiguous": false
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:800b0f89eef01cddfc006cfcbb619a94bd820df02e0a9dfcb468ad09eb7de2ab"
+      }
+    },
+    {
+      "name": "disable-claude-skills-and-external",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "project",
+        "worktree_root": "project"
+      },
+      "flags": {
+        "disable_claude_code_skills": true,
+        "disable_external_skills": true
+      },
+      "expect": {
+        "instructions": [],
+        "skills": [
+          {
+            "name": "project-oc",
+            "source": "opencode-config-dir",
+            "file": "project/.opencode/skill/project-oc-skill/SKILL.md",
+            "token": "project:.opencode/skill/project-oc-skill/SKILL.md",
+            "sha256": "sha256:8d2cc578cea834cf1c531677ab78f156ce2f1a66f278e9f76fdf6e7d1f7ecb0a",
+            "ambiguous": false
+          }
+        ],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:fbe6f5658b11234c0e05508e6c677794510dbb44893229f93c60dd86fe0ac87a"
+      }
+    }
+  ]
+}

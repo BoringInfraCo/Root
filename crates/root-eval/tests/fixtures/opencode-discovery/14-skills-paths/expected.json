@@ -19,19 +19,22 @@
             "source": "explicit-path",
             "file": "home/home-skills/home-skill/SKILL.md",
             "token": "home:home-skills/home-skill/SKILL.md",
-            "sha256": "sha256:862740d1ae85db168fc00a482420e6f6ebe78077d115ef4394ef53eee7684fa5"
+            "sha256": "sha256:862740d1ae85db168fc00a482420e6f6ebe78077d115ef4394ef53eee7684fa5",
+            "ambiguous": false
           },
           {
             "name": "rel-skill",
             "source": "explicit-path",
             "file": "project/rel-skills/rel-skill/SKILL.md",
             "token": "project:rel-skills/rel-skill/SKILL.md",
-            "sha256": "sha256:40cf2b74c2f9d9a8bf08794efa98ce7285511643026fef2052426426e1f1b773"
+            "sha256": "sha256:40cf2b74c2f9d9a8bf08794efa98ce7285511643026fef2052426426e1f1b773",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:89cd825eca084dd327c5cf7f439609f1964a59f73d5f49ac30320972381df90f"
+        "reproducible": true,
+        "manifest_sha256": "sha256:518a7319238b83937e4bc57dd369af9c1384eef175f1a3a31b04d218894203e2"
       }
     },
     {
@@ -50,7 +53,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:01e54bf66913660558b42a8cc220a489f2ece97479f4e2f17ba1685fab334b6d"
+        "reproducible": true,
+        "manifest_sha256": "sha256:bcd174f06cfcefef9392616eb46626576341a5c927ae3999e1b314f41b8c2751"
       }
     },
     {
@@ -72,33 +76,38 @@
             "source": "explicit-path",
             "file": "project/rel-alt-paths/alt-path-skill/SKILL.md",
             "token": "project:rel-alt-paths/alt-path-skill/SKILL.md",
-            "sha256": "sha256:c794c8dd1c8bc121846453e1ef9fbef8f352316ba23c13fe84171208c3c8b1fa"
+            "sha256": "sha256:c794c8dd1c8bc121846453e1ef9fbef8f352316ba23c13fe84171208c3c8b1fa",
+            "ambiguous": false
           },
           {
             "name": "alt-skill",
             "source": "opencode-config-dir",
             "file": "alt-config/skill/alt-skill/SKILL.md",
             "token": "configdir:skill/alt-skill/SKILL.md",
-            "sha256": "sha256:be555c5c2f88e0d774bd737e16facf9f6c47a24912da1c2eeecf6c2dea15eb5d"
+            "sha256": "sha256:be555c5c2f88e0d774bd737e16facf9f6c47a24912da1c2eeecf6c2dea15eb5d",
+            "ambiguous": false
           },
           {
             "name": "home-skill",
             "source": "explicit-path",
             "file": "home/home-skills/home-skill/SKILL.md",
             "token": "home:home-skills/home-skill/SKILL.md",
-            "sha256": "sha256:862740d1ae85db168fc00a482420e6f6ebe78077d115ef4394ef53eee7684fa5"
+            "sha256": "sha256:862740d1ae85db168fc00a482420e6f6ebe78077d115ef4394ef53eee7684fa5",
+            "ambiguous": false
           },
           {
             "name": "rel-skill",
             "source": "explicit-path",
             "file": "project/rel-skills/rel-skill/SKILL.md",
             "token": "project:rel-skills/rel-skill/SKILL.md",
-            "sha256": "sha256:40cf2b74c2f9d9a8bf08794efa98ce7285511643026fef2052426426e1f1b773"
+            "sha256": "sha256:40cf2b74c2f9d9a8bf08794efa98ce7285511643026fef2052426426e1f1b773",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:1ecd0213f111c31d3adb47c866d60e4c886fefc9149b062d2b0e07327ad5f0d4"
+        "reproducible": true,
+        "manifest_sha256": "sha256:d8d931989d2faf70a1fe25a1a31672303655d241e907f98522aea2bd5f7a869c"
       }
     }
   ]

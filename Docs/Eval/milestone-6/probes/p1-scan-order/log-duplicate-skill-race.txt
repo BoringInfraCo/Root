@@ -1,0 +1,8 @@
+# Harness WARN lines proving the duplicate-name race (source: trials/r1/data/opencode/log/opencode.log)
+# 'existing' = the file already registered, 'duplicate' = the file that OVERWROTE it.
+# The two columns SWAP between runs -> the winner is decided by async completion order.
+timestamp=2026-10-19T14:08:10.950Z level=WARN run=c59b40bc message="duplicate skill name" name=dup existing=r1/home/.agents/skills/dup/SKILL.md duplicate=r1/cwd/.opencode/skill/dup/SKILL.md
+timestamp=2026-10-19T14:08:33.187Z level=WARN run=db2515e2 message="duplicate skill name" name=dup existing=r1/cwd/.opencode/skill/dup/SKILL.md duplicate=r1/home/.agents/skills/dup/SKILL.md
+timestamp=2026-10-19T14:08:43.860Z level=WARN run=99e0c5df message="duplicate skill name" name=dup existing=r1/home/.agents/skills/dup/SKILL.md duplicate=r1/cwd/.opencode/skill/dup/SKILL.md
+timestamp=2026-10-19T14:09:00.064Z level=WARN run=58587ab3 message="duplicate skill name" name=dup existing=r1/home/.agents/skills/dup/SKILL.md duplicate=r1/cwd/.opencode/skill/dup/SKILL.md
+timestamp=2026-10-19T14:09:11.249Z level=WARN run=64125d37 message="duplicate skill name" name=dup existing=r1/home/.agents/skills/dup/SKILL.md duplicate=r1/cwd/.opencode/skill/dup/SKILL.md

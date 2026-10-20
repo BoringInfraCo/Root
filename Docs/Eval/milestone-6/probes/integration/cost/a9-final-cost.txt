@@ -1,0 +1,27 @@
+############ A9 recommended per-trial setup
+  shared warm npm cache = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a6cache (87993662 bytes)
+--- A9 trial 1
+    wall_ms=18492
+    registry_bytes_pulled=9144
+    tokens: input=9148 output=204 reasoning=104 cost=0.0
+    network: {"node": {"bytes_in": 9704, "bytes_out": 9455}, "opencode": {"bytes_in": 2510816, "bytes_out": 41839161}}
+    trial_disk_bytes=127626914
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|
+
+--- A9 trial 2
+    wall_ms=15030
+    registry_bytes_pulled=-9144
+    tokens: input=9039 output=193 reasoning=90 cost=0.0
+    network: {"node": {"bytes_in": 9860, "bytes_out": 9611}, "opencode": {"bytes_in": 2504862, "bytes_out": 41829997}}
+    trial_disk_bytes=127626912
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|
+
+--- A9 trial 3
+    wall_ms=16996
+    registry_bytes_pulled=0
+    tokens: input=9133 output=181 reasoning=103 cost=0.0
+    network: {"node": {"bytes_in": 10026, "bytes_out": 9838}, "opencode": {"bytes_in": 2511220, "bytes_out": 41842851}}
+    trial_disk_bytes=127626914
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|
+
+A9 DONE

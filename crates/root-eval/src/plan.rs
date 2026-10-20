@@ -126,6 +126,19 @@ pub struct ExperimentSpec {
     pub repository: RepositoryLock,
     /// Explicit creation timestamp string; never injected by this crate.
     pub created_at: String,
+    /// Driver-level wall-time cap for one trial, in seconds.
+    ///
+    /// **Optional and additive.** `None` means "no driver cap": every trial
+    /// used its task record's own `budgets.wall_time_seconds_max`. A value
+    /// caps the trial wall time from above — the **effective** cap is
+    /// `min(record budget, driver cap)`.
+    ///
+    /// The field is part of the plan because it changes trial semantics: a
+    /// run with a driver cap is not comparable with a run without one, so
+    /// the cap is hashed into the plan hash. An absent cap is omitted from
+    /// the hash projection, so the default plan hash is unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trial_timeout_seconds: Option<u64>,
 }
 
 /// Compute the canonical `sha256:<hex>` plan hash of `spec`.
@@ -291,7 +304,7 @@ fn plan_projection(spec: &ExperimentSpec) -> Value {
         })
         .collect();
 
-    json!({
+    let mut projection = json!({
         "hash_domain": EXPERIMENT_HASH_DOMAIN,
         "schema_version": spec.schema_version,
         "experiment_id": spec.experiment_id,
@@ -307,7 +320,16 @@ fn plan_projection(spec: &ExperimentSpec) -> Value {
         },
         "tasks": tasks,
         "conditions": conditions,
-    })
+    });
+    // An absent driver cap is **omitted** from the projection (not hashed as
+    // `null`), so the default plan hash is unchanged by this additive field.
+    if let Some(cap) = spec.trial_timeout_seconds {
+        projection
+            .as_object_mut()
+            .expect("the projection is an object")
+            .insert("trial_timeout_seconds".to_string(), json!(cap));
+    }
+    projection
 }
 
 #[cfg(test)]
@@ -356,6 +378,7 @@ mod tests {
                 tree_sha256: digest("tree"),
             },
             created_at: "2026-10-18T00:00:00Z".to_string(),
+            trial_timeout_seconds: None,
         }
     }
 

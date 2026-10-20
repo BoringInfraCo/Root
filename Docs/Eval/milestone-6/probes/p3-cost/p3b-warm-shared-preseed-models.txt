@@ -1,0 +1,78 @@
+############ P3-4a PREWARM the shared npm cache (one-time cost)
+label=warm-prewarm
+wall_s=3
+watched_cache=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/shared/npmcache
+cache_before=0
+cache_after=38474436
+cache_delta=38474436
+trial_bytes_total=11517988
+models_json=5825527
+config_dir_bytes=113
+config_node_modules=0
+home_npm=0
+shared cache bytes = 38474436
+
+############ P3-4b TRIAL A sharing the pre-warmed cache
+label=shared-A
+wall_s=14
+watched_cache=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/shared/npmcache
+cache_before=38474436
+cache_after=98525434
+cache_delta=60050998
+trial_bytes_total=66661052
+models_json=5825527
+config_dir_bytes=54916064
+config_node_modules=54901253
+home_npm=0
+
+############ P3-4c TRIAL B sharing the same pre-warmed cache (second sequential trial)
+label=shared-B
+wall_s=13
+watched_cache=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/shared/npmcache
+cache_before=98525434
+cache_after=98525434
+cache_delta=0
+trial_bytes_total=66396750
+models_json=5825527
+config_dir_bytes=54916064
+config_node_modules=54901253
+home_npm=0
+
+############ P3-5 PRE-SEEDED config dir (node_modules/@opencode-ai/plugin present)
+seeded node_modules bytes = 54901231
+label=seeded
+wall_s=17
+watched_cache=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/shared/npmcache
+cache_before=98550492
+cache_after=98550492
+cache_delta=0
+trial_bytes_total=66433820
+models_json=5825527
+config_dir_bytes=54916064
+config_node_modules=54901253
+home_npm=0
+after run: config node_modules bytes = 54901253
+after run: config dir listing:
+node_modules
+opencode.jsonc
+package-lock.json
+package.json
+
+############ P3-6 models.json: size + shared read-only reuse
+shared models.json bytes = 5825527
+label=models-ro
+wall_s=17
+watched_cache=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/shared/npmcache
+cache_before=98550492
+cache_after=98550492
+cache_delta=0
+trial_bytes_total=66396740
+models_json=5825527
+config_dir_bytes=54916064
+config_node_modules=54901253
+home_npm=0
+--- run stderr (models-ro) ---
+--- run ok? ---
+text: ok
+HAD_TEXT
+P3B DONE

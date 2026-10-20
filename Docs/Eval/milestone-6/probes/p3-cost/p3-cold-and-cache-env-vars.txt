@@ -1,0 +1,48 @@
+############ P3-1 COLD (empty HOME, no npm cache, no config dir)
+label=cold
+wall_s=3
+npm_cache_dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p3cold/home/.npm
+npm_cache_before=0
+npm_cache_after=38474436
+npm_cache_delta=38474436
+trial_bytes_total=49992424
+models_json=5825527
+config_dir_bytes=113
+data_dir_bytes=869232
+tmp_dir_bytes=4822976
+exit=n/a
+
+############ P3-2 npm_config_cache (lowercase) -> dedicated cache dir
+label=lower
+wall_s=3
+npm_cache_dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p3lower/home/.npm
+npm_cache_before=0
+npm_cache_after=0
+npm_cache_delta=0
+trial_bytes_total=49021461
+models_json=5825527
+config_dir_bytes=113
+data_dir_bytes=869243
+tmp_dir_bytes=4822976
+exit=n/a
+--- where did the cache land? ---
+trials/p3lower/npmcache bytes = 37503462
+trials/p3lower/home/.npm bytes = 0
+
+############ P3-3 NPM_CONFIG_CACHE (uppercase) -> dedicated cache dir
+label=upper
+wall_s=4
+npm_cache_dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p3upper/home/.npm
+npm_cache_before=0
+npm_cache_after=0
+npm_cache_delta=0
+trial_bytes_total=49488205
+models_json=5825527
+config_dir_bytes=113
+data_dir_bytes=869240
+tmp_dir_bytes=4822976
+exit=n/a
+--- where did the cache land? ---
+trials/p3upper/npmcache bytes = 37970209
+trials/p3upper/home/.npm bytes = 0
+P3 DONE

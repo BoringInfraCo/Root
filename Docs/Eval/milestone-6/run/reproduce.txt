@@ -1,0 +1,6 @@
+Reproduction check — experiment `m5-feasibility`
+Store integrity: 20 manifest(s) checked; intact
+Report: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-runs/r1/report.json (2742 bytes)
+Stored sha256:  sha256:ebb17e5d29cb5797e6a244f262c01726ac539ab06ba244183c489cdec6fa38a8
+Rebuilt sha256: sha256:ebb17e5d29cb5797e6a244f262c01726ac539ab06ba244183c489cdec6fa38a8
+Byte-identical: YES

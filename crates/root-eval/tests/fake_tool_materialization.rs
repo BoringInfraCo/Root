@@ -20,8 +20,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use root_eval::{
     allowed_env, materialize_fake_tools, materialize_trial, materialize_trial_with_fake_tools,
     script_sha256, trial_stub_bin_dir, ConditionOverlay, ContextRoots, DiscoveryFlags,
-    EffectiveContextManifest, FakeToolBinding, MaterializerErrorKind, ProfileId, RepositoryLock,
-    TrialSpec, ABSENT_PROFILE_TOKEN, FAKE_TOOL_AUDIT_RELATIVE_PATH, STUB_BIN_DIR_NAME,
+    EffectiveContextManifest, FakeToolBinding, MaterializerErrorKind, PermissionSeeding, ProfileId,
+    RepositoryLock, TrialSpec, ABSENT_PROFILE_TOKEN, FAKE_TOOL_AUDIT_RELATIVE_PATH,
+    STUB_BIN_DIR_NAME,
 };
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -164,8 +165,9 @@ fn plan_based_materialization_writes_normative_shims() {
         FakeToolBinding::new("curl", ABSENT_PROFILE_TOKEN, None),
     ];
 
-    let layout = materialize_trial_with_fake_tools(&spec, &base_dir, &bindings)
-        .expect("plan-based materialization");
+    let layout =
+        materialize_trial_with_fake_tools(&spec, &base_dir, &bindings, PermissionSeeding::AskMode)
+            .expect("plan-based materialization");
 
     // Shims present/absent exactly per manifest.
     assert_eq!(fake_bin_names(&layout), vec!["brew", "root"]);
@@ -308,8 +310,9 @@ fn hash_mismatch_fails_closed() {
         "root.healthy.v1",
         Some("sha256:1111111111111111111111111111111111111111111111111111111111111111".to_string()),
     )];
-    let error = materialize_trial_with_fake_tools(&spec, &base_dir, &bindings)
-        .expect_err("digest mismatch must fail closed");
+    let error =
+        materialize_trial_with_fake_tools(&spec, &base_dir, &bindings, PermissionSeeding::AskMode)
+            .expect_err("digest mismatch must fail closed");
     assert_eq!(error.kind(), MaterializerErrorKind::DigestMismatch);
     assert!(
         !base_dir.join("trial-mismatch/fake-bin/root").exists(),
@@ -329,10 +332,20 @@ fn two_trials_have_disjoint_audit_logs() {
 
     let spec_a = make_spec("trial-audit-a", &source, &commit);
     let spec_b = make_spec("trial-audit-b", &source, &commit);
-    let layout_a =
-        materialize_trial_with_fake_tools(&spec_a, &base_dir, &bindings).expect("materialize A");
-    let layout_b =
-        materialize_trial_with_fake_tools(&spec_b, &base_dir, &bindings).expect("materialize B");
+    let layout_a = materialize_trial_with_fake_tools(
+        &spec_a,
+        &base_dir,
+        &bindings,
+        PermissionSeeding::AskMode,
+    )
+    .expect("materialize A");
+    let layout_b = materialize_trial_with_fake_tools(
+        &spec_b,
+        &base_dir,
+        &bindings,
+        PermissionSeeding::AskMode,
+    )
+    .expect("materialize B");
 
     assert_ne!(layout_a.audit_log, layout_b.audit_log);
     assert_ne!(trial_stub_bin_dir(&layout_a), trial_stub_bin_dir(&layout_b));
@@ -353,7 +366,9 @@ fn empty_bindings_write_no_shims() {
     let base_dir = unique_dir("empty-base");
     let (source, commit) = init_source_repo();
     let spec = make_spec("trial-empty", &source, &commit);
-    let layout = materialize_trial_with_fake_tools(&spec, &base_dir, &[]).expect("materialize");
+    let layout =
+        materialize_trial_with_fake_tools(&spec, &base_dir, &[], PermissionSeeding::AskMode)
+            .expect("materialize");
 
     assert!(fake_bin_names(&layout).is_empty());
     assert!(layout.audit_log.is_file());
@@ -394,9 +409,12 @@ fn plan_based_requires_fresh_directory() {
     let (source, commit) = init_source_repo();
     let spec = make_spec("trial-once", &source, &commit);
     let bindings = vec![binding("root", ProfileId::RootHealthyV1)];
-    let layout = materialize_trial_with_fake_tools(&spec, &base_dir, &bindings).expect("first run");
-    let error = materialize_trial_with_fake_tools(&spec, &base_dir, &bindings)
-        .expect_err("second run refused");
+    let layout =
+        materialize_trial_with_fake_tools(&spec, &base_dir, &bindings, PermissionSeeding::AskMode)
+            .expect("first run");
+    let error =
+        materialize_trial_with_fake_tools(&spec, &base_dir, &bindings, PermissionSeeding::AskMode)
+            .expect_err("second run refused");
     assert_eq!(error.kind(), MaterializerErrorKind::TrialExists);
     root_eval::cleanup_trial(&layout).expect("cleanup");
 }

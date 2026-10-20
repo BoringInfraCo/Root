@@ -1,0 +1,41 @@
+############ P3-5' PRE-SEEDED config dir + COLD cache (isolated)
+seeded node_modules bytes = 54901231
+cold cache bytes after seeding = 98557731
+label=seeded-cold
+wall_s=4
+cache_delta=0
+trial_bytes_total=66495658
+config_node_modules=54901253
+models_json=5825527
+tmp=4822976
+data=931091
+
+############ P3-7 can the plugin fetch be avoided? (OPENCODE_PURE + DISABLE_DEFAULT_PLUGINS, COLD cache)
+label=pure-and-noplugins
+wall_s=5
+cache_delta=30462790
+trial_bytes_total=11579789
+config_node_modules=0
+models_json=5825527
+tmp=4822976
+data=931033
+
+############ P3-8 FULLY PRE-SEEDED trial (config-dir template + models.json template + warm cache)
+config template bytes = 54916064
+label=tpl-1
+wall_s=7
+cache_delta=0
+trial_bytes_total=66495598
+config_node_modules=54901253
+models_json=5825527
+tmp=4822976
+data=931031
+label=tpl-2
+wall_s=3
+cache_delta=0
+trial_bytes_total=66495601
+config_node_modules=54901253
+models_json=5825527
+tmp=4822976
+data=931034
+P3C DONE

@@ -69,6 +69,7 @@ fn spec() -> ExperimentSpec {
             tree_sha256: digest("fixture-repository-tree"),
         },
         created_at: "2026-10-18T00:00:00Z".to_string(),
+        trial_timeout_seconds: None,
     }
 }
 

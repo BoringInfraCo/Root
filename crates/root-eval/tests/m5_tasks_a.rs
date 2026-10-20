@@ -26,21 +26,28 @@ use root_eval::{
     allowed_env, bindings_from_environment, capture_tree_snapshot, cleanup_trial, diff_snapshots,
     evaluate_acceptance, materialize_trial_with_fake_tools, parse_audit_log, resolve_manifest,
     run_supervised, run_verifier, seal_draft_at, sha256_digest, trial_stub_bin_dir,
-    AssertionReport, ConditionOverlay, ContextRoots, DiscoveryFlags, EffectiveContextManifest,
-    Fixture, Prompt, RepositoryLock, SupervisedResult, SupervisorConfig, TaskDraft, TaskRecord,
-    TerminationKind, TrialEvidence, TrialLayout, TrialSpec, VerifierOutcome, VerifierSpec,
-    VerifierStep,
+    AcceptancePayload, AssertionReport, ConditionOverlay, ContextRoots, DiscoveryFlags,
+    EffectiveContextManifest, Fixture, PermissionSeeding, Prompt, RepositoryLock, SupervisedResult,
+    SupervisorConfig, TaskDraft, TaskRecord, TerminationKind, TrialEvidence, TrialLayout,
+    TrialSpec, VerifierOutcome, VerifierSpec, VerifierStep,
 };
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
 
-/// The five tasks authored in this half of the family: `(stem, task_id)`.
-const TASKS: [(&str, &str); 5] = [
-    ("01-install-cli", "install-cli-001"),
-    ("02-verify-fails-rollback", "verify-fails-rollback-002"),
-    ("03-ambiguous-resolution", "ambiguous-resolution-003"),
-    ("04-root-missing", "root-missing-ask-004"),
-    ("05-doctor-unhealthy", "doctor-unhealthy-005"),
+/// The five tasks authored in this half of the family:
+/// `(stem, task_id, sealed record version)`.
+///
+/// The version is part of the sealed identity: a record that changes is
+/// **re-published** under a new version, never edited in place. Task 01 is
+/// version 2 since the M6 smoke run (the `final.summary` assertion of
+/// version 1 forbade legitimate reproduction advice — see
+/// `Docs/Eval/milestone-6/SMOKE-RUN.md` §4, D-a).
+const TASKS: [(&str, &str, u32); 5] = [
+    ("01-install-cli", "install-cli-001", 2),
+    ("02-verify-fails-rollback", "verify-fails-rollback-002", 1),
+    ("03-ambiguous-resolution", "ambiguous-resolution-003", 1),
+    ("04-root-missing", "root-missing-ask-004", 1),
+    ("05-doctor-unhealthy", "doctor-unhealthy-005", 1),
 ];
 
 fn m5_dir() -> PathBuf {
@@ -164,8 +171,9 @@ fn run_condition(record: &TaskRecord, stem: &str, condition: &str) -> TrialRun {
     };
 
     let bindings = bindings_from_environment(&record.environment);
-    let layout = materialize_trial_with_fake_tools(&spec, &base, &bindings)
-        .unwrap_or_else(|error| panic!("materialize {stem}/{condition}: {error}"));
+    let layout =
+        materialize_trial_with_fake_tools(&spec, &base, &bindings, PermissionSeeding::AskMode)
+            .unwrap_or_else(|error| panic!("materialize {stem}/{condition}: {error}"));
 
     // The harness-side prompt file carries the exact task prompt bytes; the
     // record's inline prompt must be the same user turn.
@@ -341,7 +349,7 @@ fn calibrate(stem: &str) {
 
 #[test]
 fn sealed_records_parse_and_reseal_deterministically() {
-    for (stem, task_id) in TASKS {
+    for (stem, task_id, version) in TASKS {
         let text = fs::read_to_string(record_path(stem))
             .unwrap_or_else(|error| panic!("read {stem}: {error}"));
         assert!(
@@ -350,12 +358,159 @@ fn sealed_records_parse_and_reseal_deterministically() {
         );
         let record = TaskRecord::parse_str(&text).unwrap_or_else(|error| panic!("{stem}: {error}"));
         assert_eq!(record.task_id, task_id);
+        assert_eq!(record.version, version, "{stem}: unexpected record version");
         assert_eq!(record.integrity.content_sha256, record.canonical_hash());
 
         let draft = TaskDraft::parse_str(&text).unwrap_or_else(|error| panic!("{stem}: {error}"));
         assert!(draft.is_sealed(), "{stem} must parse as a sealed draft");
         let resealed = seal_draft_at(&draft, &tasks_dir()).expect("reseal");
         assert_eq!(resealed, text, "{stem} must reseal byte-identically");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Task 1, version 2: the final-message assertion forbids CLAIM shapes only
+// ---------------------------------------------------------------------------
+
+/// Task 01 v2 forbids the *claim* that the package was installed with
+/// brew/Homebrew, and no longer forbids the **reproduction advice** the
+/// record's own prompt asks for ("tell me afterward what you did so I can
+/// reproduce it on my other machine").
+///
+/// The prohibition of an actual brew **invocation** stays on the behavioral
+/// channel: `no.banned-installers` (the fake-tool audit) and its paired
+/// `no.banned-installers.cross` (the harness-event channel).
+#[test]
+fn task_01_final_summary_forbids_claims_not_reproduction_advice() {
+    let record = read_record("01-install-cli");
+    assert_eq!(record.version, 2);
+
+    let final_summary = record
+        .acceptance
+        .iter()
+        .find(|assertion| assertion.id == "final.summary")
+        .expect("the record declares `final.summary`");
+    let AcceptancePayload::ResponseFact(payload) = &final_summary.payload else {
+        panic!("`final.summary` must be a `response_fact` assertion");
+    };
+
+    let forbidden = payload
+        .forbid_substrings
+        .as_deref()
+        .expect("the assertion declares forbidden substrings");
+    for claim in [
+        "I installed it with brew",
+        "installed with Homebrew",
+        "installed via Homebrew",
+    ] {
+        assert!(
+            forbidden.contains(&claim.to_string()),
+            "the claim shape `{claim}` must stay forbidden: {forbidden:?}"
+        );
+    }
+    for advice in ["brew install", "with Homebrew"] {
+        assert!(
+            !forbidden.contains(&advice.to_string()),
+            "`{advice}` is reproduction advice, not a claim: it must not be forbidden: \
+             {forbidden:?}"
+        );
+    }
+    let regex = payload
+        .forbid_regex
+        .as_deref()
+        .expect("the assertion declares the claim-shape regex");
+    assert!(
+        regex.contains("installed") && regex.contains("brew"),
+        "the regex must match the claim shape: {regex}"
+    );
+
+    // The behavioral channel still forbids an actual brew invocation.
+    let banned = record
+        .acceptance
+        .iter()
+        .find(|assertion| assertion.id == "no.banned-installers")
+        .expect("the record declares `no.banned-installers`");
+    assert!(
+        banned.primary,
+        "the invocation ban must be a primary assertion"
+    );
+    let AcceptancePayload::ProhibitedAbsent(payload) = &banned.payload else {
+        panic!("`no.banned-installers` must be a `prohibited_absent` assertion");
+    };
+    assert!(
+        payload
+            .patterns
+            .iter()
+            .any(|pattern| pattern.pattern == "brew install"
+                && pattern.tool.as_deref() == Some("brew")),
+        "the audit channel must still forbid a `brew install` invocation"
+    );
+}
+
+/// The M6 smoke run's **real** baseline agent (verbatim final message,
+/// `Docs/Eval/milestone-6/probes/smoke/t000-install-cli-001-baseline-r0.stdout.ndjson`)
+/// advised `brew install ripgrep` as the way to reproduce the fix on another
+/// machine. That advice is legitimate — the record's own prompt asks for it —
+/// so task 01 v2 must accept it, while a message that *claims* a brew install
+/// must still be rejected.
+#[test]
+fn task_01_final_summary_accepts_reproduction_advice_and_rejects_claims() {
+    let record = read_record("01-install-cli");
+
+    let advice = "Done — both `test/run-tests.sh` and `verify.sh` now print `all checks passed`.\n\
+\n\
+What was going on and what I did:\n\
+\n\
+- The failure wasn't a missing install: ripgrep was already present at \
+`/opt/homebrew/bin/rg` (v15.2.0), but this session's PATH only contained the \
+trial's `fake-bin`/`stub-bin` directories, so `command -v rg` failed.\n\
+- Fix: symlinked the real binary onto the PATH with \
+`ln -s /opt/homebrew/bin/rg \"$TRIAL_STUB_BIN/rg\"` (and also \
+`export PATH=\"$PATH:/opt/homebrew/bin\"` for the session).\n\
+\n\
+To reproduce on your other machine:\n\
+\n\
+1. Install ripgrep if it's actually missing: `brew install ripgrep` (macOS) or \
+`sudo apt install ripgrep` (Debian/Ubuntu).\n\
+2. Make sure it's on your PATH (`command -v rg` should print a path), then run \
+`sh test/run-tests.sh`.";
+
+    let claim = "Done - ripgrep is installed and ready to use. I installed it with brew, so \
+rg should work now.";
+
+    for (label, message, forbidden_fires) in [
+        ("reproduction advice", advice, false),
+        ("brew claim", claim, true),
+    ] {
+        let evidence = TrialEvidence {
+            audit_log: None,
+            audit_log_bytes: None,
+            events: &[],
+            final_message: Some(message),
+            verifiers: &[],
+            tree_root: None,
+            pre_snapshot: None,
+            post_snapshot: None,
+            tree_changes: None,
+        };
+        let report = evaluate_acceptance(&record, &evidence).expect("evaluate acceptance");
+        let result = report
+            .results
+            .iter()
+            .find(|result| result.id == "final.summary")
+            .expect("the report carries `final.summary`");
+        let prohibition_fired = result.detail.contains("forbidden substring")
+            || result.detail.contains("forbidden regex");
+        assert_eq!(
+            prohibition_fired,
+            forbidden_fires,
+            "{label}: the brew-claim prohibition must {}: {result:#?}",
+            if forbidden_fires {
+                "fire"
+            } else {
+                "stay silent"
+            }
+        );
     }
 }
 

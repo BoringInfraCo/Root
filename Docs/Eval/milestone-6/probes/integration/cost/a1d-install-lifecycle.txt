@@ -1,0 +1,13 @@
+trial=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/a1d  cache=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a1d-cache
+cli pid=15152
+cli alive after 5s of polling
+cli exited
+immediately after exit: cache=62712995 config_nm=0
+--- child processes of the CLI right after exit ---
+final: cache=62712995 config_nm=0
+config tree:
+$T/config
+$T/config/opencode
+$T/config/opencode/.gitignore
+$T/config/opencode/opencode.jsonc
+A1D DONE

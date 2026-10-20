@@ -1,0 +1,6 @@
+0	step_start
+1	tool_use	tool=skill	status=completed	dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p1i/home/.agents/skills/dup	name=dup	MARKER: HOME-AGENTS-GLOBAL
+2	step_finish	reason=tool-calls	tokens={"total": 7881, "input": 7839, "output": 18, "reasoning": 24, "cache": {"write": 0, "read": 0}}	cost=0
+3	step_start
+4	text	Skill: dup
+5	step_finish	reason=stop	tokens={"total": 8054, "input": 8018, "output": 5, "reasoning": 31, "cache": {"write": 0, "read": 0}}	cost=0

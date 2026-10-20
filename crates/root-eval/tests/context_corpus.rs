@@ -35,6 +35,9 @@ const CASES: &[&str] = &[
     "15-unsafe-explicit-path",
     "16-flags-project-config",
     "17-opencode-walkup-global",
+    "18-flag-gates-external-skills",
+    "19-flag-project-config-instructions",
+    "20-project-instruction-multilevel",
 ];
 
 macro_rules! case_test {
@@ -69,6 +72,18 @@ case_test!(case_14_skills_paths, "14-skills-paths");
 case_test!(case_15_unsafe_explicit_path, "15-unsafe-explicit-path");
 case_test!(case_16_flags_project_config, "16-flags-project-config");
 case_test!(case_17_opencode_walkup_global, "17-opencode-walkup-global");
+case_test!(
+    case_18_flag_gates_external_skills,
+    "18-flag-gates-external-skills"
+);
+case_test!(
+    case_19_flag_project_config_instructions,
+    "19-flag-project-config-instructions"
+);
+case_test!(
+    case_20_project_instruction_multilevel,
+    "20-project-instruction-multilevel"
+);
 
 #[test]
 fn every_corpus_case_is_replayed() {
@@ -167,7 +182,11 @@ fn manifest_replay_is_byte_deterministic() {
 }
 
 #[test]
-fn claude_prompt_flag_removes_only_the_global_fallback() {
+fn claude_prompt_flag_removes_the_global_fallback_and_the_project_claude_file() {
+    // Upstream `1.18.27`: `disableClaudeCodePrompt` drops the global
+    // `~/.claude/CLAUDE.md` fallback *and* the project-level `CLAUDE.md`
+    // candidate from the project priority list (live-confirmed 2026-10-19,
+    // `Docs/Eval/milestone-6/CONFORMANCE-DISCOVERY.md` §3.2).
     let case = "02-global-claude-fallback";
     let expected = load_expected(case);
     let enabled = resolve_scenario(case, context_support::scenario(&expected, "default"))
@@ -184,22 +203,222 @@ fn claude_prompt_flag_removes_only_the_global_fallback() {
         disabled.sha256(),
         "the gate is part of the hashed context"
     );
+
+    let case = "19-flag-project-config-instructions";
+    let expected = load_expected(case);
+    let enabled = resolve_scenario(case, context_support::scenario(&expected, "claude-only"))
+        .expect("scenario resolves");
+    let disabled = resolve_scenario(
+        case,
+        context_support::scenario(&expected, "claude-only-disable-claude-prompt"),
+    )
+    .expect("flag scenario resolves");
+    assert_eq!(
+        enabled
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.token.as_str())
+            .collect::<Vec<_>>(),
+        ["xdg:opencode/AGENTS.md", "project:CLAUDE.md"]
+    );
+    assert_eq!(
+        disabled
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.token.as_str())
+            .collect::<Vec<_>>(),
+        ["xdg:opencode/AGENTS.md"],
+        "the project CLAUDE.md is not a candidate under the prompt gate"
+    );
 }
 
 #[test]
-fn claude_skills_flag_removes_cross_agent_roots() {
-    let case = "09-cross-agent-roots";
+fn claude_skills_flag_removes_only_the_claude_roots() {
+    // Upstream `1.18.27`: `disableClaudeCodeSkills` removes the `.claude`
+    // roots only; the `.agents` roots belong to `disableExternalSkills`
+    // (live-confirmed 2026-10-19, `CONFORMANCE-DISCOVERY.md` §3.1).
+    let case = "18-flag-gates-external-skills";
     let expected = load_expected(case);
-    let enabled = resolve_scenario(case, context_support::scenario(&expected, "default"))
-        .expect("default resolves");
-    let disabled = resolve_scenario(
+    let names = |scenario: &str| {
+        let manifest = resolve_scenario(case, context_support::scenario(&expected, scenario))
+            .expect("resolves");
+        manifest
+            .skills()
+            .iter()
+            .map(|skill| skill.name.clone())
+            .collect::<Vec<String>>()
+    };
+    assert_eq!(
+        names("default"),
+        [
+            "agents-global",
+            "claude-global",
+            "project-agents",
+            "project-claude",
+            "project-oc"
+        ]
+    );
+    assert_eq!(
+        names("disable-claude-skills"),
+        ["agents-global", "project-agents", "project-oc"],
+        "only the .claude roots are gated by the Claude-skills flag"
+    );
+    assert_eq!(
+        names("disable-external-skills"),
+        ["project-oc"],
+        "the external-skills flag removes the .claude and the .agents roots"
+    );
+    assert_eq!(
+        names("disable-claude-code"),
+        ["agents-global", "project-agents", "project-oc"],
+        "the broad Claude-Code gate implies prompt and skills, never external skills"
+    );
+    assert_eq!(names("disable-claude-skills-and-external"), ["project-oc"]);
+}
+
+#[test]
+fn broad_claude_code_gate_implies_prompt_and_skills_but_not_external_skills() {
+    let case = "18-flag-gates-external-skills";
+    let expected = load_expected(case);
+    let manifest = resolve_scenario(
+        case,
+        context_support::scenario(&expected, "disable-claude-code"),
+    )
+    .expect("scenario resolves");
+    let specific = resolve_scenario(
         case,
         context_support::scenario(&expected, "disable-claude-skills"),
     )
+    .expect("scenario resolves");
+    assert_ne!(
+        manifest.sha256(),
+        specific.sha256(),
+        "the flag projection distinguishes the broad gate from the direct one"
+    );
+
+    let flags = DiscoveryFlags {
+        disable_claude_code: true,
+        ..DiscoveryFlags::default()
+    };
+    assert!(flags.claude_code_skills_disabled());
+    assert!(flags.claude_code_prompt_disabled());
+    assert!(!flags.external_skills_disabled());
+    let direct = DiscoveryFlags {
+        disable_claude_code_skills: true,
+        disable_claude_code_prompt: true,
+        ..DiscoveryFlags::default()
+    };
+    assert!(direct.claude_code_skills_disabled());
+    assert!(direct.claude_code_prompt_disabled());
+    assert!(!direct.external_skills_disabled());
+}
+
+#[test]
+fn project_config_flag_removes_the_project_instruction_walk_up() {
+    // Upstream `1.18.27`: `OPENCODE_DISABLE_PROJECT_CONFIG` skips the project
+    // instruction lookup entirely; only the global instruction survives
+    // (live-confirmed 2026-10-19, `CONFORMANCE-DISCOVERY.md` §3.2).
+    let case = "19-flag-project-config-instructions";
+    let expected = load_expected(case);
+    let enabled = resolve_scenario(case, context_support::scenario(&expected, "agents-only"))
+        .expect("scenario resolves");
+    let disabled = resolve_scenario(
+        case,
+        context_support::scenario(&expected, "agents-only-disable-project-config"),
+    )
     .expect("flag scenario resolves");
-    assert_eq!(enabled.skills().len(), 5);
-    assert!(disabled.skills().is_empty());
-    assert_ne!(enabled.sha256(), disabled.sha256());
+    assert_eq!(
+        enabled
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.token.as_str())
+            .collect::<Vec<_>>(),
+        ["xdg:opencode/AGENTS.md", "project:AGENTS.md"]
+    );
+    assert_eq!(
+        disabled
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.token.as_str())
+            .collect::<Vec<_>>(),
+        ["xdg:opencode/AGENTS.md"],
+        "the project walk-up is skipped entirely under the project-config gate"
+    );
+}
+
+#[test]
+fn every_level_of_the_winning_project_instruction_name_attaches() {
+    // Upstream `1.18.27`: `findUp` returns every level of the first-priority
+    // name, and the system prompt carries one block per match (innermost
+    // first) — live-confirmed 2026-10-19, `CONFORMANCE-DISCOVERY.md` §3.2.
+    let manifest = resolve_named("20-project-instruction-multilevel", "default");
+    assert_eq!(
+        manifest
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.token.as_str())
+            .collect::<Vec<_>>(),
+        ["worktree:app/AGENTS.md", "worktree:AGENTS.md"]
+    );
+    assert_eq!(
+        manifest
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.precedence)
+            .collect::<Vec<_>>(),
+        [0, 1]
+    );
+
+    let manifest = resolve_named("03-project-walkup-nearest-agents", "default");
+    assert_eq!(
+        manifest
+            .instructions()
+            .iter()
+            .map(|instruction| instruction.token.as_str())
+            .collect::<Vec<_>>(),
+        ["worktree:applications/AGENTS.md", "worktree:AGENTS.md"],
+        "both levels of the winning name attach, nearest first"
+    );
+}
+
+#[test]
+fn duplicate_skill_names_make_the_manifest_non_reproducible() {
+    // Upstream registers skills concurrently, so the winner of a contested
+    // name is racy (live-confirmed 2026-10-19, `CONFORMANCE-DISCOVERY.md`
+    // §2.3). The resolver must not claim a winner.
+    let manifest = resolve_named("11-duplicate-name", "default");
+    assert!(
+        !manifest.reproducible(),
+        "a duplicate-name layout is not reproducible"
+    );
+    assert_eq!(manifest.discovery_warnings().len(), 1);
+    let warning = &manifest.discovery_warnings()[0];
+    assert_eq!(warning.name, "dup-skill");
+    assert_eq!(
+        warning
+            .candidates
+            .iter()
+            .map(|candidate| candidate.token.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "home:.claude/skills/dup/SKILL.md",
+            "xdg:opencode/skills/dup/SKILL.md",
+            "project:.opencode/skill/dup/SKILL.md"
+        ],
+        "every candidate is recorded; the warning names no winner"
+    );
+    assert_eq!(manifest.skills().len(), 1);
+    assert!(
+        manifest.skills()[0].ambiguous,
+        "the effective skill is flagged ambiguous"
+    );
+
+    let unique = resolve_named("09-cross-agent-roots", "default");
+    assert!(
+        unique.reproducible(),
+        "a layout with unique skill names stays reproducible"
+    );
+    assert!(unique.discovery_warnings().is_empty());
 }
 
 #[test]

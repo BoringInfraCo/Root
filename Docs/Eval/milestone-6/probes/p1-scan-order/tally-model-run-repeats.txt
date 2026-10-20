@@ -1,0 +1,22 @@
+# P1 model-run repeatability (same layout, N identical runs) - from out/p1e
+### r1: project .opencode/skill/dup  vs  global ~/.agents/skills/dup
+  run 1: exit=0 wall_ms=23000  winner=r1/cwd/.opencode/skill/dup  MARKER: PROJECT-OPENCODE-SKILL
+  run 2: exit=0 wall_ms=11000  winner=r1/home/.agents/skills/dup  MARKER: AGENTS-GLOBAL
+  run 3: exit=0 wall_ms=16000  winner=r1/cwd/.opencode/skill/dup  MARKER: PROJECT-OPENCODE-SKILL
+  run 4: exit=0 wall_ms=11000  winner=r1/cwd/.opencode/skill/dup  MARKER: PROJECT-OPENCODE-SKILL
+  run 5: exit=0 wall_ms=667000  winner=r1/cwd/.opencode/skill/dup  MARKER: PROJECT-OPENCODE-SKILL
+
+### r2: XDG opencode/skills/dup          vs  global ~/.agents/skills/dup
+  run 1: exit=0 wall_ms=18000  winner=r2/config/opencode/skills/dup  MARKER: XDG-CONFIG-SKILLS
+  run 2: exit=0 wall_ms=11000  winner=r2/config/opencode/skills/dup  MARKER: XDG-CONFIG-SKILLS
+  run 3: exit=0 wall_ms=14000  winner=r2/config/opencode/skills/dup  MARKER: XDG-CONFIG-SKILLS
+  run 4: exit=0 wall_ms=10000  winner=r2/config/opencode/skills/dup  MARKER: XDG-CONFIG-SKILLS
+  run 5: exit=0 wall_ms=7000  winner=r2/home/.agents/skills/dup  MARKER: AGENTS-GLOBAL
+
+### r3: project .opencode/skill/dup  vs  global ~/.claude/skills/dup
+  run 1: exit=0 wall_ms=19000  winner=r3/home/.claude/skills/dup  MARKER: HOME-CLAUDE-GLOBAL
+  run 2: exit=0 wall_ms=10000  winner=r3/cwd/.opencode/skill/dup  MARKER: PROJECT-OPENCODE-SKILL
+  run 3: exit=0 wall_ms=10000  winner=r3/cwd/.opencode/skill/dup  MARKER: PROJECT-OPENCODE-SKILL
+  run 4: exit=0 wall_ms=10000  winner=r3/home/.claude/skills/dup  MARKER: HOME-CLAUDE-GLOBAL
+  run 5: exit=0 wall_ms=19000  winner=r3/home/.claude/skills/dup  MARKER: HOME-CLAUDE-GLOBAL
+

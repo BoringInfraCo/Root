@@ -1,0 +1,7 @@
+== baseline ==
+base: sp_gpath
+   resolved skills.paths = ["/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p2b/home/gpaths"]
+== OPENCODE_DISABLE_PROJECT_CONFIG=1 ==
+flag-project-config: sp_gpath
+   resolved skills.paths = ["/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p2b/home/gpaths"]
+P2B DONE

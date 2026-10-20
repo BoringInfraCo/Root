@@ -1,0 +1,70 @@
+### C_run1
+  ndjson_lines=39
+  session_ids=['ses_ea9b48327ffelwpsDAXNaxyr6R']
+  envelope_type_seq=['step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'tool_use', 'text', 'step_finish', 'step_start', 'tool_use', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'text', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'tool_use', 'step_finish']
+  tool_seq=[('skill', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('read', 'error'), ('read', 'error')]
+  commands=['root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'rg --version', 'root verify ripgrep --json 2>&1; echo "---"; root install ripgrep --json --verbose 2>&1', 'which root; root --version 2>&1; echo "---"; root verify ripgrep 2>&1', 'ls -la /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/bin/', 'file /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/bin/root', 'echo $PATH', 'echo /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/bin/*(/N)', 'for f in /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/bin/*; do echo "$f"; done']
+  skill_events=[('root', '/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/cwd/.opencode/skill/root')]
+  text_events=["Verification claimed success but `rg` isn't on PATH. Checking further.", 'Root has replaced the system PATH entirely. Investigating the damage.']
+  step_finish_reasons=['tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls']
+  step_finish_tokens=[{'total': 7887, 'input': 7839, 'output': 18, 'reasoning': 30, 'cache': {'write': 0, 'read': 0}}, {'total': 8869, 'input': 934, 'output': 45, 'reasoning': 82, 'cache': {'write': 0, 'read': 7808}}, {'total': 8932, 'input': 186, 'output': 24, 'reasoning': 18, 'cache': {'write': 0, 'read': 8704}}, {'total': 8982, 'input': 112, 'output': 24, 'reasoning': 14, 'cache': {'write': 0, 'read': 8832}}, {'total': 9024, 'input': 98, 'output': 21, 'reasoning': 9, 'cache': {'write': 0, 'read': 8896}}, {'total': 9168, 'input': 82, 'output': 97, 'reasoning': 29, 'cache': {'write': 0, 'read': 8960}}, {'total': 9428, 'input': 224, 'output': 132, 'reasoning': 48, 'cache': {'write': 0, 'read': 9024}}, {'total': 9513, 'input': 245, 'output': 21, 'reasoning': 31, 'cache': {'write': 0, 'read': 9216}}, {'total': 9760, 'input': 158, 'output': 81, 'reasoning': 113, 'cache': {'write': 0, 'read': 9408}}, {'total': 9882, 'input': 231, 'output': 75, 'reasoning': 40, 'cache': {'write': 0, 'read': 9536}}, {'total': 10171, 'input': 256, 'output': 125, 'reasoning': 62, 'cache': {'write': 0, 'read': 9728}}]
+  step_finish_costs=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  call_ids=['call_3c81965908af42169c1d72db', 'call_e38477d9d9704120992846ff', 'call_71f29d9413594edba4468595', 'call_ce4e72b107c74db38a262736', 'call_19f4bade4e9044eaa802863c', 'call_ecc921377df84c1292f756db', 'call_c19acd9af2ac4353ac6b1444', 'call_c5156f6dcd914d6a8a180c1f', 'call_339c2d7d9ca84dd7a70df4c9', 'call_97edf00a7d9c4485aa9bd84b', 'call_36c7d3c3d9d44ee2b985a888', 'call_4e6947a1943248e1b3e2c5ff', 'call_e7259bee813b4a48b94b324e', 'call_86e5c4c8777144adb9cc60a7', 'call_2399c170bbe141be9d783311']
+  timestamps_first_last=1792449152849 .. 1792449206350
+  audit_log=['root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'root verify ripgrep --json', 'root install ripgrep --json --verbose', 'root --version', 'root verify ripgrep']
+  protocol_order=['doctor', 'plan', 'install', 'verify']
+
+### C_run2
+  ndjson_lines=30
+  session_ids=['ses_ea9b37bb1ffeATtS03fkv6MiP6']
+  envelope_type_seq=['step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish', 'step_start', 'tool_use', 'step_finish']
+  tool_seq=[('skill', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('bash', 'completed'), ('read', 'error')]
+  commands=['root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'which rg && rg --version', 'root --help 2>&1; echo "---"; root plan install ripgrep 2>&1; echo "---"; root verify ripgrep 2>&1', 'which root; file "$(which root)"; ls -la "$(which root)"', 'head -c 200 /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/bin/root 2>&1']
+  skill_events=[('root', '/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/<TRIAL>/cwd/.opencode/skill/root')]
+  text_events=[]
+  step_finish_reasons=['tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls', 'tool-calls']
+  step_finish_tokens=[{'total': 7885, 'input': 31, 'output': 18, 'reasoning': 28, 'cache': {'write': 0, 'read': 7808}}, {'total': 8825, 'input': 932, 'output': 22, 'reasoning': 63, 'cache': {'write': 0, 'read': 7808}}, {'total': 8912, 'input': 133, 'output': 25, 'reasoning': 50, 'cache': {'write': 0, 'read': 8704}}, {'total': 8973, 'input': 92, 'output': 37, 'reasoning': 12, 'cache': {'write': 0, 'read': 8832}}, {'total': 9016, 'input': 89, 'output': 24, 'reasoning': 7, 'cache': {'write': 0, 'read': 8896}}, {'total': 9100, 'input': 68, 'output': 24, 'reasoning': 48, 'cache': {'write': 0, 'read': 8960}}, {'total': 9244, 'input': 87, 'output': 50, 'reasoning': 83, 'cache': {'write': 0, 'read': 9024}}, {'total': 9351, 'input': 180, 'output': 34, 'reasoning': 49, 'cache': {'write': 0, 'read': 9088}}, {'total': 9605, 'input': 211, 'output': 76, 'reasoning': 102, 'cache': {'write': 0, 'read': 9216}}, {'total': 9705, 'input': 215, 'output': 63, 'reasoning': 19, 'cache': {'write': 0, 'read': 9408}}]
+  step_finish_costs=[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  call_ids=['call_72a873bdeab34057ba7f25b5', 'call_71216d20a6504fa9800f3147', 'call_1b8d2d781bf84b9bbc73f85d', 'call_3d66f99ed1dd43a78f3d303f', 'call_5abeca3537e64fcb9ddd4952', 'call_ec4b0e38468f4c76b4f0e24f', 'call_d29b15cadf62408dbf6f4c12', 'call_b7110506507f420b8a4d7b6f', 'call_050722ab558b468dac83f88e', 'call_52b2661bb9394aef816e9065']
+  timestamps_first_last=1792449220374 .. 1792449267350
+  audit_log=['root doctor --json', 'root plan install ripgrep --json', 'root install ripgrep --json', 'root verify ripgrep --json', 'root --help', 'root plan install ripgrep', 'root verify ripgrep']
+  protocol_order=['doctor', 'plan', 'install', 'verify']
+
+=== VARIANCE (pairwise, first vs each later) ===
+  C_run1  vs  C_run2:
+    session_id                 VARIES
+    timestamps                 VARIES
+    envelope_type_seq          VARIES
+    tool_names+status          VARIES
+    commands (path-normalized) VARIES
+    skill_event_present        STABLE
+    skill_metadata_dir (norm)  STABLE
+    skill_status               STABLE
+    text_events                VARIES
+    token_counts               VARIES
+    costs (distinct values)    STABLE
+    all costs == 0             STABLE
+    call_ids                   VARIES
+    audit_log (exact)          VARIES
+    audit_log (normalized)     VARIES
+    protocol_order             STABLE
+    protocol == doctor/plan/install/verify STABLE
+
+=== SUMMARY ===
+  session_id                 VARIES across runs
+  timestamps                 VARIES across runs
+  envelope_type_seq          VARIES across runs
+  tool_names+status          VARIES across runs
+  commands (path-normalized) VARIES across runs
+  skill_event_present        STABLE across all runs
+  skill_metadata_dir (norm)  STABLE across all runs
+  skill_status               STABLE across all runs
+  text_events                VARIES across runs
+  token_counts               VARIES across runs
+  costs (distinct values)    STABLE across all runs
+  all costs == 0             STABLE across all runs
+  call_ids                   VARIES across runs
+  audit_log (exact)          VARIES across runs
+  audit_log (normalized)     VARIES across runs
+  protocol_order             STABLE across all runs
+  protocol == doctor/plan/install/verify STABLE across all runs

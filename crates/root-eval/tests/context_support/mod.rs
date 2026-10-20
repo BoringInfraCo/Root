@@ -80,6 +80,10 @@ pub struct FlagsSpec {
     #[serde(default)]
     pub disable_project_config: bool,
     #[serde(default)]
+    pub disable_external_skills: bool,
+    #[serde(default)]
+    pub disable_claude_code: bool,
+    #[serde(default)]
     pub config_dir: Option<String>,
 }
 
@@ -92,7 +96,13 @@ pub struct Expectation {
     pub discovery_errors: Vec<ExpectedDiscoveryError>,
     #[serde(default)]
     pub discovery_warnings: Vec<ExpectedWarning>,
+    #[serde(default = "default_reproducible")]
+    pub reproducible: bool,
     pub manifest_sha256: String,
+}
+
+fn default_reproducible() -> bool {
+    true
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +125,8 @@ pub struct ExpectedSkill {
     pub file: String,
     pub token: String,
     pub sha256: String,
+    #[serde(default)]
+    pub ambiguous: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,10 +142,15 @@ pub struct ExpectedDiscoveryError {
 #[serde(deny_unknown_fields)]
 pub struct ExpectedWarning {
     pub name: String,
-    pub overridden_file: String,
-    pub overridden_token: String,
-    pub winner_file: String,
-    pub winner_token: String,
+    pub candidates: Vec<ExpectedCandidate>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedCandidate {
+    pub file: String,
+    pub token: String,
+    pub sha256: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -172,6 +189,8 @@ pub fn resolve_scenario(
         disable_claude_code_skills: scenario.flags.disable_claude_code_skills,
         disable_claude_code_prompt: scenario.flags.disable_claude_code_prompt,
         disable_project_config: scenario.flags.disable_project_config,
+        disable_external_skills: scenario.flags.disable_external_skills,
+        disable_claude_code: scenario.flags.disable_claude_code,
         config_dir: scenario
             .flags
             .config_dir
@@ -334,6 +353,11 @@ fn assert_manifest(
             "{case}/{scenario_name}: skill digest for {}",
             wanted.file
         );
+        assert_eq!(
+            found.ambiguous, wanted.ambiguous,
+            "{case}/{scenario_name}: skill ambiguity for {}",
+            wanted.file
+        );
     }
 
     assert_eq!(
@@ -387,29 +411,38 @@ fn assert_manifest(
             "{case}/{scenario_name}: warning name"
         );
         assert_eq!(
-            found.overridden_path,
-            dir.join(&wanted.overridden_file),
-            "{case}/{scenario_name}: overridden path"
+            found.candidates.len(),
+            wanted.candidates.len(),
+            "{case}/{scenario_name}: warning candidate count for {}",
+            wanted.name
         );
-        assert_eq!(
-            found.overridden_token, wanted.overridden_token,
-            "{case}/{scenario_name}: overridden token"
-        );
-        assert_eq!(
-            found.winner_path,
-            dir.join(&wanted.winner_file),
-            "{case}/{scenario_name}: winner path"
-        );
-        assert_eq!(
-            found.winner_token, wanted.winner_token,
-            "{case}/{scenario_name}: winner token"
-        );
+        for (found_candidate, wanted_candidate) in found.candidates.iter().zip(&wanted.candidates) {
+            assert_eq!(
+                found_candidate.path,
+                dir.join(&wanted_candidate.file),
+                "{case}/{scenario_name}: warning candidate path"
+            );
+            assert_eq!(
+                found_candidate.token, wanted_candidate.token,
+                "{case}/{scenario_name}: warning candidate token"
+            );
+            assert_eq!(
+                found_candidate.sha256, wanted_candidate.sha256,
+                "{case}/{scenario_name}: warning candidate digest"
+            );
+        }
     }
 
     assert_eq!(
         actual.builtin_skill_names(),
         root_eval::BUILTIN_SKILL_NAMES,
         "{case}/{scenario_name}: built-in skill names"
+    );
+
+    assert_eq!(
+        actual.reproducible(),
+        expected.reproducible,
+        "{case}/{scenario_name}: manifest reproducibility"
     );
 
     if expected.manifest_sha256 == "TBD" {

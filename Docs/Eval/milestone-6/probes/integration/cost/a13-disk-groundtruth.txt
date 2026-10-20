@@ -1,0 +1,4 @@
+strategy=clone : df free-space delta for 60 trials = 1162476 KB  => 19374 KB/trial
+             du -sk batch = 8108880 KB (apparent)
+strategy=hard : df free-space delta for 60 trials = 697780 KB  => 11629 KB/trial
+             du -sk batch = 641868 KB (apparent)

@@ -1,0 +1,63 @@
+{
+  "case": "20-project-instruction-multilevel",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "default",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "worktree/app/service",
+        "worktree_root": "worktree"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 0,
+            "file": "worktree/app/AGENTS.md",
+            "token": "worktree:app/AGENTS.md",
+            "sha256": "sha256:0e2a022fbceba865c629af501d358485d7534cfe49eb786e4394c736c70666a1",
+            "size": 52
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "worktree/AGENTS.md",
+            "token": "worktree:AGENTS.md",
+            "sha256": "sha256:b9eebe528de23ae4ec6398f9c5464a3596986aa3a7a8c10761b2c6cce2d471d4",
+            "size": 58
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:4bc0abb30935ac1c44b831e73a879850dbb1a1349fdd67b0c1c9389867b503ef"
+      }
+    },
+    {
+      "name": "disable-project-config",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "worktree/app/service",
+        "worktree_root": "worktree"
+      },
+      "flags": {
+        "disable_project_config": true
+      },
+      "expect": {
+        "instructions": [],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:bcd174f06cfcefef9392616eb46626576341a5c927ae3999e1b314f41b8c2751"
+      }
+    }
+  ]
+}

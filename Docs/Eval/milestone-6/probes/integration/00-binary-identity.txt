@@ -1,0 +1,12 @@
+sha256 of pinned 1.18.27 CLI:
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/bin/opencode
+
+source of binary (m0 extracted npm platform package):
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m0/install/pkg/node_modules/opencode-darwin-arm64/bin/opencode
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m0/install/pkg/node_modules/opencode-ai/bin/opencode.exe
+f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6  /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m0/gh-extract/opencode
+
+expected: f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+
+binary size: 144074210 bytes
+version: 1.18.27

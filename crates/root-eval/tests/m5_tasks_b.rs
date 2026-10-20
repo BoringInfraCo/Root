@@ -35,9 +35,9 @@ use root_eval::{
     evaluate_acceptance, materialize_trial_with_fake_tools, parse_audit_log, resolve_manifest,
     run_supervised, run_verifier, seal_draft_at, sha256_digest, trial_stub_bin_dir,
     AssertionReport, ConditionOverlay, ContextRoots, DiscoveryFlags, EffectiveContextManifest,
-    Fixture, Prompt, RepositoryLock, SupervisorConfig, TaskDraft, TaskRecord, TerminationKind,
-    TrialEvidence, TrialLayout, TrialSpec, VerifierOutcome, VerifierSpec, VerifierStep,
-    DEFAULT_VERIFIER_OUTPUT_CAP_BYTES,
+    Fixture, PermissionSeeding, Prompt, RepositoryLock, SupervisorConfig, TaskDraft, TaskRecord,
+    TerminationKind, TrialEvidence, TrialLayout, TrialSpec, VerifierOutcome, VerifierSpec,
+    VerifierStep, DEFAULT_VERIFIER_OUTPUT_CAP_BYTES,
 };
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -167,7 +167,8 @@ fn run_condition(record: &TaskRecord, stem: &str, condition: &str) -> TrialRun {
 
     let bindings = bindings_from_environment(&record.environment);
     let layout =
-        materialize_trial_with_fake_tools(&spec, &base_dir, &bindings).expect("trial materializes");
+        materialize_trial_with_fake_tools(&spec, &base_dir, &bindings, PermissionSeeding::AskMode)
+            .expect("trial materializes");
 
     // The harness-side prompt file lives in the trial root, outside the repo.
     let prompt_bytes = match &record.prompt {

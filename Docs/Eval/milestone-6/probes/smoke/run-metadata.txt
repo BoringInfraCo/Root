@@ -1,0 +1,19 @@
+Milestone 6 real-harness smoke run — run metadata
+date: 2026-10-19 (macOS darwin/arm64)
+run_wall_seconds: 220
+binary: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/bin/opencode
+binary_sha256: f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6
+prewarm_root: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-prewarm
+npm_cache_kb_after: 103492
+npm_cache_kb_before_run: 103492
+
+command:
+cargo run -p root-eval --example m5_feasibility -- \
+  --out /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-smoke/evals \
+  --harness real \
+  --opencode-binary /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/bin/opencode \
+  --prewarm-root /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-prewarm \
+  --tasks-dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-smoke/tasks \
+  --prompts-dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-smoke/prompts \
+  --agents-dir /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-smoke/agents \
+  --model opencode/big-pickle --repetitions 1 --seed 881204

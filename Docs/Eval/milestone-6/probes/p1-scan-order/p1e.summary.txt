@@ -1,0 +1,6 @@
+0	step_start
+1	tool_use	tool=skill	status=error	dir=None	name=None	
+2	step_finish	reason=tool-calls	tokens={"total": 7861, "input": 7799, "output": 18, "reasoning": 44, "cache": {"write": 0, "read": 0}}	cost=0
+3	step_start
+4	text	No skill named `dup` exists — the only available skill is `customize-opencode`, so there's no first heading to report.
+5	step_finish	reason=stop	tokens={"total": 7923, "input": 201, "output": 29, "reasoning": 13, "cache": {"write": 0, "read": 7680}}	cost=0

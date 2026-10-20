@@ -6,24 +6,29 @@
 //! `Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md`, with the `OPENCODE_DISABLE_*`
 //! and `OPENCODE_CONFIG_DIR` gates from §4.1/§4.3/§5.2. Nothing here reads the
 //! environment, spawns a process, or assumes a home directory: the caller
-//! passes every root explicitly and maps the four environment gates into
+//! passes every root explicitly and maps the environment gates into
 //! [`DiscoveryFlags`].
+//!
+//! As of 2026-10-19 the resolver follows the upstream `1.18.27` implementation
+//! **as measured live**, not only as read from the frozen contract text: see
+//! `Docs/Eval/milestone-6/CONFORMANCE-DISCOVERY.md` and the "Amendment
+//! 2026-10-19 (live conformance)" section of `UPSTREAM-CONTRACT.md` §4.
 //!
 //! # Documented scan order
 //!
 //! The contract lists the discovery sources but does not spell out a total
-//! order; duplicate names resolve "last-scanned wins". This resolver fixes the
-//! following total order (later scans override earlier ones by skill name) and
-//! records every override as a [`DiscoveryWarning`]:
+//! order. This resolver scans in the following order (later scans override
+//! earlier ones by skill name *in the resolver's deterministic model only* —
+//! upstream's winner is racy, see "Duplicate skill names" below):
 //!
 //! 1. built-in `customize-opencode` (not on disk; recorded in
 //!    [`EffectiveContextManifest::builtin_skill_names`], overridden by any disk
 //!    skill of the same name);
-//! 2. `~/.claude/skills/**/SKILL.md`;
-//! 3. `~/.agents/skills/**/SKILL.md`;
+//! 2. `~/.claude/skills/**/SKILL.md` — dropped by the Claude-skills gate;
+//! 3. `~/.agents/skills/**/SKILL.md` — dropped by the external-skills gate;
 //! 4. for each directory from the instance directory up to the worktree root
 //!    (innermost first, worktree root included): `<dir>/.claude/skills` then
-//!    `<dir>/.agents/skills`;
+//!    `<dir>/.agents/skills` (each subject to its own gate);
 //! 5. for each config directory in the contract's listed order —
 //!    `${XDG_CONFIG_HOME:-~/.config}/opencode`, every `.opencode` from the
 //!    instance directory up to the worktree (innermost first), `~/.opencode`,
@@ -36,16 +41,67 @@
 //! Within one scanned root, candidates are visited in lexicographic order by
 //! path. Scanned roots are de-duplicated by path, keeping the first occurrence.
 //!
+//! # Gates
+//!
+//! Upstream `1.18.27` derives three runtime booleans from four environment
+//! variables (`packages/core/src/flag/flag.ts`):
+//!
+//! | Runtime flag | Environment | Effect |
+//! |---|---|---|
+//! | `disableExternalSkills` | `OPENCODE_DISABLE_EXTERNAL_SKILLS` | drops the `.claude` **and** the `.agents` roots (global and walk-up) |
+//! | `disableClaudeCodeSkills` | `OPENCODE_DISABLE_CLAUDE_CODE` **or** `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` | drops the `.claude` roots only |
+//! | `disableClaudeCodePrompt` | `OPENCODE_DISABLE_CLAUDE_CODE` **or** `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` | drops the global `~/.claude/CLAUDE.md` fallback **and** the project-level `CLAUDE.md` candidate |
+//!
+//! [`DiscoveryFlags`] carries the four environment variables one-to-one; the
+//! effective runtime booleans are derived by
+//! [`DiscoveryFlags::claude_code_skills_disabled`],
+//! [`DiscoveryFlags::claude_code_prompt_disabled`], and
+//! [`DiscoveryFlags::external_skills_disabled`].
+//!
+//! `OPENCODE_DISABLE_PROJECT_CONFIG` is not one of those runtime flags: it
+//! drops the project `.opencode` config directories **and** the project
+//! instruction walk-up (upstream skips the walk-up outright and only
+//! re-points the relative `instructions` glob base at the global config dir).
+//!
 //! # Instructions
 //!
-//! Contract §4.3:
+//! Contract §4.3, as measured live:
 //!
 //! - global: `${XDG_CONFIG_HOME:-~/.config}/opencode/AGENTS.md` first; if
-//!   absent and not suppressed by `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT`, the
+//!   absent and not suppressed by the Claude-prompt gate, the
 //!   `~/.claude/CLAUDE.md` fallback. First match wins.
-//! - project: walking up from the instance directory to the worktree root,
-//!   the first name in priority order `AGENTS.md` → `CLAUDE.md` →
-//!   `CONTEXT.md`; one file per message. Both levels attach independently.
+//! - project: the first name in priority order `AGENTS.md` → `CLAUDE.md` →
+//!   `CONTEXT.md` that matches anywhere in the walk-up span (instance
+//!   directory → worktree root, inclusive); **every** level holding that name
+//!   is attached (innermost first), not only the nearest one. `CLAUDE.md` is
+//!   not a candidate while the Claude-prompt gate is on, and no project
+//!   instruction is attached while the project-config gate is on. Global and
+//!   project levels attach independently.
+//!
+//! # Duplicate skill names: upstream is racy (not reproducible)
+//!
+//! Upstream registers discovered skills with unbounded concurrency
+//! (`forEach(matches, …, {concurrency: "unbounded"})`), so when two `SKILL.md`
+//! files declare the same frontmatter name the file that wins is decided by
+//! async completion order and **flips between runs** (measured live at
+//! `1.18.27`: 5–10 winner flips per 30 runs across four layouts; the upstream
+//! `duplicate skill name` warning's `existing`/`duplicate` pair swaps with
+//! it). The resolver therefore does not claim to predict the winner:
+//!
+//! - every contested name is recorded as a [`DiscoveryWarning`] of kind
+//!   [`DiscoveryWarningKind::DuplicateSkillName`] listing **all** candidate
+//!   files (path, token, digest) in scan order;
+//! - the affected skill entry is flagged `ambiguous`;
+//! - [`EffectiveContextManifest::reproducible`] is `false` for such a
+//!   manifest, and the canonical hash covers the *candidate set* (plus the
+//!   resolver's deterministic scan-order representative) instead of the
+//!   harness's winner, so the hash stays reproducible for the tree while
+//!   making no claim about which file the harness loads.
+//!
+//! Callers that must predict the harness's file choice have to treat a
+//! non-reproducible manifest as "winner unknown"; keeping skill names unique
+//! across every scanned root is the only way to obtain a deterministic
+//! context.
 //!
 //! # Hermeticity and safety
 //!
@@ -72,6 +128,12 @@
 //! same logical tree hashes identically on any machine. Entries are ordered
 //! deterministically: instructions by attachment order, skills by name,
 //! discovery errors by `(token, kind)`, warnings by name and scan order.
+//!
+//! The projection also carries the *effective* upstream runtime flags
+//! (`disableClaudeCodeSkills`, `disableClaudeCodePrompt`,
+//! `disableExternalSkills`, `OPENCODE_DISABLE_PROJECT_CONFIG`, and the
+//! `OPENCODE_CONFIG_DIR` token) and the manifest's `reproducible` verdict, so
+//! flipping a gate or a duplicate-name collision is visible in the hash.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -89,7 +151,11 @@ use frontmatter::parse_skill_frontmatter;
 mod frontmatter;
 
 /// Hash domain mixed into the manifest canonical projection.
-pub const CONTEXT_HASH_DOMAIN: &str = "effective-context.v1";
+///
+/// `v2` (2026-10-19): the projection gained the effective upstream runtime
+/// flags, the per-skill ambiguity flag with its candidate set, and the
+/// manifest's `reproducible` verdict. `v1` hashes are not comparable.
+pub const CONTEXT_HASH_DOMAIN: &str = "effective-context.v2";
 
 /// Largest instruction/config/`SKILL.md` file this resolver will read.
 pub const MAX_CONTEXT_FILE_BYTES: u64 = 1024 * 1024;
@@ -125,24 +191,73 @@ pub struct ContextRoots<'a> {
     pub worktree_root: &'a Path,
 }
 
-/// Boolean/image mapping of the four environment gates that change discovery.
+/// Boolean/image mapping of the environment gates that change discovery.
 ///
 /// The resolver never reads the environment itself; callers translate the
 /// actual environment (or a fixture scenario) into this struct.
+///
+/// The five fields map one-to-one onto the five upstream environment
+/// variables (`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`,
+/// `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT`, `OPENCODE_DISABLE_PROJECT_CONFIG`,
+/// `OPENCODE_DISABLE_EXTERNAL_SKILLS`, `OPENCODE_DISABLE_CLAUDE_CODE`, plus
+/// `OPENCODE_CONFIG_DIR`). Upstream derives three *runtime* booleans from them
+/// (`packages/core/src/flag/flag.ts`); those are exposed by
+/// [`DiscoveryFlags::claude_code_skills_disabled`],
+/// [`DiscoveryFlags::claude_code_prompt_disabled`], and
+/// [`DiscoveryFlags::external_skills_disabled`] and are what the resolver
+/// actually applies.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DiscoveryFlags {
-    /// `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`: skip all cross-agent skill dirs
-    /// (`~/.claude/skills`, `~/.agents/skills`, and their walk-up variants).
+    /// `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`: skip the `.claude` skill roots
+    /// (`~/.claude/skills` and the walk-up `<level>/.claude/skills`). The
+    /// `.agents` roots are **not** affected by this gate.
     pub disable_claude_code_skills: bool,
     /// `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT`: suppress the global
-    /// `~/.claude/CLAUDE.md` fallback (the project walk-up is unaffected).
+    /// `~/.claude/CLAUDE.md` fallback **and** drop the project-level
+    /// `CLAUDE.md` candidate from the project priority list.
     pub disable_claude_code_prompt: bool,
     /// `OPENCODE_DISABLE_PROJECT_CONFIG`: skip project `opencode.json`/`.opencode`
-    /// discovery (project config directories and their `opencode.json`).
+    /// discovery (project config directories and their `opencode.json`) **and**
+    /// the project instruction walk-up.
     pub disable_project_config: bool,
+    /// `OPENCODE_DISABLE_EXTERNAL_SKILLS`: skip every external (cross-agent)
+    /// skill root — the `.claude` roots *and* the `.agents` roots, global and
+    /// walk-up.
+    pub disable_external_skills: bool,
+    /// `OPENCODE_DISABLE_CLAUDE_CODE`: the broad Claude-Code gate. It implies
+    /// both the Claude-skills gate and the Claude-prompt gate (upstream:
+    /// `disableClaudeCodePrompt = broad || direct`,
+    /// `disableClaudeCodeSkills = broad || direct`). It does **not** imply
+    /// `OPENCODE_DISABLE_EXTERNAL_SKILLS`: the `.agents` roots stay visible.
+    pub disable_claude_code: bool,
     /// `OPENCODE_CONFIG_DIR`: an additional config directory scanned after the
     /// defaults.
     pub config_dir: Option<PathBuf>,
+}
+
+impl DiscoveryFlags {
+    /// Effective upstream `disableClaudeCodeSkills` runtime flag.
+    ///
+    /// True when either `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` or the broad
+    /// `OPENCODE_DISABLE_CLAUDE_CODE` is set.
+    pub fn claude_code_skills_disabled(&self) -> bool {
+        self.disable_claude_code_skills || self.disable_claude_code
+    }
+
+    /// Effective upstream `disableClaudeCodePrompt` runtime flag.
+    ///
+    /// True when either `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` or the broad
+    /// `OPENCODE_DISABLE_CLAUDE_CODE` is set.
+    pub fn claude_code_prompt_disabled(&self) -> bool {
+        self.disable_claude_code_prompt || self.disable_claude_code
+    }
+
+    /// Effective upstream `disableExternalSkills` runtime flag.
+    ///
+    /// True only when `OPENCODE_DISABLE_EXTERNAL_SKILLS` is set.
+    pub fn external_skills_disabled(&self) -> bool {
+        self.disable_external_skills
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -266,7 +381,10 @@ impl DiscoveryErrorKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum DiscoveryWarningKind {
-    /// A later-scanned skill overrode an earlier one with the same name.
+    /// Two or more `SKILL.md` files declare the same frontmatter name.
+    ///
+    /// Upstream resolves such a collision by a *race* (concurrent
+    /// registration), so the winner is not a function of the layout.
     DuplicateSkillName,
 }
 
@@ -285,21 +403,31 @@ pub struct DiscoveryError {
     pub sha256: String,
 }
 
-/// A duplicate-name override event.
+/// One candidate file of a duplicate-name collision.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DiscoveryCandidate {
+    /// Absolute path of the candidate file.
+    pub path: PathBuf,
+    /// Canonical root-relative token of the candidate.
+    pub token: String,
+    /// SHA-256 of the candidate's bytes.
+    pub sha256: String,
+}
+
+/// A duplicate-name collision.
+///
+/// The warning records **every** candidate file for the contested name, in the
+/// resolver's scan order. It deliberately does not name a winner: upstream
+/// registers skills concurrently, so the file that wins is decided by async
+/// completion order and flips between runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveryWarning {
     /// Warning kind (currently only duplicate skill names).
     pub kind: DiscoveryWarningKind,
     /// Contested skill name.
     pub name: String,
-    /// Absolute path of the overridden file.
-    pub overridden_path: PathBuf,
-    /// Token of the overridden file.
-    pub overridden_token: String,
-    /// Absolute path of the winning file.
-    pub winner_path: PathBuf,
-    /// Token of the winning file.
-    pub winner_token: String,
+    /// Every candidate file for the name, in scan order (at least two).
+    pub candidates: Vec<DiscoveryCandidate>,
 }
 
 /// A resolved instruction file.
@@ -329,11 +457,21 @@ pub struct ResolvedSkill {
     /// Discovery source class.
     pub source: SkillSource,
     /// Absolute path of the `SKILL.md` file.
+    ///
+    /// For an ambiguous skill (see [`ResolvedSkill::ambiguous`]) this is the
+    /// resolver's deterministic *scan-order representative*, **not** a
+    /// prediction of the file the harness loads.
     pub path: PathBuf,
     /// Canonical root-relative token used by the manifest hash.
     pub token: String,
     /// SHA-256 of the file bytes.
     pub sha256: String,
+    /// True when more than one file declares this skill name.
+    ///
+    /// Upstream resolves such a collision by a race, so the effective file is
+    /// unknown; the full candidate set is recorded in
+    /// [`EffectiveContextManifest::discovery_warnings`].
+    pub ambiguous: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +486,7 @@ pub struct EffectiveContextManifest {
     discovery_errors: Vec<DiscoveryError>,
     discovery_warnings: Vec<DiscoveryWarning>,
     builtin_skill_names: Vec<String>,
+    reproducible: bool,
     canonical_bytes: Vec<u8>,
     sha256: String,
 }
@@ -358,7 +497,11 @@ impl EffectiveContextManifest {
         &self.instructions
     }
 
-    /// Effective skills, sorted by name (later scans override earlier ones).
+    /// Effective skills, sorted by name (one entry per name).
+    ///
+    /// When two files declare the same name the entry is flagged
+    /// [`ResolvedSkill::ambiguous`]: its path/digest are the resolver's
+    /// scan-order representative, not a prediction of the harness's winner.
     pub fn skills(&self) -> &[ResolvedSkill] {
         &self.skills
     }
@@ -368,7 +511,7 @@ impl EffectiveContextManifest {
         &self.discovery_errors
     }
 
-    /// Duplicate-name override events.
+    /// Duplicate-name collisions, one per contested skill name.
     pub fn discovery_warnings(&self) -> &[DiscoveryWarning] {
         &self.discovery_warnings
     }
@@ -376,6 +519,18 @@ impl EffectiveContextManifest {
     /// Built-in skill names registered before the disk scan.
     pub fn builtin_skill_names(&self) -> &[String] {
         &self.builtin_skill_names
+    }
+
+    /// Whether the effective context is fully determined by the layout.
+    ///
+    /// `false` when a duplicate skill name was found: upstream registers
+    /// discovered skills concurrently, so the file that wins the name flips
+    /// between runs. The manifest hash of such a manifest pins the *candidate
+    /// set* (and the resolver's scan-order representative), not the harness's
+    /// winner, and callers must not treat it as a prediction of the harness's
+    /// effective file.
+    pub fn reproducible(&self) -> bool {
+        self.reproducible
     }
 
     /// Canonical bytes whose SHA-256 is [`EffectiveContextManifest::sha256`].
@@ -496,9 +651,7 @@ pub fn resolve_manifest(
     if let Some(instruction) = global_instruction(&resolved, flags)? {
         instructions.push(instruction);
     }
-    if let Some(instruction) = project_instruction(&resolved)? {
-        instructions.push(instruction);
-    }
+    instructions.extend(project_instructions(&resolved, flags)?);
     for (index, instruction) in instructions.iter_mut().enumerate() {
         instruction.precedence = u8::try_from(index).unwrap_or(u8::MAX);
     }
@@ -520,7 +673,7 @@ pub fn resolve_manifest(
     }
 
     let discovery_warnings = duplicate_warnings(&candidates);
-    let skills = winning_skills(&candidates);
+    let skills = effective_skills(&candidates);
     let flags_value = flags_projection(&resolved, flags);
     finish_manifest(
         instructions,
@@ -761,7 +914,7 @@ fn global_instruction(
             roots,
         )?));
     }
-    if !flags.disable_claude_code_prompt {
+    if !flags.claude_code_prompt_disabled() {
         let claude = roots.home.join(".claude").join("CLAUDE.md");
         if regular_file(&claude)? {
             return Ok(Some(read_instruction(
@@ -774,20 +927,45 @@ fn global_instruction(
     Ok(None)
 }
 
-fn project_instruction(roots: &ResolvedRoots) -> Result<Option<ResolvedInstruction>, ContextError> {
-    for file_name in ["AGENTS.md", "CLAUDE.md", "CONTEXT.md"] {
+/// Project-level instruction files (contract §4.3, as measured live).
+///
+/// * `OPENCODE_DISABLE_PROJECT_CONFIG` switches the whole walk-up off: upstream
+///   skips the project instruction lookup entirely under that flag.
+/// * The priority list is `AGENTS.md` → `CLAUDE.md` → `CONTEXT.md`, where
+///   `CLAUDE.md` is dropped while the Claude-prompt gate is on.
+/// * The **first name that matches anywhere in the walk-up span** wins, and
+///   *every* level holding that name is attached (innermost first) — upstream
+///   walks up with `findUp`, which returns all matches, not just the nearest.
+fn project_instructions(
+    roots: &ResolvedRoots,
+    flags: &DiscoveryFlags,
+) -> Result<Vec<ResolvedInstruction>, ContextError> {
+    if flags.disable_project_config {
+        return Ok(Vec::new());
+    }
+    let mut names = vec!["AGENTS.md"];
+    if !flags.claude_code_prompt_disabled() {
+        names.push("CLAUDE.md");
+    }
+    names.push("CONTEXT.md");
+
+    for file_name in names {
+        let mut instructions = Vec::new();
         for level in &roots.chain {
             let candidate = level.join(file_name);
             if regular_file(&candidate)? {
-                return Ok(Some(read_instruction(
+                instructions.push(read_instruction(
                     &candidate,
                     InstructionSource::ProjectWalkUp,
                     roots,
-                )?));
+                )?);
             }
         }
+        if !instructions.is_empty() {
+            return Ok(instructions);
+        }
     }
-    Ok(None)
+    Ok(Vec::new())
 }
 
 fn read_instruction(
@@ -853,13 +1031,27 @@ fn skill_scan_roots(roots: &ResolvedRoots, flags: &DiscoveryFlags) -> Vec<(PathB
         }
     };
 
-    if !flags.disable_claude_code_skills {
-        push(
-            roots.home.join(".claude").join("skills"),
-            SkillSource::ClaudeGlobal,
-            &mut scanned,
-            &mut seen,
-        );
+    // Upstream (`packages/opencode/src/skill/discovery.ts`):
+    //
+    //   if (!disableExternalSkills) {
+    //     if (!disableClaudeCodeSkills) targets.push(".claude")
+    //     targets.push(".agents")
+    //     … global home roots, then the walk-up roots …
+    //   }
+    //
+    // `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` therefore removes the `.claude`
+    // roots only; the `.agents` roots belong to `OPENCODE_DISABLE_EXTERNAL_
+    // SKILLS`, and the broad `OPENCODE_DISABLE_CLAUDE_CODE` removes the
+    // `.claude` roots only as well (it does not disable external skills).
+    if !flags.external_skills_disabled() {
+        if !flags.claude_code_skills_disabled() {
+            push(
+                roots.home.join(".claude").join("skills"),
+                SkillSource::ClaudeGlobal,
+                &mut scanned,
+                &mut seen,
+            );
+        }
         push(
             roots.home.join(".agents").join("skills"),
             SkillSource::AgentsGlobal,
@@ -867,12 +1059,14 @@ fn skill_scan_roots(roots: &ResolvedRoots, flags: &DiscoveryFlags) -> Vec<(PathB
             &mut seen,
         );
         for level in &roots.chain {
-            push(
-                level.join(".claude").join("skills"),
-                SkillSource::ClaudeWalkUp,
-                &mut scanned,
-                &mut seen,
-            );
+            if !flags.claude_code_skills_disabled() {
+                push(
+                    level.join(".claude").join("skills"),
+                    SkillSource::ClaudeWalkUp,
+                    &mut scanned,
+                    &mut seen,
+                );
+            }
             push(
                 level.join(".agents").join("skills"),
                 SkillSource::AgentsWalkUp,
@@ -1025,6 +1219,7 @@ fn read_skill_file(
             path: path.to_path_buf(),
             token: roots.token_for(path),
             sha256,
+            ambiguous: false,
         })),
         Err(error) => Ok(excluded(error.kind(), error.detail())),
     }
@@ -1169,38 +1364,64 @@ fn expand_explicit_entry(entry: &str, roots: &ResolvedRoots) -> Result<PathBuf, 
     Ok(expanded)
 }
 
-fn duplicate_warnings(candidates: &[ResolvedSkill]) -> Vec<DiscoveryWarning> {
+/// Group the scanned candidates by skill name, in scan order.
+fn candidates_by_name(candidates: &[ResolvedSkill]) -> BTreeMap<&str, Vec<usize>> {
     let mut by_name: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
     for (index, candidate) in candidates.iter().enumerate() {
         by_name.entry(&candidate.name).or_default().push(index);
     }
+    by_name
+}
+
+/// One warning per contested skill name, listing every candidate file.
+///
+/// Upstream registers discovered skills with unbounded concurrency, so the
+/// winner of a contested name is decided by async completion order and flips
+/// between runs. The warning therefore records the candidate *set* and makes
+/// no winner claim.
+fn duplicate_warnings(candidates: &[ResolvedSkill]) -> Vec<DiscoveryWarning> {
     let mut warnings = Vec::new();
-    for (name, indices) in by_name {
-        for pair in indices.windows(2) {
-            let overridden = &candidates[pair[0]];
-            let winner = &candidates[pair[1]];
-            warnings.push(DiscoveryWarning {
-                kind: DiscoveryWarningKind::DuplicateSkillName,
-                name: name.to_string(),
-                overridden_path: overridden.path.clone(),
-                overridden_token: overridden.token.clone(),
-                winner_path: winner.path.clone(),
-                winner_token: winner.token.clone(),
-            });
+    for (name, indices) in candidates_by_name(candidates) {
+        if indices.len() < 2 {
+            continue;
         }
+        warnings.push(DiscoveryWarning {
+            kind: DiscoveryWarningKind::DuplicateSkillName,
+            name: name.to_string(),
+            candidates: indices
+                .iter()
+                .map(|&index| {
+                    let candidate = &candidates[index];
+                    DiscoveryCandidate {
+                        path: candidate.path.clone(),
+                        token: candidate.token.clone(),
+                        sha256: candidate.sha256.clone(),
+                    }
+                })
+                .collect(),
+        });
     }
     warnings
 }
 
-fn winning_skills(candidates: &[ResolvedSkill]) -> Vec<ResolvedSkill> {
-    let mut winners: BTreeMap<&str, usize> = BTreeMap::new();
-    for (index, candidate) in candidates.iter().enumerate() {
-        winners.insert(&candidate.name, index);
+/// The effective skill set: one entry per skill name, sorted by name.
+///
+/// A name with more than one candidate is *ambiguous*: upstream's winner is a
+/// race, so the entry keeps the resolver's deterministic scan-order
+/// representative (the last scanned candidate) and is flagged as ambiguous.
+/// The full candidate set is carried by the duplicate-name warning and by the
+/// manifest's canonical projection.
+fn effective_skills(candidates: &[ResolvedSkill]) -> Vec<ResolvedSkill> {
+    let by_name = candidates_by_name(candidates);
+    let mut skills = Vec::with_capacity(by_name.len());
+    for (_name, indices) in by_name {
+        let ambiguous = indices.len() > 1;
+        let &representative = indices.last().expect("name group is non-empty");
+        let mut skill = candidates[representative].clone();
+        skill.ambiguous = ambiguous;
+        skills.push(skill);
     }
-    winners
-        .values()
-        .map(|&index| candidates[index].clone())
-        .collect()
+    skills
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,8 +1430,9 @@ fn winning_skills(candidates: &[ResolvedSkill]) -> Vec<ResolvedSkill> {
 
 fn flags_projection(roots: &ResolvedRoots, flags: &DiscoveryFlags) -> Value {
     json!({
-        "disable_claude_code_skills": flags.disable_claude_code_skills,
-        "disable_claude_code_prompt": flags.disable_claude_code_prompt,
+        "disable_claude_code_skills": flags.claude_code_skills_disabled(),
+        "disable_claude_code_prompt": flags.claude_code_prompt_disabled(),
+        "disable_external_skills": flags.external_skills_disabled(),
         "disable_project_config": flags.disable_project_config,
         "config_dir": roots
             .config_dir
@@ -1229,26 +1451,21 @@ fn finish_manifest(
     discovery_errors.sort_by(|left, right| {
         (left.token.as_str(), left.kind.as_str()).cmp(&(right.token.as_str(), right.kind.as_str()))
     });
-    discovery_warnings.sort_by(|left, right| {
-        (
-            left.name.as_str(),
-            left.overridden_token.as_str(),
-            left.winner_token.as_str(),
-        )
-            .cmp(&(
-                right.name.as_str(),
-                right.overridden_token.as_str(),
-                right.winner_token.as_str(),
-            ))
-    });
+    discovery_warnings.sort_by(|left, right| left.name.cmp(&right.name));
 
     let builtin_skill_names: Vec<String> = BUILTIN_SKILL_NAMES
         .iter()
         .map(|name| (*name).to_string())
         .collect();
 
+    // A duplicate skill name means upstream's winner is decided by a race, so
+    // the manifest is not reproducible: the hash pins the candidate set (via
+    // the warning records), not a winner.
+    let reproducible = discovery_warnings.is_empty();
+
     let projection = json!({
         "hash_domain": CONTEXT_HASH_DOMAIN,
+        "reproducible": reproducible,
         "flags": flags_value,
         "builtin_skill_names": builtin_skill_names,
         "instructions": instructions
@@ -1272,6 +1489,7 @@ fn finish_manifest(
                     "source": skill.source.as_str(),
                     "token": skill.token,
                     "sha256": skill.sha256,
+                    "ambiguous": skill.ambiguous,
                 })
             })
             .collect::<Vec<_>>(),
@@ -1290,8 +1508,16 @@ fn finish_manifest(
             .map(|warning| {
                 json!({
                     "name": warning.name,
-                    "overridden_token": warning.overridden_token,
-                    "winner_token": warning.winner_token,
+                    "candidates": warning
+                        .candidates
+                        .iter()
+                        .map(|candidate| {
+                            json!({
+                                "token": candidate.token,
+                                "sha256": candidate.sha256,
+                            })
+                        })
+                        .collect::<Vec<_>>(),
                 })
             })
             .collect::<Vec<_>>(),
@@ -1306,6 +1532,7 @@ fn finish_manifest(
         discovery_errors,
         discovery_warnings,
         builtin_skill_names,
+        reproducible,
         canonical_bytes,
         sha256,
     })

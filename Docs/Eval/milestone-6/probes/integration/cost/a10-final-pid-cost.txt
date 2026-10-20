@@ -1,0 +1,18 @@
+############ A10 recommended setup, PID-accurate nettop, APFS-clone seeding
+--- A10 trial 1 (opencode pid=18606)
+    wall_ms=19221
+    registry_bytes_pulled=0
+    nettop(this pid only): {"per_pid":{"opencode":{"bytes_in":56938,"bytes_out":157629}},"total_bytes_in":56938,"total_bytes_out":157629}
+    apparent_trial_bytes=127444453
+    actual_trial_disk_kb=143052   (APFS clone = shared blocks)
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|
+
+--- A10 trial 2 (opencode pid=18681)
+    wall_ms=28739
+    registry_bytes_pulled=0
+    nettop(this pid only): {"per_pid":{"opencode":{"bytes_in":35060,"bytes_out":160387}},"total_bytes_in":35060,"total_bytes_out":160387}
+    apparent_trial_bytes=127613997
+    actual_trial_disk_kb=143052   (APFS clone = shared blocks)
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|
+
+A10 DONE

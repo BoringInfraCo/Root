@@ -21,12 +21,22 @@
             "token": "worktree:applications/AGENTS.md",
             "sha256": "sha256:1db601e01e53d70bac9934b7bb5d1ac95eda9affb6a615f3fe48404c6257648e",
             "size": 61
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "worktree/AGENTS.md",
+            "token": "worktree:AGENTS.md",
+            "sha256": "sha256:a5ea11964bdbea5a12815337212846632ebb46fa6c7eddece00b7872869a8e77",
+            "size": 63
           }
         ],
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:d23b17c6a2feb1cd4df660ed0d827ed8f096eb225753e968dc0461426b1997c2"
+        "reproducible": true,
+        "manifest_sha256": "sha256:d68f32ee877df8bf7063e568bd7bf750d233a5c778004d396b054cbf72462155"
       }
     }
   ]

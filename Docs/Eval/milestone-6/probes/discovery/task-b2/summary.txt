@@ -1,0 +1,64 @@
+# TASK B2 - instruction attachment matrix (magic-passphrase method)
+
+Each trial plants exactly ONE instruction file containing a unique magic
+passphrase. PRESENT = the passphrase was echoed back (file was injected).
+NONE = no passphrase available (file was not injected).
+
+## m1 - project AGENTS.md (cwd/AGENTS.md)
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> PRESENT:MAGIC-PROJECT-AGENTS-3311
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> NONE
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-PROJECT-AGENTS-3311
+  flags=OPENCODE_DISABLE_CLAUDE_CODE                  rep=? -> PRESENT:MAGIC-PROJECT-AGENTS-3311
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> PRESENT:MAGIC-PROJECT-AGENTS-3311
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> NONE
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_SKILLS           rep=? -> PRESENT:MAGIC-PROJECT-AGENTS-3311
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-PROJECT-AGENTS-3311
+
+## m2 - global ~/.claude/CLAUDE.md
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> NONE
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> PRESENT:MAGIC-GLOBAL-CLAUDE-4422
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-GLOBAL-CLAUDE-4422
+  flags=OPENCODE_DISABLE_CLAUDE_CODE                  rep=? -> NONE
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> NONE
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> PRESENT:MAGIC-GLOBAL-CLAUDE-4422
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_SKILLS           rep=? -> PRESENT:MAGIC-GLOBAL-CLAUDE-4422
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-GLOBAL-CLAUDE-4422
+
+## m3 - project CLAUDE.md (cwd/CLAUDE.md)
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> NONE
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> NONE
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-PROJECT-CLAUDE-5533
+  flags=OPENCODE_DISABLE_CLAUDE_CODE                  rep=? -> NONE
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> NONE
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> NONE
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_SKILLS           rep=? -> PRESENT:MAGIC-PROJECT-CLAUDE-5533
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-PROJECT-CLAUDE-5533
+
+## m4 - global ${XDG_CONFIG_HOME}/opencode/AGENTS.md
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=OPENCODE_DISABLE_CLAUDE_CODE                  rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_PROMPT           rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=OPENCODE_DISABLE_PROJECT_CONFIG               rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=OPENCODE_DISABLE_CLAUDE_CODE_SKILLS           rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+  flags=<none>                                        rep=? -> PRESENT:MAGIC-XDG-AGENTS-6644
+
+## race evidence - `duplicate skill name` WARN pairs (model-driven runs)
+
+`existing` = the file registered first, `duplicate` = the file that overwrote it.
+A swap between runs proves the winner is decided by async completion order.
+  a1: {'TRIAL/config/opencode/skills/dup/SKILL.md': 4, 'TRIAL/cwd/.opencode/skill/dup/SKILL.md': 2}
+  a2: {'TRIAL/cwd/.opencode/skill/dup/SKILL.md': 3, 'TRIAL/home/.claude/skills/dup/SKILL.md': 3}
+  a3: {'TRIAL/worktree/app/.opencode/skill/dup/SKILL.md': 2, 'TRIAL/worktree/.opencode/skill/dup/SKILL.md': 4}
+  a4: {'TRIAL/worktree/.claude/skills/dup/SKILL.md': 3, 'TRIAL/worktree/app/.agents/skills/dup/SKILL.md': 1}
+
+## m5 - AGENTS.md at two levels (instance dir = worktree/app)
+  m5b-none.model.run-1.ndjson: MAGIC-NEAR-AGENTS-8866
+  m5b-paths.model.run-1.ndjson: Instructions from: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/discovery/trials/m5b/worktree/app/AGENTS.md
+Instructions from: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/discovery/trials/m5b/worktree/AGENTS.md
+  m5b-projectcfg.model.run-1.ndjson: NONE
+
+## m6 - global XDG AGENTS.md + ~/.claude/CLAUDE.md together
+  m6-none.model.run-1.ndjson: MAGIC-XDG-AGENTS-6644
+  m6-paths.model.run-1.ndjson: Instructions from: /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/discovery/trials/m6/config/opencode/AGENTS.md

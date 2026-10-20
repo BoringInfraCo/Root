@@ -1,0 +1,1 @@
+[93m[1m! [0mpermission requested: external_directory (/nix/store/l3cpcx0fy79xn9ahn7s39q0n8p6l1glx-nixpkgs/nixpkgs/*, /nix/var/nix/profiles/per-user/*); auto-rejecting

@@ -438,11 +438,12 @@ fn normal_dataset_counts_pairs_directions_and_medians() {
 
     assert_eq!(report.missing_metrics, vec!["cost: 12 of 12 executions"]);
 
-    assert_eq!(report.limitations.len(), 7);
+    assert_eq!(report.limitations.len(), 8);
     for expected in [
         "3 independent tasks; repetitions do not create independent tasks",
         "2 repetitions recorded; repeated runs are nested within tasks, not independent samples",
         "0 of 6 paired blocks excluded as invalid; exclusion is symmetric (both conditions of a block are excluded together)",
+        "host contamination: none detected in the trials read (no symlink resolved outside a trial root; no host-sized file in a trial stub directory)",
         "missing telemetry: cost: 12 of 12 executions",
         "observed model identity unavailable (requested model recorded)",
         "provider cost is harness-reported, not billed",
@@ -529,7 +530,8 @@ fn invalid_class_excludes_both_sides_symmetrically() {
             task_id: "task-02".to_string(),
             task_version: 1,
             repetition: 0,
-            reason: "treatment outcome class invalid: verifier_mutation".to_string(),
+            reason: "treatment outcome class invalid: verifier_mutation (verifier mutated the scored tree)"
+                .to_string(),
         }]
     );
 
@@ -849,7 +851,7 @@ fn empty_experiment_is_a_valid_zero_report() {
     );
     assert!(report.missing_metrics.is_empty());
     assert_eq!(report.feasibility_label, INSUFFICIENT_EVIDENCE_LABEL);
-    assert_eq!(report.limitations.len(), 7);
+    assert_eq!(report.limitations.len(), 8);
     assert!(report
         .limitations
         .contains(&"0 independent tasks; repetitions do not create independent tasks".to_string()));

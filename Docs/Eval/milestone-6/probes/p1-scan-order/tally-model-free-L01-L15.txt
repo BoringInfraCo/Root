@@ -1,0 +1,166 @@
+### L01 project .opencode/skill vs XDG opencode/skills
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+### L02 project .opencode/skill vs ~/.claude/skills
+HOME-CLAUDE-SKILLS /home/.claude/skills/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+HOME-CLAUDE-SKILLS /home/.claude/skills/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+HOME-CLAUDE-SKILLS /home/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-SKILLS /home/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-SKILLS /home/.claude/skills/dup/SKILL.md
+PROJECT-SKILL /cwd/.opencode/skill/dup/SKILL.md
+HOME-CLAUDE-SKILLS /home/.claude/skills/dup/SKILL.md
+### L03 near .opencode vs far .opencode (git root)
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+### L04 walk-up .claude/skills vs ~/.claude/skills
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+PROJECT-CLAUDE-WALKUP /cwd/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+### L05 ~/.claude/skills vs ~/.agents/skills
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+### L06 walk-up .claude/skills vs ~/.agents/skills
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+HOME-AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+### L07 walk-up .agents/skills vs ~/.claude/skills
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+HOME-CLAUDE-GLOBAL /home/.claude/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+### L08 walk-up .agents/skills vs walk-up .claude/skills
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-AGENTS /cwd/.agents/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+WALKUP-CLAUDE /cwd/.claude/skills/dup/SKILL.md
+### L09 near .agents/skills vs far .agents/skills
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+### L10 near .claude/skills vs far .claude/skills
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+NO-DUP-SKILL
+### L11 walk-up .agents/skills vs ~/.agents/skills
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-WALKUP /cwd/.agents/skills/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+### L12 project .opencode/skill vs ~/.agents/skills
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+### L13 XDG opencode/skills vs ~/.agents/skills
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+AGENTS-GLOBAL /home/.agents/skills/dup/SKILL.md
+### L14 project .opencode/skill vs ~/.opencode/skills
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+PROJECT-OPENCODE-SKILL /cwd/.opencode/skill/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+### L15 XDG opencode/skills vs ~/.opencode/skills
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+HOME-OPENCODE-SKILLS /home/.opencode/skills/dup/SKILL.md
+XDG-CONFIG-SKILLS /config/opencode/skills/dup/SKILL.md
+P1F DONE

@@ -1,0 +1,6 @@
+0	step_start
+1	tool_use	tool=skill	status=completed	dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/trials/p1k/cwd/.claude/skills/dup	name=dup	MARKER: WALKUP-CLAUDE
+2	step_finish	reason=tool-calls	tokens={"total": 7878, "input": 7841, "output": 18, "reasoning": 19, "cache": {"write": 0, "read": 0}}	cost=0
+3	step_start
+4	text	The first heading is **Skill: dup**.
+5	step_finish	reason=stop	tokens={"total": 8073, "input": 211, "output": 12, "reasoning": 42, "cache": {"write": 0, "read": 7808}}	cost=0

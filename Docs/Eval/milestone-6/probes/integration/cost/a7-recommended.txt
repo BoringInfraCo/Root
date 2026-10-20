@@ -1,0 +1,20 @@
+############ A7 recommended setup, COLD shared npm cache
+  pre-seeded global nm bytes=54901253
+  pre-seeded project nm bytes=54901253
+  pre-seeded models.json bytes=5825527
+  pre-seeded rg bytes=4048816
+  wall_ms=76408
+  shared_npmcache_delta=41762930   <-- registry bytes pulled
+  project_nm_bytes=54895981
+  global_nm_bytes=54901253
+  cwd_bytes=54906330
+  data_bytes=937027
+  tmp_bytes=4822976
+  trial_total_bytes=125457079
+  audit_log:
+    root doctor --json
+    root plan install ripgrep --json
+    root install ripgrep --json
+    root verify ripgrep --json
+  rg downloaded? NO
+A7 DONE

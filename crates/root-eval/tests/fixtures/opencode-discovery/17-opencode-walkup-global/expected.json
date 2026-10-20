@@ -19,19 +19,22 @@
             "source": "opencode-config-dir",
             "file": "home/.opencode/skills/global-plural/SKILL.md",
             "token": "home:.opencode/skills/global-plural/SKILL.md",
-            "sha256": "sha256:4d57e5f2b4bbb5d2e1f2b8c6ec92041be5b6fd3186ea5ecf13ae41cc6a38861b"
+            "sha256": "sha256:4d57e5f2b4bbb5d2e1f2b8c6ec92041be5b6fd3186ea5ecf13ae41cc6a38861b",
+            "ambiguous": false
           },
           {
             "name": "walkup-skill",
             "source": "opencode-config-dir",
             "file": "worktree/.opencode/skill/walkup-skill/SKILL.md",
             "token": "worktree:.opencode/skill/walkup-skill/SKILL.md",
-            "sha256": "sha256:4b6d7c79cfc77219b8a2bf863e3bf3946ab484bcb4add55ef424a614d2d20aba"
+            "sha256": "sha256:4b6d7c79cfc77219b8a2bf863e3bf3946ab484bcb4add55ef424a614d2d20aba",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:8fbc201c6e71b4557a498eefce9eddbc3e574958c7583291c0b04e2698c05155"
+        "reproducible": true,
+        "manifest_sha256": "sha256:e1d63b1e5589c04277566828ba7997af67be043cec630e5ff7eaf5fb53cd041f"
       }
     },
     {
@@ -53,12 +56,14 @@
             "source": "opencode-config-dir",
             "file": "home/.opencode/skills/global-plural/SKILL.md",
             "token": "home:.opencode/skills/global-plural/SKILL.md",
-            "sha256": "sha256:4d57e5f2b4bbb5d2e1f2b8c6ec92041be5b6fd3186ea5ecf13ae41cc6a38861b"
+            "sha256": "sha256:4d57e5f2b4bbb5d2e1f2b8c6ec92041be5b6fd3186ea5ecf13ae41cc6a38861b",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:5d9bd2669abecba3e64ec85bab3d67ec1eeeabe5eaf0140f83f94cec4bccb93b"
+        "reproducible": true,
+        "manifest_sha256": "sha256:6f7233977f9cd798b41939da53f442c7d63b70c66c44f6e43215c2d772291f63"
       }
     }
   ]

@@ -201,6 +201,132 @@ SKILL.md handling:
 
 *Opportunity for S2:* the `AGENTS.md` preference chain means Root-authored global rules land at the path `~/.config/opencode/AGENTS.md` without touching `.claude` (bundle allowlist in `manifest.rs` already permits exactly `OpenCodeHome/AGENTS.md` and `OpenCodeHome/skills/*/…`).
 
+### 4.4 Amendment 2026-10-19 (live conformance)
+
+This section **appends** to the frozen §4; it does not rewrite it. The text
+above is the M0 freeze as read from the published sources. On 2026-10-19 the
+pinned `1.18.27` binary was probed live (hermetic `HOME`/XDG sandbox, model
+-free `opencode debug skill` plus model-driven `opencode run --format json`
+runs): see `Docs/Eval/milestone-6/CONFORMANCE-DISCOVERY.md` and the raw
+evidence in `Docs/Eval/milestone-6/probes/discovery/`.
+
+**Evidence sources.** (a) Live observations on the pinned binary
+(`sha256:f35111b79296714194653fc8e74f28f6732589bacf0fbf59504c592ef6a727b6`,
+`--version` = `1.18.27`); (b) the module sources extracted verbatim from that
+binary's Bun bundle (`Docs/Eval/milestone-6/probes/discovery/binary-evidence.txt`:
+`core/flag/flag.ts`, `skill/discovery.ts`, `session/instruction.ts`,
+`config/paths.ts`, `Filesystem.up()`).
+
+#### 4.4.1 REFUTED — the `.agents` roots are not gated by `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`
+
+§4.1 item 1 says the global cross-agent dirs are "skipped entirely under
+`OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`/external-skills disable flags". Live
+measurement refutes the "skipped entirely" reading:
+
+| Environment | `~/.claude/skills` | `~/.agents/skills` | walk-up `.claude/skills` | walk-up `.agents/skills` | `.opencode` config skills |
+|---|:--:|:--:|:--:|:--:|:--:|
+| *(none)* | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` | ❌ | **✅** | ❌ | **✅** | ✅ |
+| `OPENCODE_DISABLE_EXTERNAL_SKILLS=1` | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `OPENCODE_DISABLE_CLAUDE_CODE=1` (broad) | ❌ | **✅** | ❌ | **✅** | ✅ |
+| `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS=1` + `OPENCODE_DISABLE_EXTERNAL_SKILLS=1` | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT=1` | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+Upstream (`core/flag/flag.ts`):
+
+```js
+disableExternalSkills:   k("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
+disableClaudeCodePrompt: broad(OPENCODE_DISABLE_CLAUDE_CODE) || direct(OPENCODE_DISABLE_CLAUDE_CODE_PROMPT),
+disableClaudeCodeSkills: broad(OPENCODE_DISABLE_CLAUDE_CODE) || direct(OPENCODE_DISABLE_CLAUDE_CODE_SKILLS),
+```
+
+and the discovery gate (`skill/discovery.ts`):
+
+```js
+if (!disableExternalSkills) {
+  if (!disableClaudeCodeSkills) targets.push(".claude")
+  targets.push(".agents")
+  …
+}
+```
+
+⇒ `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` removes **only** the `.claude` roots;
+the `.agents` roots belong to `OPENCODE_DISABLE_EXTERNAL_SKILLS`; the broad
+`OPENCODE_DISABLE_CLAUDE_CODE` implies prompt **and** skills but never
+external skills. (The published `opencode` docs are themselves ambiguous here
+— they list both variables together under "skip the external skill scans".)
+
+#### 4.4.2 REFUTED — `OPENCODE_DISABLE_PROJECT_CONFIG` switches the project instruction walk-up off
+
+§4.3 scoped the flag to the `instructions` relative-glob base. Live
+measurement refutes that: with `OPENCODE_DISABLE_PROJECT_CONFIG=1` **no**
+project-level `AGENTS.md` / `CLAUDE.md` / `CONTEXT.md` is attached (the global
+instruction still is). Upstream (`session/instruction.ts`):
+
+```js
+if (!OPENCODE_DISABLE_PROJECT_CONFIG)
+  for (const name of ["AGENTS.md", …(!disableClaudeCodePrompt ? ["CLAUDE.md"] : []), "CONTEXT.md"]) {
+    const found = await findUp(name, directory, worktree)
+    if (found.length > 0) { attach all of them; break }
+  }
+```
+
+The flag only re-points the *relative `instructions` glob* base at the global
+config dir; the project walk-up itself is skipped.
+
+#### 4.4.3 REFUTED — `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` also drops the project-level `CLAUDE.md`
+
+§4.3 implied the flag only affects the global `~/.claude/CLAUDE.md` fallback.
+Live measurement refutes that: the same runtime boolean also removes
+`CLAUDE.md` from the project priority list, so a project-level `CLAUDE.md` is
+not a candidate under the flag (the upstream project list is
+`["AGENTS.md", …(!disableClaudeCodePrompt ? ["CLAUDE.md"] : []), "CONTEXT.md"]`).
+
+#### 4.4.4 REFUTED — "one file per message" for project instructions
+
+§4.3 said "**one file per message**". Live measurement refutes it: upstream's
+`findUp` returns **every** match of the first-priority name in the walk-up
+span, and the system prompt then carries one `Instructions from: <path>` block
+per match (innermost first). Observed with `AGENTS.md` at both `worktree/app/`
+and `worktree/`:
+
+```
+Instructions from: …/worktree/app/AGENTS.md
+Instructions from: …/worktree/AGENTS.md
+```
+
+The name priority itself (`AGENTS.md` → `CLAUDE.md` → `CONTEXT.md`, first name
+that matches anywhere in the span) is **CONFIRMED**; a nearer `CLAUDE.md` does
+not outrank a farther `AGENTS.md`.
+
+#### 4.4.5 REFUTED — duplicate skill names are *not* "last-scanned wins"
+
+§4.1 said "Duplicate names: last-scanned wins on disk with a warning log".
+Live measurement refutes the determinism: upstream registers discovered skills
+with unbounded concurrency, so the winner is decided by async completion order
+and **flips between runs** (4 layouts × 30 runs: 10/6/5/6 winner flips; the
+upstream `duplicate skill name` warning's `existing`/`duplicate` pair swaps
+accordingly). The *scan order* (which files are candidates) is deterministic;
+the *winner* is not.
+
+⇒ Any manifest that claims a specific duplicate-name file is not reproducible.
+Callers must treat a duplicate-name layout as "winner unknown" (or keep skill
+names unique).
+
+#### 4.4.6 CONFIRMED — unchanged by this amendment
+
+* The scan-order **structure**: global `~/.claude/skills` then `~/.agents/skills`, then the walk-up **per level** (`.claude` then `.agents` at each level, innermost first), then the config directories, then `skills.paths`.
+* The config-directory order (`ConfigPaths.directories`): `${XDG_CONFIG_HOME:-~/.config}/opencode`, every `.opencode` from the instance directory up to the worktree (innermost first), `~/.opencode`, `OPENCODE_CONFIG_DIR`.
+* Global instruction precedence: `${XDG_CONFIG_HOME:-~/.config}/opencode/AGENTS.md` first, `~/.claude/CLAUDE.md` only as a fallback, **first match wins**.
+* `OPENCODE_DISABLE_PROJECT_CONFIG` also skips project `.opencode` config dirs, their `opencode.json`, and their `skills.paths` (case `b2-on`).
+* The built-in `customize-opencode` skill and the `{skill,skills}/**/SKILL.md` vs `skills/**/SKILL.md` glob split (global/walk-up external roots use `skills/**`, config dirs use `{skill,skills}/**`).
+
+#### 4.4.7 Still OPEN (not settled by the probe)
+
+* Intra-root candidate ordering (the scan order inside one root is not observable at `1.18.27` because the registration race hides it).
+* Whether `opencode run` and `opencode debug skill` schedule the scan differently (the two entry points showed opposite winner biases on the same layout).
+* `skills.urls` (remote skill pull) and the `OPENCODE_CONFIG_DIR` / `~/.opencode` positions in the config-dir order (code-level only, not exercised live).
+
 ## 5. Permissions & State
 
 ### 5.1 Non-interactive permission behavior (CONFIRMED throughout)

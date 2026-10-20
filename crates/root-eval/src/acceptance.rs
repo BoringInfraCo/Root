@@ -491,6 +491,27 @@ pub struct TreeChange {
 /// are typed errors (fail closed, mirroring [`crate::tree_fingerprint`]).
 /// Paths are sorted `/`-separated relative paths.
 pub fn capture_tree_snapshot(root: &Path) -> Result<TreeSnapshot, AcceptanceError> {
+    capture_tree_snapshot_excluding(root, &[])
+}
+
+/// Walk `root` and capture every regular file's digest and size, skipping the
+/// given subtrees.
+///
+/// The excluded paths are **absolute** directory paths; a directory whose
+/// path equals one of them is never entered, so neither its files nor its
+/// symlinks are observed. This is how the harness's *own* directory inside
+/// the agent's workspace — the project's OpenCode config dir, which holds the
+/// seeded permission config, the project skill, the seeded plugin install
+/// target (with its npm symlinks), and the files OpenCode and its npm
+/// client write there — stays out of the agent's workspace observation: it
+/// is present before the agent starts, and the harness's background npm
+/// activity inside it must never be read as agent activity.
+///
+/// Every other rule of [`capture_tree_snapshot`] is unchanged.
+pub fn capture_tree_snapshot_excluding(
+    root: &Path,
+    excluded: &[PathBuf],
+) -> Result<TreeSnapshot, AcceptanceError> {
     let metadata =
         fs::symlink_metadata(root).map_err(|error| map_root_metadata_error(root, error))?;
     if metadata.file_type().is_symlink() {
@@ -504,7 +525,7 @@ pub fn capture_tree_snapshot(root: &Path) -> Result<TreeSnapshot, AcceptanceErro
         });
     }
     let mut files = BTreeMap::new();
-    walk_snapshot(root, root, 0, &mut files)?;
+    walk_snapshot(root, root, 0, excluded, &mut files)?;
     Ok(TreeSnapshot { files })
 }
 
@@ -525,6 +546,7 @@ fn walk_snapshot(
     root: &Path,
     dir: &Path,
     depth: usize,
+    excluded: &[PathBuf],
     files: &mut BTreeMap<String, TreeFile>,
 ) -> Result<(), AcceptanceError> {
     if depth > MAX_SNAPSHOT_DEPTH {
@@ -557,7 +579,11 @@ fn walk_snapshot(
             return Err(AcceptanceError::TreeSymlinkRefused { path });
         }
         if metadata.is_dir() {
-            walk_snapshot(root, &path, depth + 1, files)?;
+            if excluded.iter().any(|skip| skip == &path) {
+                // The harness's own seeded subtree: never observed.
+                continue;
+            }
+            walk_snapshot(root, &path, depth + 1, excluded, files)?;
             continue;
         }
         if !metadata.is_file() {

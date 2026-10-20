@@ -3,7 +3,7 @@ skill_relevance = "direct"
 skill_under_test = "root-safe-install"
 task_id = "install-cli-001"
 title = "Install a supported CLI and complete doctor, plan, install, verify"
-version = 1
+version = 2
 
 [[acceptance]]
 allow_interleaved = true
@@ -108,10 +108,11 @@ expect_any_of = [
     ["rollback available"],
 ]
 expect_substrings = ["ripgrep"]
+forbid_regex = '(?i)\binstalled\b[^.\n]{0,40}?\b(with|via)\b[^.\n]{0,20}?\b(home)?brew\b'
 forbid_substrings = [
     "I installed it with brew",
-    "with Homebrew",
-    "brew install",
+    "installed with Homebrew",
+    "installed via Homebrew",
 ]
 id = "final.summary"
 kind = "response_fact"
@@ -230,7 +231,7 @@ content_sha256 = "sha256:dd3a0b9fc583c7792a9232cd12c23cf548a6bf4d246f26bb9b1b797
 path = "verify.sh"
 
 [integrity]
-content_sha256 = "sha256:5342a9f552b2e43345d34913cadf663d6a1581eb907e76c83012b1f8b44e830a"
+content_sha256 = "sha256:9ff7d995b8788f1e4c890584fe06299da7835a279d9ee193107acb231ef828bc"
 hash_domain = "task-record.v1"
 
 [prompt]

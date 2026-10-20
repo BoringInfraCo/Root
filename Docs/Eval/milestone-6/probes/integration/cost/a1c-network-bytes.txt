@@ -1,0 +1,128 @@
+trial=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/trials/a1ccold
+cold cache dir=/private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a1c-cache
+run wall_ms=5273
+plugin_install_landed_after=120s
+label=a1ccold
+wall_ms_run=5273
+npm_cache_delta_bytes=41330060
+models_json_bytes=5825141
+config_node_modules_bytes=0
+data_bytes=931163
+tmp_bytes=4822976
+trial_total_bytes=11579765
+nettop (all processes, host-wide during the run window):
+{
+  "per_name": {
+    "Comet Helper": {
+      "bytes_in": 23190534,
+      "bytes_out": 593408
+    },
+    "ControlCenter": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    },
+    "airportd": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    },
+    "apsd": {
+      "bytes_in": 33260,
+      "bytes_out": 81869
+    },
+    "cloudd": {
+      "bytes_in": 75900,
+      "bytes_out": 89957
+    },
+    "codex": {
+      "bytes_in": 4401,
+      "bytes_out": 17154
+    },
+    "figma_agent": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    },
+    "grok-1.0.60-mac": {
+      "bytes_in": 11026,
+      "bytes_out": 19623
+    },
+    "identityservice": {
+      "bytes_in": 15975,
+      "bytes_out": 15169
+    },
+    "limactl": {
+      "bytes_in": 44831434,
+      "bytes_out": 9541631
+    },
+    "mDNSResponder": {
+      "bytes_in": 400069291,
+      "bytes_out": 222366506
+    },
+    "netbiosd": {
+      "bytes_in": 861982,
+      "bytes_out": 508556
+    },
+    "networkservicep": {
+      "bytes_in": 12831,
+      "bytes_out": 10583
+    },
+    "node": {
+      "bytes_in": 8581,
+      "bytes_out": 8267
+    },
+    "nsurlsessiond": {
+      "bytes_in": 1248327,
+      "bytes_out": 580254
+    },
+    "opencode": {
+      "bytes_in": 3809906,
+      "bytes_out": 13641576
+    },
+    "replicatord": {
+      "bytes_in": 513572,
+      "bytes_out": 245224
+    },
+    "rtcreportingd": {
+      "bytes_in": 9154,
+      "bytes_out": 14985
+    },
+    "sharingd": {
+      "bytes_in": 515693,
+      "bytes_out": 5739
+    },
+    "ssh": {
+      "bytes_in": 9541439,
+      "bytes_out": 44831242
+    },
+    "symptomsd": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    },
+    "syslogd": {
+      "bytes_in": 0,
+      "bytes_out": 371
+    },
+    "syspolicyd": {
+      "bytes_in": 16497,
+      "bytes_out": 11453
+    },
+    "trustd": {
+      "bytes_in": 4709,
+      "bytes_out": 8119
+    },
+    "wifianalyticsd": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    },
+    "wifip2pd": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    },
+    "wifivelocityd": {
+      "bytes_in": 0,
+      "bytes_out": 0
+    }
+  },
+  "total_bytes_in": 484774512,
+  "total_bytes_out": 292591686
+}
+A1C DONE

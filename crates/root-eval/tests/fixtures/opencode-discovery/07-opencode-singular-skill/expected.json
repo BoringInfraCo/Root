@@ -19,12 +19,14 @@
             "source": "opencode-config-dir",
             "file": "project/.opencode/skill/root-singular/SKILL.md",
             "token": "project:.opencode/skill/root-singular/SKILL.md",
-            "sha256": "sha256:f0a4a9689ded85b8e5cd7210f2c1329864cf678e129c06950dcee18f085dd862"
+            "sha256": "sha256:f0a4a9689ded85b8e5cd7210f2c1329864cf678e129c06950dcee18f085dd862",
+            "ambiguous": false
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:aa94fa759e67132d998e037ac54277bcebd6f1732d9caa2f993ca7449fea3199"
+        "reproducible": true,
+        "manifest_sha256": "sha256:6ad4c9fbfa77072b62d045aa70bbcd752d102a10aa966c366205762f057f2d53"
       }
     }
   ]

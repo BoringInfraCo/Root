@@ -40,6 +40,34 @@ Most consequential for Milestone 2 and any later live confirmation:
 4. **Companion/lazy per-message instruction attachment not modeled** — manifest records primary global + project selections only.
 5. Phase A's 12 deviations include deferrals that belong to later milestones by design (regex syntax validation, budget dominance, runner rules).
 
+## Live-conformance results (2026-10-19)
+
+The pinned harness (`opencode 1.18.27`) was probed live on 2026-10-19
+(`Docs/Eval/milestone-6/CONFORMANCE-DISCOVERY.md`, raw evidence in
+`Docs/Eval/milestone-6/probes/discovery/`). The M1 assumptions above now carry
+these verdicts:
+
+| # | M1 assumption | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Scan-order totalization (listed order, walk-ups innermost-first, per-level cross-agent walk) | **CONFIRMED** for the *structure*; **REFUTED** for the *duplicate-name winner* (upstream registers skills concurrently — the winner flips between runs) | `CONFORMANCE-DISCOVERY.md` §2.2/§2.3 (A1–A4, 30 runs per layout) |
+| 2 | `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS` also skips `.agents` | **REFUTED** — that flag gates the `.claude` roots only; the `.agents` roots belong to `OPENCODE_DISABLE_EXTERNAL_SKILLS` (newly expressible) | `CONFORMANCE-DISCOVERY.md` §3.1 (`m7.*.json`) |
+| 3 | Config-reading subset (`opencode.json` only; no `.jsonc`/`config.json`; no `skills.urls`) | **OPEN** — not exercised by the probe | `CONFORMANCE-DISCOVERY.md` §6 (O3) |
+| 4 | Companion/lazy per-message instruction attachment not modeled | **OPEN** — still not modeled (out of the resolver's scope) | — |
+| 5 | Cross-level name priority (name-first, then nearest file with that name) | **CONFIRMED** | `CONFORMANCE-DISCOVERY.md` §2.2 (fixture `04/cross-level`) |
+| 6 | `OPENCODE_DISABLE_CLAUDE_CODE_PROMPT` leaves the project walk-up unaffected | **REFUTED** — it also drops the project-level `CLAUDE.md` candidate | `CONFORMANCE-DISCOVERY.md` §3.2 (`m3-*`) |
+| 7 | `OPENCODE_DISABLE_PROJECT_CONFIG` leaves the project instruction walk-up active | **REFUTED** — it switches the project walk-up off entirely | `CONFORMANCE-DISCOVERY.md` §3.2 (`m1-*`) |
+| 8 | One project instruction file per message | **REFUTED** — every level of the first-priority name attaches | `CONFORMANCE-DISCOVERY.md` §3.2 (`m5b-paths`) |
+
+Consequences for the resolver (`crates/root-eval/src/context.rs`): BUG-1…BUG-5
+of `CONFORMANCE-DISCOVERY.md` §4 were fixed on 2026-10-19. `DiscoveryFlags`
+gained `disable_external_skills` (`OPENCODE_DISABLE_EXTERNAL_SKILLS`) and
+`disable_claude_code` (the broad `OPENCODE_DISABLE_CLAUDE_CODE`); the manifest
+gained `reproducible()` and an honest duplicate-name warning (candidate set
+instead of a claimed winner); the manifest hash domain moved to
+`effective-context.v2` (projection shape changed — **v1 hashes are not
+comparable**). The corpus grew to 20 cases (`18`–`20` cover the corrected
+flag semantics and the multi-level instruction attachment).
+
 ## Deliberately NOT in M1
 
 Harness runner, trial materialization, execution, CLI surface (`root eval …`), scheduler, aggregation — all Milestone 2+ per the scope decision. M1 is pure specification: parse, resolve, hash — nothing runs.

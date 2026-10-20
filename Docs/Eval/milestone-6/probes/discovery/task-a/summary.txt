@@ -1,0 +1,21 @@
+# TASK A - duplicate skill name resolution (winner per run)
+
+## a1
+  model-driven (`opencode run`, skill tool metadata.dir): {'PROJECT-SKILL': 4, 'XDG-CONFIG-SKILLS': 2}
+  model-free  (`opencode debug skill`, location):        {'PROJECT-SKILL': 9, 'XDG-CONFIG-SKILLS': 1}
+  model-free, 30-sample set:                            {'XDG-CONFIG-SKILLS': 10, 'PROJECT-SKILL': 20}
+
+## a2
+  model-driven (`opencode run`, skill tool metadata.dir): {'HOME-CLAUDE-SKILLS': 3, 'PROJECT-SKILL': 3}
+  model-free  (`opencode debug skill`, location):        {'PROJECT-SKILL': 8, 'HOME-CLAUDE-SKILLS': 2}
+  model-free, 30-sample set:                            {'PROJECT-SKILL': 24, 'HOME-CLAUDE-SKILLS': 6}
+
+## a3
+  model-driven (`opencode run`, skill tool metadata.dir): {'FURTHEST-DOT-OPENCODE': 2, 'NEAREST-DOT-OPENCODE': 4}
+  model-free  (`opencode debug skill`, location):        {'FURTHEST-DOT-OPENCODE': 6, 'NEAREST-DOT-OPENCODE': 4}
+  model-free, 30-sample set:                            {'NEAREST-DOT-OPENCODE': 5, 'FURTHEST-DOT-OPENCODE': 25}
+
+## a4
+  model-driven (`opencode run`, skill tool metadata.dir): {'NEAR-AGENTS': 3, 'FAR-CLAUDE': 1}
+  model-free  (`opencode debug skill`, location):        {}
+  model-free, 30-sample set:                            {'NEAR-AGENTS': 6, 'FAR-CLAUDE': 24}

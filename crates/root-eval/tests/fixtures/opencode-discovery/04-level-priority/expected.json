@@ -26,7 +26,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:7d1824e8f14d7ff7eea55771fc381dbde48e98aa74cd83d7237968ce966302ff"
+        "reproducible": true,
+        "manifest_sha256": "sha256:2cd04f3484455ba847bdf82ae601b62c4499b3002f2c2d70ec41bd01b4a377d2"
       }
     },
     {
@@ -53,7 +54,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:a957de2cd3a8212a03e1e7a83d42328ab541038bf155c299bf8ac5ac5661ba53"
+        "reproducible": true,
+        "manifest_sha256": "sha256:4430d6a6079fb1f7a4755e7ca92f51e485d3ae381c16e668ad9d7b70180cc0fd"
       }
     },
     {
@@ -80,7 +82,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:8c4bc496ad4653898f660c748188cb5fe62939ac40488fa4ea02949e72da2c49"
+        "reproducible": true,
+        "manifest_sha256": "sha256:7d208d93902a5525749cf693f44035c1fa43ab9fe0a1c6493b3b6ff228123ccd"
       }
     },
     {
@@ -107,7 +110,8 @@
         "skills": [],
         "discovery_errors": [],
         "discovery_warnings": [],
-        "manifest_sha256": "sha256:d45814a0b195e45556b63351f179fab596a8959d5e5dcdc1676b2bfbcf5532d7"
+        "reproducible": true,
+        "manifest_sha256": "sha256:a2d9c287f0eca6c07daa37b488723592de15391e4d230622d20aa6ff53fe0a0a"
       }
     }
   ]

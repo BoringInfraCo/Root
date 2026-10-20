@@ -1,0 +1,18 @@
+############ A8 warm shared cache = /private/var/folders/b5/wj2djqx569x96bjvf5wclxf80000gn/T/opencode/m6-probe/integration/shared/a6cache (87993688 bytes)
+--- A8 trial 1
+    wall_ms=119336
+    shared_npmcache_delta=0   <-- registry bytes pulled
+    project_nm_bytes=54895981
+    global_nm_bytes=54901253
+    trial_total_bytes=127261192
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|root verify ripgrep --json|root --help|
+
+--- A8 trial 2
+    wall_ms=22836
+    shared_npmcache_delta=9144   <-- registry bytes pulled
+    project_nm_bytes=54895981
+    global_nm_bytes=54901253
+    trial_total_bytes=127750512
+    audit_log=root doctor --json|root plan install ripgrep --json|root install ripgrep --json|root verify ripgrep --json|
+
+A8 DONE

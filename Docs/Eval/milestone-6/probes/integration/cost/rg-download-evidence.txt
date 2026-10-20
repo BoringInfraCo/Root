@@ -1,0 +1,36 @@
+# ripgrep-download evidence for the `skill` tool (Task B.4)
+
+## opencode's own log line (from the b_treat trial; that trial dir has since been reclaimed)
+
+```
+message="downloading ripgrep" url=https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-apple-darwin.tar.gz
+```
+
+## the tarball opencode downloaded into $XDG_CACHE_HOME/opencode/bin/
+
+```
+size = 1777930 bytes
+```
+
+It was never extracted: extraction shells out to `tar`, which is absent from a shims-only PATH.
+The result is the skill tool failing with `error='ripgrep execution failed'`.
+
+## measured ripgrep binary extracted from that tarball (used for the pre-seed)
+
+```
+ripgrep-15.1.0-aarch64-apple-darwin/rg = 4048816 bytes
+rg --version -> ripgrep 15.1.0 (rev af60c2de9d)
+```
+
+## A/B result (full capture: `cost/b-rg-skill.txt`)
+
+| Variant | `skill` tool | `metadata.dir` | `downloaded_rg_tarball` |
+|---|---|---|---|
+| not-seeded | `status=error`, `error='ripgrep execution failed'` | absent | **YES** |
+| bin-seeded (`$XDG_CACHE_HOME/opencode/bin/rg`) | `status=completed` | present | NO |
+| path-shim (symlink in the trial `bin`) | `status=completed` | present | NO |
+
+## opencode's ripgrep resolution order (from the 1.18.27 binary)
+
+`which rg` → else `$XDG_CACHE_HOME/opencode/bin/rg` → else download
+`ripgrep-15.1.0-<platform>.tar.gz` from GitHub and extract it (requires `tar`).

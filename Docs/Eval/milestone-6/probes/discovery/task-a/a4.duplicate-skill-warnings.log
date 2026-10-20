@@ -1,0 +1,4 @@
+timestamp=2026-10-19T21:28:40.323Z level=WARN run=fc2993de message="duplicate skill name" name=dup existing=TRIAL/worktree/.claude/skills/dup/SKILL.md duplicate=TRIAL/worktree/app/.agents/skills/dup/SKILL.md
+timestamp=2026-10-19T21:28:49.045Z level=WARN run=b46deebe message="duplicate skill name" name=dup existing=TRIAL/worktree/.claude/skills/dup/SKILL.md duplicate=TRIAL/worktree/app/.agents/skills/dup/SKILL.md
+timestamp=2026-10-19T21:28:59.188Z level=WARN run=e863f66f message="duplicate skill name" name=dup existing=TRIAL/worktree/.claude/skills/dup/SKILL.md duplicate=TRIAL/worktree/app/.agents/skills/dup/SKILL.md
+timestamp=2026-10-19T21:29:07.978Z level=WARN run=63e5a58b message="duplicate skill name" name=dup existing=TRIAL/worktree/app/.agents/skills/dup/SKILL.md duplicate=TRIAL/worktree/.claude/skills/dup/SKILL.md

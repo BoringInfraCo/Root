@@ -1,0 +1,6 @@
+timestamp=2026-10-19T20:48:21.208Z level=WARN run=193986fb message="duplicate skill name" name=dup existing=TRIAL/cwd/.opencode/skill/dup/SKILL.md duplicate=TRIAL/home/.claude/skills/dup/SKILL.md
+timestamp=2026-10-19T20:48:26.992Z level=WARN run=65b05456 message="duplicate skill name" name=dup existing=TRIAL/home/.claude/skills/dup/SKILL.md duplicate=TRIAL/cwd/.opencode/skill/dup/SKILL.md
+timestamp=2026-10-19T20:48:36.023Z level=WARN run=75b8f1b3 message="duplicate skill name" name=dup existing=TRIAL/cwd/.opencode/skill/dup/SKILL.md duplicate=TRIAL/home/.claude/skills/dup/SKILL.md
+timestamp=2026-10-19T20:48:47.041Z level=WARN run=86a33d16 message="duplicate skill name" name=dup existing=TRIAL/home/.claude/skills/dup/SKILL.md duplicate=TRIAL/cwd/.opencode/skill/dup/SKILL.md
+timestamp=2026-10-19T20:49:00.415Z level=WARN run=903c16e3 message="duplicate skill name" name=dup existing=TRIAL/cwd/.opencode/skill/dup/SKILL.md duplicate=TRIAL/home/.claude/skills/dup/SKILL.md
+timestamp=2026-10-19T20:49:07.433Z level=WARN run=288da969 message="duplicate skill name" name=dup existing=TRIAL/home/.claude/skills/dup/SKILL.md duplicate=TRIAL/cwd/.opencode/skill/dup/SKILL.md

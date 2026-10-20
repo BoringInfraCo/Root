@@ -1,4 +1,4 @@
-//! Verifier execution and repository tree fingerprints (Milestone 3, Phase A).
+//! # Verifier execution and repository tree fingerprints (Milestone 3, Phase A).
 //!
 //! [`run_verifier`] executes a trial's predeclared verifier commands **after**
 //! the agent has exited, through [`crate::supervisor::run_supervised`] with the
@@ -9,6 +9,23 @@
 //! 2. run each command under the spec's wall timeout and output cap;
 //! 3. compare each exit code with the command's `expected_exit`;
 //! 4. fingerprint again and compare.
+//!
+//! # Environment hygiene
+//!
+//! A verifier command runs with the **hermetic** environment built by
+//! [`hermetic_verifier_env`]: the trial's `PATH` holds the fake-tool
+//! directory and the trial's stub-bin directory and **nothing else** — the
+//! host `PATH` is excluded entirely. A verifier that could reach host tools
+//! could satisfy a task by using the host's software instead of the trial's,
+//! which would silently invalidate the measurement.
+//!
+//! Because the host `PATH` is gone, a record whose verifier argv names a
+//! shell (`["sh", "verify.sh"]`) can no longer resolve it. [`resolve_verifier_argv`]
+//! rewrites such an argv[0] to the **absolute path of a shell staged inside
+//! the trial** — never to a host `PATH` lookup. The staged shell is a copy of
+//! the host's `/bin/sh` placed in `<trial>/verifier-bin/sh` (see
+//! [`crate::trial_env::stage_verifier_shell`]); every other argv[0] keeps
+//! resolving through the trial `PATH` (the fake shims and the stub-bin).
 //!
 //! # Verdict policy
 //!
@@ -272,10 +289,33 @@ impl VerifierError {
 /// [`MAX_FINGERPRINT_FILE_BYTES`], and trees deeper than
 /// [`MAX_FINGERPRINT_DEPTH`] are typed errors rather than silent skips.
 pub fn tree_fingerprint(repo: &Path) -> Result<String, VerifierError> {
-    tree_fingerprint_capped(repo, MAX_FINGERPRINT_FILE_BYTES)
+    tree_fingerprint_excluding(repo, &[])
 }
 
-fn tree_fingerprint_capped(repo: &Path, max_file_bytes: u64) -> Result<String, VerifierError> {
+/// Deterministic content fingerprint of a repository tree, skipping the
+/// given subtrees.
+///
+/// The excluded paths are **absolute** directory paths; a directory whose
+/// path equals one of them is never entered, so neither its files nor its
+/// symlinks are observed. The driver excludes the project's OpenCode config
+/// dir: it is the harness's own directory inside the agent's workspace (it
+/// carries npm symlinks, and the harness's background npm activity inside
+/// it must never be read as agent activity), so it is excluded from the
+/// scored tree.
+///
+/// Every other rule of [`tree_fingerprint`] is unchanged.
+pub fn tree_fingerprint_excluding(
+    repo: &Path,
+    excluded: &[PathBuf],
+) -> Result<String, VerifierError> {
+    tree_fingerprint_capped_excluding(repo, MAX_FINGERPRINT_FILE_BYTES, excluded)
+}
+
+fn tree_fingerprint_capped_excluding(
+    repo: &Path,
+    max_file_bytes: u64,
+    excluded: &[PathBuf],
+) -> Result<String, VerifierError> {
     let metadata = fs::symlink_metadata(repo).map_err(|error| VerifierError::Io {
         path: repo.to_path_buf(),
         message: error.to_string(),
@@ -292,7 +332,7 @@ fn tree_fingerprint_capped(repo: &Path, max_file_bytes: u64) -> Result<String, V
     }
 
     let mut files: Vec<(String, String)> = Vec::new();
-    walk_tree(repo, repo, 0, max_file_bytes, &mut files)?;
+    walk_tree(repo, repo, 0, max_file_bytes, excluded, &mut files)?;
     files.sort();
 
     let entries: Vec<serde_json::Value> = files
@@ -313,6 +353,7 @@ fn walk_tree(
     dir: &Path,
     depth: usize,
     max_file_bytes: u64,
+    excluded: &[PathBuf],
     files: &mut Vec<(String, String)>,
 ) -> Result<(), VerifierError> {
     if depth > MAX_FINGERPRINT_DEPTH {
@@ -351,7 +392,11 @@ fn walk_tree(
             return Err(VerifierError::SymlinkRefused { path });
         }
         if metadata.is_dir() {
-            walk_tree(root, &path, depth + 1, max_file_bytes, files)?;
+            if excluded.iter().any(|skip| skip == &path) {
+                // The harness's own seeded subtree: never observed.
+                continue;
+            }
+            walk_tree(root, &path, depth + 1, max_file_bytes, excluded, files)?;
             continue;
         }
         if !metadata.is_file() {
@@ -380,6 +425,39 @@ fn walk_tree(
 // Verifier runner
 // ---------------------------------------------------------------------------
 
+/// Build the hermetic verifier environment of a trial.
+///
+/// `PATH` holds the trial's fake-tool directory and — when the trial has one
+/// — its stub-bin directory. The **host `PATH` is excluded entirely**: a
+/// verifier that could reach host tools could satisfy a task with host
+/// software instead of the trial's, which would invalidate the measurement
+/// (the M5 postmortem's host-leakage finding).
+///
+/// The returned map is the *only* environment the verifier child inherits.
+pub fn hermetic_verifier_env(fake_bin: &Path, stub_bin: Option<&Path>) -> Vec<(String, String)> {
+    let mut path = fake_bin.to_string_lossy().into_owned();
+    if let Some(stub_bin) = stub_bin {
+        path.push(':');
+        path.push_str(&stub_bin.to_string_lossy());
+    }
+    vec![("PATH".to_string(), path)]
+}
+
+/// Rewrite a verifier argv so that a shell argument resolves inside the trial.
+///
+/// `argv[0] == "sh"` is replaced by `shell` — the absolute path of the shell
+/// staged inside the trial. Every other argv[0] is left untouched and keeps
+/// resolving through the hermetic trial `PATH`.
+pub fn resolve_verifier_argv(argv: &[String], shell: Option<&Path>) -> Vec<String> {
+    let mut resolved = argv.to_vec();
+    if let (Some(shell), Some(first)) = (shell, resolved.first_mut()) {
+        if first == "sh" {
+            *first = shell.to_string_lossy().into_owned();
+        }
+    }
+    resolved
+}
+
 /// Run `spec`'s commands in `repo` and report the verdict.
 ///
 /// Every command runs through [`run_supervised`] with the explicit `env` map
@@ -390,6 +468,22 @@ fn walk_tree(
 /// panic or return `Err`; they are folded into the outcome with a reason in
 /// [`VerifierOutcome::notes`].
 pub fn run_verifier(spec: &VerifierSpec, repo: &Path, env: &[(String, String)]) -> VerifierOutcome {
+    run_verifier_excluding(spec, repo, env, &[])
+}
+
+/// Run `spec`'s commands in `repo` and report the verdict, scoring the tree
+/// without the excluded subtrees.
+///
+/// The excluded paths are **absolute** directory paths that are never entered
+/// by the pre/post fingerprint (see [`tree_fingerprint_excluding`]). The
+/// real harness excludes the seeded plugin install target, so the harness's
+/// own npm activity can never be reported as a verifier mutation.
+pub fn run_verifier_excluding(
+    spec: &VerifierSpec,
+    repo: &Path,
+    env: &[(String, String)],
+    excluded: &[PathBuf],
+) -> VerifierOutcome {
     let started = Instant::now();
     let mut notes: Vec<String> = Vec::new();
     let mut exit_codes: Vec<Option<i32>> = vec![None; spec.commands.len()];
@@ -400,14 +494,15 @@ pub fn run_verifier(spec: &VerifierSpec, repo: &Path, env: &[(String, String)]) 
     let mut timed_out = false;
     let mut mutation_detected = false;
 
-    let (pre_ok, pre_tree_sha256, mut invalid_reason) = match tree_fingerprint(repo) {
-        Ok(hash) => (true, hash, None),
-        Err(error) => (
-            false,
-            String::new(),
-            Some(format!("pre_tree_fingerprint_failed: {error}")),
-        ),
-    };
+    let (pre_ok, pre_tree_sha256, mut invalid_reason) =
+        match tree_fingerprint_excluding(repo, excluded) {
+            Ok(hash) => (true, hash, None),
+            Err(error) => (
+                false,
+                String::new(),
+                Some(format!("pre_tree_fingerprint_failed: {error}")),
+            ),
+        };
     if spec.verifier_id.is_empty() {
         invalid_reason.get_or_insert_with(|| "verifier_id is empty".to_string());
     }
@@ -486,7 +581,7 @@ pub fn run_verifier(spec: &VerifierSpec, repo: &Path, env: &[(String, String)]) 
     // caught.
     let mut post_tree_sha256 = String::new();
     if pre_ok {
-        match tree_fingerprint(repo) {
+        match tree_fingerprint_excluding(repo, excluded) {
             Ok(hash) => {
                 if hash != pre_tree_sha256 {
                     mutation_detected = true;
@@ -645,7 +740,7 @@ mod tests {
         let dir = unique_dir("fingerprint-refusals");
         fs::write(dir.join("ok.txt"), "ok\n").expect("write ok");
 
-        let capped = tree_fingerprint_capped(&dir, 2);
+        let capped = tree_fingerprint_capped_excluding(&dir, 2, &[]);
         assert_eq!(
             capped.expect_err("oversized file refused").kind(),
             VerifierErrorKind::FileTooLarge

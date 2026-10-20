@@ -1,0 +1,140 @@
+{
+  "case": "19-flag-project-config-instructions",
+  "contract": "Docs/Eval/milestone-0/UPSTREAM-CONTRACT.md",
+  "scenarios": [
+    {
+      "name": "agents-only",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/agents-only",
+        "worktree_root": "trees/agents-only"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:30cf594a595b9cf7ffdc492ece4a6ff326651e87a1e49f3fb8632aab01ae880a",
+            "size": 58
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "trees/agents-only/AGENTS.md",
+            "token": "project:AGENTS.md",
+            "sha256": "sha256:f2dcb1edd038110593491e54fa316495ec70078780b1f2c827bba8de83888574",
+            "size": 36
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:02f8388fe9413b1ac36a0a72b2b2af979973ec63f8fb20bddc555e68ece3cf83"
+      }
+    },
+    {
+      "name": "agents-only-disable-project-config",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/agents-only",
+        "worktree_root": "trees/agents-only"
+      },
+      "flags": {
+        "disable_project_config": true
+      },
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:30cf594a595b9cf7ffdc492ece4a6ff326651e87a1e49f3fb8632aab01ae880a",
+            "size": 58
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:7632d9039d869f057091eb520d68f50daa62d0ec18015ef045e58d85f5f1752f"
+      }
+    },
+    {
+      "name": "claude-only",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/claude-only",
+        "worktree_root": "trees/claude-only"
+      },
+      "flags": {},
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:30cf594a595b9cf7ffdc492ece4a6ff326651e87a1e49f3fb8632aab01ae880a",
+            "size": 58
+          },
+          {
+            "role": "project",
+            "source": "project-walkup",
+            "precedence": 1,
+            "file": "trees/claude-only/CLAUDE.md",
+            "token": "project:CLAUDE.md",
+            "sha256": "sha256:450bca347136afb6bb480f19ab38a4d32f370ff8265687ba22e0543b8a14dab1",
+            "size": 78
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:18c862205e5e562572848cb83f2bc70d11a8a8c26a3cb255def3d6affc097182"
+      }
+    },
+    {
+      "name": "claude-only-disable-claude-prompt",
+      "roots": {
+        "home": "home",
+        "xdg_config_home": "home/config",
+        "project_root": "trees/claude-only",
+        "worktree_root": "trees/claude-only"
+      },
+      "flags": {
+        "disable_claude_code_prompt": true
+      },
+      "expect": {
+        "instructions": [
+          {
+            "role": "global",
+            "source": "global-config-agents",
+            "precedence": 0,
+            "file": "home/config/opencode/AGENTS.md",
+            "token": "xdg:opencode/AGENTS.md",
+            "sha256": "sha256:30cf594a595b9cf7ffdc492ece4a6ff326651e87a1e49f3fb8632aab01ae880a",
+            "size": 58
+          }
+        ],
+        "skills": [],
+        "discovery_errors": [],
+        "discovery_warnings": [],
+        "reproducible": true,
+        "manifest_sha256": "sha256:3aa8da1e5e75a89049aa137774f2af14b56d12b6d1a4a54f5aa375fba08f38eb"
+      }
+    }
+  ]
+}

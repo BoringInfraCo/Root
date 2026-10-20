@@ -80,6 +80,22 @@
 //!   read-only and proves it is byte-identical to the stored `report.json`
 //!   without rerunning any agent.
 //!
+//! Milestone 6 adds the **real** OpenCode harness:
+//!
+//! - `real_harness` — [`RealHarness`], which runs the digest-pinned
+//!   OpenCode `1.18.27` CLI (`opencode run --format json --model <model>
+//!   <prompt>`) under the existing supervisor, classifies provider failures
+//!   (the `1.18.27` stream carries no `error` envelope for them) and decides
+//!   the single documented retry;
+//! - `trial_env` — [`Prewarm`] and [`prepare_trial_env`], the one-time shared
+//!   assets (warm npm cache, plugin config template, read-only
+//!   `models.json`, the `skill`-tool `rg`) and the exact per-trial
+//!   environment a real trial runs in;
+//! - the driver selects the harness with [`HarnessChoice`], and the
+//!   verifier environment is **hermetic** (the trial's fake-bin and stub-bin
+//!   only — no host `PATH`; a record that names `sh` gets the trial-local
+//!   staged shell).
+//!
 //! The store takes an explicit evals root; nothing in this crate touches the
 //! Root directory.
 //!
@@ -172,10 +188,12 @@ mod evidence;
 mod fake_tools;
 mod feasibility;
 mod isolation;
+mod leakage;
 mod materializer;
 mod parse;
 mod plan;
 mod raw;
+mod real_harness;
 mod report;
 mod runner;
 mod schedule;
@@ -185,22 +203,24 @@ mod store;
 mod supervisor;
 mod taxonomy;
 mod trial;
+mod trial_env;
 mod validate;
 mod verifier;
 
 pub use acceptance::{
-    capture_tree_snapshot, commandline_v1, diff_snapshots, evaluate_acceptance, parse_audit_log,
-    read_tree_file, AcceptanceError, AcceptanceErrorKind, AssertionReport, AssertionResult,
-    AuditLine, TreeChange, TreeChangeKind, TreeFile, TreeSnapshot, TrialEvidence, AUDIT_LINE_KEYS,
-    FAKE_TOOL_AUDIT_FILE_NAME, MAX_ARTIFACT_FILE_BYTES, MAX_SNAPSHOT_DEPTH,
+    capture_tree_snapshot, capture_tree_snapshot_excluding, commandline_v1, diff_snapshots,
+    evaluate_acceptance, parse_audit_log, read_tree_file, AcceptanceError, AcceptanceErrorKind,
+    AssertionReport, AssertionResult, AuditLine, TreeChange, TreeChangeKind, TreeFile,
+    TreeSnapshot, TrialEvidence, AUDIT_LINE_KEYS, FAKE_TOOL_AUDIT_FILE_NAME,
+    MAX_ARTIFACT_FILE_BYTES, MAX_SNAPSHOT_DEPTH,
 };
 pub use condition::{
     apply_overlay, verify_declared_delta, ConditionOverlay, DeltaError, DeltaErrorKind,
     DeltaExpectation, OverlayAction, OverlayEntry,
 };
 pub use context::{
-    resolve_manifest, ContextError, ContextErrorKind, ContextRoots, DiscoveryError,
-    DiscoveryErrorKind, DiscoveryFlags, DiscoveryWarning, DiscoveryWarningKind,
+    resolve_manifest, ContextError, ContextErrorKind, ContextRoots, DiscoveryCandidate,
+    DiscoveryError, DiscoveryErrorKind, DiscoveryFlags, DiscoveryWarning, DiscoveryWarningKind,
     EffectiveContextManifest, InstructionRole, InstructionSource, ResolvedInstruction,
     ResolvedSkill, SkillSource, BUILTIN_SKILL_NAMES, CONTEXT_HASH_DOMAIN, MAX_CONTEXT_FILE_BYTES,
     MAX_SCAN_DEPTH,
@@ -215,9 +235,10 @@ pub use digest::{
 pub use error::{ErrorKind, TaskError};
 pub use eval_error::{EvalError, EvalErrorKind};
 pub use events::{
-    parse_ndjson_line, EventParseError, EventParseErrorKind, NormalizedEvent, StepTokens,
-    StreamError, ToolCall, ASK_REJECT_MESSAGE, MODEL_OBSERVED_LIMITATION, SOURCE_ERROR,
-    SOURCE_STEP_FINISH, SOURCE_STEP_START, SOURCE_TEXT, SOURCE_TOOL_USE,
+    parse_ndjson_line, turn_state, EventParseError, EventParseErrorKind, NormalizedEvent,
+    StepTokens, StreamError, ToolCall, TurnState, ASK_REJECT_MESSAGE, FINISH_REASON_STOP,
+    FINISH_REASON_TOOL_CALLS, MODEL_OBSERVED_LIMITATION, SOURCE_ERROR, SOURCE_STEP_FINISH,
+    SOURCE_STEP_START, SOURCE_TEXT, SOURCE_TOOL_USE,
 };
 pub use evidence::{
     normalized_events_digest, redact_bytes, seal_manifest, seal_projection, verify_artifacts,
@@ -237,25 +258,36 @@ pub use fake_tools::{
 pub use feasibility::{
     reproduce_feasibility, run_feasibility_matrix, CanaryCheck, ContaminationSummary,
     FeasibilityConfig, FeasibilityError, FeasibilityErrorKind, FeasibilityRunSummary,
-    ReproduceOutcome, TrialSummary, M5_CANARY_ENV, M5_CANARY_VALUE_PREFIX, M5_CONDITION_BASELINE,
-    M5_CONDITION_TREATMENT, M5_DEFAULT_REPETITIONS, M5_DEFAULT_SEED, M5_EXPERIMENT_ID,
-    M5_FAKE_HARNESS_VERSION, M5_FIXED_CREATED_AT, M5_MARKER_SKILL, M5_OUTPUT_CAP_BYTES,
-    M5_REQUESTED_MODEL,
+    HarnessChoice, ReproduceOutcome, TrialSummary, M5_CANARY_ENV, M5_CANARY_VALUE_PREFIX,
+    M5_CONDITION_BASELINE, M5_CONDITION_TREATMENT, M5_DEFAULT_REPETITIONS, M5_DEFAULT_SEED,
+    M5_EXPERIMENT_ID, M5_FAKE_HARNESS_VERSION, M5_FIXED_CREATED_AT, M5_MARKER_SKILL,
+    M5_OUTPUT_CAP_BYTES, M5_REQUESTED_MODEL,
 };
 pub use isolation::{
     check_no_leak, cleanup_trial, residue_scan, verify_isolation, IsolationError,
     IsolationErrorKind, Residue,
 };
+pub use leakage::{
+    detect_host_leakage, LeakFinding, LeakKind, LeakageError, LeakageErrorKind, LeakageReport,
+    MAX_STUB_FILE_BYTES,
+};
 pub use materializer::{
     allowed_env, materialize_trial, materialize_trial_with_fake_tools, scrub_env,
     secret_pattern_hit, trial_stub_bin_dir, MaterializerError, MaterializerErrorKind,
-    FAKE_TOOL_AUDIT_RELATIVE_PATH, STUB_BIN_DIR_NAME,
+    PermissionSeeding, FAKE_TOOL_AUDIT_RELATIVE_PATH, STUB_BIN_DIR_NAME,
 };
 pub use plan::{
     compute_plan_hash, verify_plan, BenchmarkTaskRef, ConditionSpec, ExperimentSpec, HarnessLock,
     RepositoryLock, EXPERIMENT_HASH_DOMAIN, EXPERIMENT_SPEC_MAX_SUPPORTED_VERSION,
     EXPERIMENT_SPEC_SCHEMA_VERSION, FEASIBILITY_HARNESS_NAME, GENERATED_COMMIT_PREFIX,
     PINNED_HARNESS_NAME,
+};
+pub use real_harness::{
+    decide_retry, detect_provider_error, file_sha256, HarnessIdentity, ProviderErrorDetail,
+    RealHarness, RealHarnessConfig, RealHarnessError, RealHarnessErrorKind, RealRunOutcome,
+    RealRunRequest, RetryDecision, RetryReason, DEFAULT_REAL_MODEL, OPENCODE_PINNED_SHA256,
+    OPENCODE_PINNED_SHA256_DIGEST, OPENCODE_PINNED_VERSION, OPENCODE_RUN_FORMAT,
+    PROVIDER_ERROR_MARKERS, REAL_HARNESS_MAX_RETRIES, REAL_HARNESS_NAME,
 };
 pub use report::{
     build_feasibility_report, ConditionCounts, DiscordantPairs, FeasibilityReport, InvalidBlock,
@@ -288,12 +320,20 @@ pub use taxonomy::{classify_trial, TrialOutcomeClass};
 pub use trial::{
     validate_trial_id, TrialError, TrialErrorKind, TrialLayout, TrialSpec, MAX_TRIAL_ID_LEN,
 };
+pub use trial_env::{
+    prepare_trial_env, project_config_dir, real_trial_env, stage_verifier_shell,
+    write_trial_env_file, Prewarm, TrialEnvError, TrialEnvErrorKind, HOST_SHELL_CANDIDATES,
+    MODELS_FILE_MODE, PREWARM_CONFIG_TEMPLATE_DIR, PREWARM_MODELS_DIR, PREWARM_MODELS_FILE,
+    PREWARM_NPM_CACHE_DIR, PREWARM_RG_DIR, PREWARM_RG_FILE, PROJECT_CONFIG_DIR_RELATIVE,
+    RG_FILE_MODE, VERIFIER_BIN_DIR_NAME,
+};
 pub use validate::{is_contained_relative_path, is_relative_glob, is_task_identifier};
 pub use verifier::{
-    run_verifier, tree_fingerprint, VerifierError, VerifierErrorKind, VerifierOutcome,
-    VerifierSpec, VerifierStep, VerifierVerdict, DEFAULT_VERIFIER_OUTPUT_CAP_BYTES,
-    DEFAULT_VERIFIER_TIMEOUT_MS, MAX_FINGERPRINT_DEPTH, MAX_FINGERPRINT_FILE_BYTES,
-    TREE_FINGERPRINT_DOMAIN,
+    hermetic_verifier_env, resolve_verifier_argv, run_verifier, run_verifier_excluding,
+    tree_fingerprint, tree_fingerprint_excluding, VerifierError, VerifierErrorKind,
+    VerifierOutcome, VerifierSpec, VerifierStep, VerifierVerdict,
+    DEFAULT_VERIFIER_OUTPUT_CAP_BYTES, DEFAULT_VERIFIER_TIMEOUT_MS, MAX_FINGERPRINT_DEPTH,
+    MAX_FINGERPRINT_FILE_BYTES, TREE_FINGERPRINT_DOMAIN,
 };
 
 /// Task-format schema version emitted and accepted by this crate (§2.2).

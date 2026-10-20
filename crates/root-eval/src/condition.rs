@@ -21,13 +21,14 @@
 //!
 //! Both manifests are flattened into records keyed by element identity:
 //! `instruction|<token>`, `skill|<token>`, `error|<token>`,
-//! `warning|<name>|<overridden>|<winner>`, plus the `flags` and
+//! `warning|<name>|<candidate token>…`, plus the `flags` and
 //! `builtin_skill_names` pseudo-records. A record's value is its canonical
 //! projection with the pure order index `precedence` excluded (the *set* of
 //! instructions is still compared, so selection ripples are caught). Every
 //! difference must name at least one declared token; every declared token must
-//! have at least one difference. Warning records reference the overridden and
-//! winning tokens and are covered when either side is declared.
+//! have at least one difference. Warning records reference the candidate
+//! tokens of a duplicate-name collision and are covered when any of them is
+//! declared.
 //!
 //! Digests are only checkable where the manifest records them (instruction,
 //! skill, and discovery-error records all carry the file SHA-256). A declared
@@ -518,14 +519,22 @@ fn flatten(
 
     for record in records(&projection, "discovery_warnings") {
         let name = string_field(record, "name")?;
-        let overridden = string_field(record, "overridden_token")?;
-        let winner = string_field(record, "winner_token")?;
+        let candidates = record
+            .get("candidates")
+            .and_then(Value::as_array)
+            .ok_or_else(|| DeltaError::Canonical {
+                message: format!("manifest warning `{name}` is missing its candidate list"),
+            })?;
+        let mut tokens = Vec::with_capacity(candidates.len());
+        for candidate in candidates {
+            tokens.push(string_field(candidate, "token")?);
+        }
         flat.insert(
-            format!("warning|{name}|{overridden}|{winner}"),
+            format!("warning|{name}|{}", tokens.join("|")),
             FlatRecord {
                 value: String::new(),
                 digest: None,
-                tokens: vec![overridden, winner],
+                tokens,
             },
         );
     }

@@ -19,27 +19,35 @@
             "source": "opencode-config-dir",
             "file": "project/.opencode/skill/dup/SKILL.md",
             "token": "project:.opencode/skill/dup/SKILL.md",
-            "sha256": "sha256:5cf86310c1332b593eb82b836236197c41924e957832ec122a083e055334e2cf"
+            "sha256": "sha256:5cf86310c1332b593eb82b836236197c41924e957832ec122a083e055334e2cf",
+            "ambiguous": true
           }
         ],
         "discovery_errors": [],
         "discovery_warnings": [
           {
             "name": "dup-skill",
-            "overridden_file": "home/.claude/skills/dup/SKILL.md",
-            "overridden_token": "home:.claude/skills/dup/SKILL.md",
-            "winner_file": "home/config/opencode/skills/dup/SKILL.md",
-            "winner_token": "xdg:opencode/skills/dup/SKILL.md"
-          },
-          {
-            "name": "dup-skill",
-            "overridden_file": "home/config/opencode/skills/dup/SKILL.md",
-            "overridden_token": "xdg:opencode/skills/dup/SKILL.md",
-            "winner_file": "project/.opencode/skill/dup/SKILL.md",
-            "winner_token": "project:.opencode/skill/dup/SKILL.md"
+            "candidates": [
+              {
+                "file": "home/.claude/skills/dup/SKILL.md",
+                "token": "home:.claude/skills/dup/SKILL.md",
+                "sha256": "sha256:7d6226e037a95969ee725fc7ae95de6ff9522eb6c8d059fa760f137745ab2e08"
+              },
+              {
+                "file": "home/config/opencode/skills/dup/SKILL.md",
+                "token": "xdg:opencode/skills/dup/SKILL.md",
+                "sha256": "sha256:f0fd936de5200e44cc92b3c0ecb4ee27fffc6e6329659ced087439eca8f6089e"
+              },
+              {
+                "file": "project/.opencode/skill/dup/SKILL.md",
+                "token": "project:.opencode/skill/dup/SKILL.md",
+                "sha256": "sha256:5cf86310c1332b593eb82b836236197c41924e957832ec122a083e055334e2cf"
+              }
+            ]
           }
         ],
-        "manifest_sha256": "sha256:f17a999a638b7e3b0ab602890ec331eb612fb5a3ff79ad3af512073425e0e3d1"
+        "reproducible": false,
+        "manifest_sha256": "sha256:0ddcc4ed0e03d4ae920163e0b7d7a7787b9d4f2cc586e258bdcb8dcd39b2ee82"
       }
     }
   ]

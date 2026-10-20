@@ -43,10 +43,23 @@
 //! - `"<condition> trial missing"`;
 //! - `"<condition> has N trials in one block"`;
 //! - `"<condition> outcome class missing"`;
-//! - `"<condition> outcome class invalid: <class>"`;
+//! - `"<condition> outcome class invalid: <class>"` (with the trial's
+//!   recorded `invalid_reason` appended in parentheses when it carries one —
+//!   e.g. `"baseline outcome class invalid: host_contamination
+//!   (host_contamination: symlink_outside_root stub-bin/rg ...)"`);
 //! - `"plan hash mismatch"`;
 //! - `"conditions not distinct"`;
 //! - `"only one condition recorded"`.
+//!
+//! # Host contamination
+//!
+//! A trial whose tree carries host state is recorded as
+//! [`TrialOutcomeClass::HostContamination`]: an **invalid** class, so its
+//! block is excluded from pairing (symmetrically) and the trial is never
+//! scored as a pass or as a fail. The exclusion reason names the class and
+//! the trial's recorded `invalid_reason`, and the report's `limitations`
+//! carry the number of contaminated trials — a run that leaked the host into
+//! a trial cannot support an effect claim, and the report says so.
 //!
 //! # Counts, direction, and secondary stats
 //!
@@ -472,6 +485,10 @@ pub fn build_feasibility_report(
     let repetitions = u32::try_from(repetitions.len()).unwrap_or(u32::MAX);
 
     let missing_metrics = missing_metrics(&trials)?;
+    let contamination_trials = trials
+        .iter()
+        .filter(|trial| trial.outcome_class() == Some(TrialOutcomeClass::HostContamination))
+        .count();
 
     let feasibility_label = if valid_blocks >= MIN_VALID_BLOCKS_FOR_FEASIBILITY
         && independent_tasks >= MIN_INDEPENDENT_TASKS_FOR_FEASIBILITY
@@ -488,6 +505,7 @@ pub fn build_feasibility_report(
         invalid_blocks.len(),
         blocks_total,
         &missing_metrics,
+        contamination_trials,
     );
 
     Ok(FeasibilityReport {
@@ -656,10 +674,26 @@ fn block_failure(
     }
     match trials[indices[0]].outcome_class() {
         None => Some(format!("{condition} outcome class missing")),
-        Some(class) if class.is_invalid() => Some(format!(
-            "{condition} outcome class invalid: {}",
-            class.as_str()
-        )),
+        Some(class) if class.is_invalid() => {
+            let reason = trials[indices[0]]
+                .full
+                .trial
+                .invalid_reason
+                .as_deref()
+                .unwrap_or("");
+            let reason = reason.trim();
+            if reason.is_empty() {
+                Some(format!(
+                    "{condition} outcome class invalid: {}",
+                    class.as_str()
+                ))
+            } else {
+                Some(format!(
+                    "{condition} outcome class invalid: {} ({reason})",
+                    class.as_str()
+                ))
+            }
+        }
         Some(_) => None,
     }
 }
@@ -817,6 +851,7 @@ fn limitations(
     invalid_blocks: usize,
     blocks_total: u32,
     missing_metrics: &[String],
+    contamination_trials: usize,
 ) -> Vec<String> {
     let task_suffix = if independent_tasks == 1 { "" } else { "s" };
     let repetition_suffix = if repetitions == 1 { "" } else { "s" };
@@ -824,6 +859,16 @@ fn limitations(
         "missing telemetry: none recorded in the executions read".to_string()
     } else {
         format!("missing telemetry: {}", missing_metrics.join("; "))
+    };
+    let contamination = if contamination_trials == 0 {
+        "host contamination: none detected in the trials read (no symlink resolved outside a \
+         trial root; no host-sized file in a trial stub directory)"
+            .to_string()
+    } else {
+        format!(
+            "host contamination: {contamination_trials} trial(s) invalidated (a trial that \
+             reached the host is excluded from pairing; it is never scored as a pass or a fail)"
+        )
     };
     vec![
         format!(
@@ -835,6 +880,7 @@ fn limitations(
         format!(
             "{invalid_blocks} of {blocks_total} paired blocks excluded as invalid; exclusion is symmetric (both conditions of a block are excluded together)"
         ),
+        contamination,
         missing,
         "observed model identity unavailable (requested model recorded)".to_string(),
         "provider cost is harness-reported, not billed".to_string(),

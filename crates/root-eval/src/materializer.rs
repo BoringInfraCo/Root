@@ -10,8 +10,12 @@
 //! 3. project `.opencode/skill/**/SKILL.md` files written **only** from the
 //!    manifest's `project:`-token skills (a baseline manifest carries none,
 //!    so no skill directory appears);
-//! 4. a hermetic project `opencode.json` with seeded `ask`-mode permission
-//!    rules;
+//! 4. a hermetic project `opencode.json` with a seeded permission set — the
+//!    posture is **harness-aware** ([`PermissionSeeding`]): the fake-agent
+//!    path seeds `ask`-mode (deterministic denial fixtures), the real
+//!    OpenCode path seeds `allow`-all (a non-interactive run auto-rejects
+//!    every ask, so an ask-mode seed would stop the agent from executing
+//!    anything at all — M0 UPSTREAM-CONTRACT §5.1);
 //! 5. offline fake tools (`root`, `brew`, `curl`, `npm`, `pip` shims);
 //! 6. an allowlist env file plus [`allowed_env`] / [`scrub_env`] maps that
 //!    never inherit the parent process environment.
@@ -189,6 +193,58 @@ pub const FAKE_TOOL_AUDIT_RELATIVE_PATH: &str = "audit/fake-tool-audit.jsonl";
 /// (`$TRIAL_STUB_BIN`).
 pub const STUB_BIN_DIR_NAME: &str = "stub-bin";
 
+/// The permission posture seeded into a trial's project `opencode.json`.
+///
+/// The posture is **explicit, deterministic, and recorded**: the seeded set
+/// is written verbatim into the trial's project config, carried on
+/// [`crate::trial::TrialLayout`], and recorded with every trial's evidence.
+///
+/// | Posture | Seeded set | Who needs it |
+/// |---|---|---|
+/// | [`PermissionSeeding::AskMode`] | `{"permission":{"*":{"*":"ask"}}}` | the **fake**-agent path — an ask is auto-rejected in a non-interactive run, which is exactly the deterministic denial shape the M0 golden fixtures captured |
+/// | [`PermissionSeeding::AllowAll`] | `{"permission":{"*":{"*":"allow"}}}` | the **real** OpenCode path — with an ask-mode seed every tool call is asked and then auto-rejected, so the agent could not execute anything |
+///
+/// The shape follows the captured fixtures (`{"permission":{"bash":{"*":"ask"}}}`
+/// per-tool); the wildcard outer key asks for (or allows) **every** tool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PermissionSeeding {
+    /// `{"permission":{"*":{"*":"ask"}}}` — every tool call is asked.
+    AskMode,
+    /// `{"permission":{"*":{"*":"allow"}}}` — every tool call is allowed.
+    AllowAll,
+}
+
+impl PermissionSeeding {
+    /// Stable snake-case token (recorded in the trial evidence).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::AskMode => "ask_mode",
+            Self::AllowAll => "allow_all",
+        }
+    }
+
+    /// The effective permission set, verbatim JSON.
+    ///
+    /// This is exactly the body written to the trial's project
+    /// `opencode.json`, so the recorded value and the on-disk value cannot
+    /// drift.
+    pub fn effective_config(self) -> &'static str {
+        match self {
+            Self::AskMode => "{\"permission\":{\"*\":{\"*\":\"ask\"}}}",
+            Self::AllowAll => "{\"permission\":{\"*\":{\"*\":\"allow\"}}}",
+        }
+    }
+
+    /// Parse the stable token produced by [`PermissionSeeding::as_str`].
+    pub fn from_token(token: &str) -> Option<Self> {
+        match token {
+            "ask_mode" => Some(Self::AskMode),
+            "allow_all" => Some(Self::AllowAll),
+            _ => None,
+        }
+    }
+}
+
 /// Materialize one hermetic trial tree under `base_dir/<trial_id>/` with the
 /// legacy generic smoke shims.
 ///
@@ -202,11 +258,15 @@ pub const STUB_BIN_DIR_NAME: &str = "stub-bin";
 /// `brew`, `curl`, `npm`, `pip`) and keeps the audit trail at
 /// `<trial>/audit.log`. Spec-conformant trials use
 /// [`materialize_trial_with_fake_tools`].
+///
+/// The seeded permission posture is [`PermissionSeeding::AskMode`]: this
+/// legacy path exists for the fake-agent fixtures, whose denial shapes
+/// depend on the ask-then-auto-reject behavior.
 pub fn materialize_trial(
     spec: &TrialSpec,
     base_dir: &Path,
 ) -> Result<TrialLayout, MaterializerError> {
-    materialize_inner(spec, base_dir, None)
+    materialize_inner(spec, base_dir, None, PermissionSeeding::AskMode)
 }
 
 /// Materialize one hermetic trial tree with spec-conformant fake tools
@@ -230,18 +290,25 @@ pub fn materialize_trial(
 ///   [`MaterializerErrorKind::DigestMismatch`].
 ///
 /// `TRIAL_FAKE_AGENT_*` variables are never read or written by this crate.
+///
+/// `permission` is the **harness-aware** permission posture seeded into the
+/// trial's project `opencode.json` ([`PermissionSeeding`]): the fake-agent
+/// path passes [`PermissionSeeding::AskMode`], the real OpenCode path
+/// passes [`PermissionSeeding::AllowAll`].
 pub fn materialize_trial_with_fake_tools(
     spec: &TrialSpec,
     base_dir: &Path,
     bindings: &[FakeToolBinding],
+    permission: PermissionSeeding,
 ) -> Result<TrialLayout, MaterializerError> {
-    materialize_inner(spec, base_dir, Some(bindings))
+    materialize_inner(spec, base_dir, Some(bindings), permission)
 }
 
 fn materialize_inner(
     spec: &TrialSpec,
     base_dir: &Path,
     bindings: Option<&[FakeToolBinding]>,
+    permission: PermissionSeeding,
 ) -> Result<TrialLayout, MaterializerError> {
     spec.validate()?;
     require_base_dir(base_dir)?;
@@ -298,8 +365,8 @@ fn materialize_inner(
     // 3. Project skill files from the manifest's `project:` skills only.
     write_project_skills(spec, &repo_dir)?;
 
-    // 4. Hermetic project opencode config (seeded ask-mode permissions).
-    write_opencode_config(&repo_dir)?;
+    // 4. Hermetic project opencode config (the harness-aware permission set).
+    write_opencode_config(&repo_dir, permission)?;
 
     // 5. Fake tools: legacy smoke shims, or the spec-conformant profiles.
     let audit_log = match bindings {
@@ -343,6 +410,8 @@ fn materialize_inner(
         audit_log,
         pids_file,
         residue_manifest_file,
+        permission_seeding: permission,
+        effective_permission: permission.effective_config().to_string(),
         created_paths: Vec::new(),
     };
     let env = scrub_env(&layout, &BTreeMap::new());
@@ -870,20 +939,30 @@ fn read_skill_source(path: &Path, token: &str) -> Result<Vec<u8>, MaterializerEr
 // Hermetic harness config
 // ---------------------------------------------------------------------------
 
-/// Seeded project `opencode.json` with `ask`-mode permission rules.
+/// Seeded project `opencode.json` with the requested permission set.
 ///
 /// Per the Milestone 0 live correction (GOLDEN-CAPTURES `05b`/`05c`), a
 /// `deny` rule removes the tool from the model's toolset with no observable
 /// event, so denial fixtures must use `ask` (auto-reject emits the
 /// `state.status:"error"` denial shape). Seeding ask-by-default keeps stock
 /// allow-all behavior out of hermetic trials.
-fn write_opencode_config(repo_dir: &Path) -> Result<(), MaterializerError> {
+///
+/// The **real** harness needs the opposite posture: a non-interactive
+/// `opencode run` auto-rejects every ask (M0 UPSTREAM-CONTRACT §5.1), so an
+/// ask-mode seed would turn every tool call into an auto-rejected call and
+/// the agent could execute nothing. The real path therefore seeds an
+/// explicit allow-all set — deterministic, and recorded with the trial's
+/// evidence (see [`PermissionSeeding`]).
+fn write_opencode_config(
+    repo_dir: &Path,
+    permission: PermissionSeeding,
+) -> Result<(), MaterializerError> {
     let dir = repo_dir.join(".opencode");
     fs::create_dir_all(&dir).map_err(|error| io_error(&dir, error.to_string()))?;
     set_mode(&dir, 0o700)?;
     // Shape follows the captured fixtures: `{"permission":{"bash":{"*":"ask"}}}`;
-    // here the wildcard asks for every tool by default.
-    let body = "{\"permission\":{\"*\":{\"*\":\"ask\"}}}\n";
+    // here the wildcard covers every tool by default.
+    let body = format!("{}\n", permission.effective_config());
     let path = dir.join("opencode.json");
     write_file_0600(&path, body.as_bytes())?;
     Ok(())

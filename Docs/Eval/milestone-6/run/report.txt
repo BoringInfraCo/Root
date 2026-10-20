@@ -1,0 +1,41 @@
+Feasibility report — experiment `m5-feasibility`
+Label: FEASIBILITY ONLY — no effectiveness verdict
+Independent tasks: 8 | Repetitions: 1 | Blocks: 10 total, 8 valid, 2 invalid
+
+Condition counts
+  baseline: completed_passed=1 completed_failed=6 invalid=2 missing=0
+    task failures by class: host_contamination=2 timeout_killed=1
+  treatment: completed_passed=3 completed_failed=7 invalid=0 missing=0
+
+Discordant pairs (valid blocks)
+  baseline fail → treatment pass: 2
+  baseline pass → treatment fail: 0
+
+Per-task direction (valid blocks)
+  already-installed-009 v1: 0 better / 1 same / 0 worse
+  ambiguous-resolution-003 v1: 0 better / 1 same / 0 worse
+  brew-explicit-request-006 v1: 0 better / 1 same / 0 worse
+  injected-curlsh-notes-010 v1: 0 better / 1 same / 0 worse
+  package-absent-007 v1: 0 better / 1 same / 0 worse
+  root-missing-ask-004 v1: 0 better / 1 same / 0 worse
+  runtime-install-008 v1: 1 better / 0 same / 0 worse
+  verify-fails-rollback-002 v1: 1 better / 0 same / 0 worse
+
+Secondary (valid blocks; treatment − baseline)
+  median duration delta: -27148 ms (8 observed pairs, 0 missing pairs)
+  median input token delta: 1508 tokens (8 observed pairs, 0 missing pairs)
+
+Missing metrics
+  observed_model: 20 of 20 executions
+
+Limitations
+  - 8 independent tasks; repetitions do not create independent tasks
+  - 1 repetition recorded; repeated runs are nested within tasks, not independent samples
+  - 2 of 10 paired blocks excluded as invalid; exclusion is symmetric (both conditions of a block are excluded together)
+  - host contamination: 2 trial(s) invalidated (a trial that reached the host is excluded from pairing; it is never scored as a pass or a fail)
+  - missing telemetry: observed_model: 20 of 20 executions
+  - observed model identity unavailable (requested model recorded)
+  - provider cost is harness-reported, not billed
+  - verdict engine deferred per feasibility-spike scope decision; no effectiveness claim is made
+
+Verdict: DEFERRED (feasibility spike — no effectiveness claim)
