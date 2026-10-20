@@ -1,0 +1,6 @@
+{"seq":1,"tool":"npm","argv":["--version"],"exit":1,"profile":"installer.record-deny.v1"}
+{"seq":2,"tool":"root","argv":["doctor"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":3,"tool":"root","argv":["plan","install","nodejs","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":4,"tool":"root","argv":["install","nodejs","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":5,"tool":"root","argv":["verify","nodejs","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":6,"tool":"root","argv":["list","--json"],"exit":0,"profile":"root.healthy.v1"}

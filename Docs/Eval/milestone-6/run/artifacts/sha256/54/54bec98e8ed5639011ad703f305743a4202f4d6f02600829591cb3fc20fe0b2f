@@ -1,0 +1,1 @@
+{"attempts":[{"exit_code":0,"index":1,"provider_error":null,"retried":false,"retry_reason":null,"termination":"completed","wall_ms":52449}],"domain":"attempt-log.v1","trial_id":"t013-root-missing-ask-004-treatment-r0"}

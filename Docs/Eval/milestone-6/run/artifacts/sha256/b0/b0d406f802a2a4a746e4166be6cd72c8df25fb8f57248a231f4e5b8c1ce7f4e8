@@ -1,0 +1,1 @@
+{"attempts":[{"exit_code":0,"index":1,"provider_error":null,"retried":false,"retry_reason":null,"termination":"completed","wall_ms":23302}],"domain":"attempt-log.v1","trial_id":"t015-brew-explicit-request-006-baseline-r0"}

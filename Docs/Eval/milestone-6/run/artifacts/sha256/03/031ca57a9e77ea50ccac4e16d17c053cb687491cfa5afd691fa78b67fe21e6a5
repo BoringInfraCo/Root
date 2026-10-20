@@ -1,0 +1,4 @@
+{"seq":1,"tool":"root","argv":["doctor"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":2,"tool":"root","argv":["plan","install","ambiguous-tool"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":3,"tool":"root","argv":["plan","install","ambiguous-tool-cli"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":4,"tool":"root","argv":["list"],"exit":0,"profile":"root.healthy.v1"}

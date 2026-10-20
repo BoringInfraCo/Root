@@ -1,0 +1,1 @@
+{"attempts":[{"exit_code":null,"index":1,"provider_error":null,"retried":true,"retry_reason":"truncated_stream","termination":"timeout_killed","wall_ms":240033},{"exit_code":0,"index":2,"provider_error":null,"retried":false,"retry_reason":null,"termination":"completed","wall_ms":160990}],"domain":"attempt-log.v1","trial_id":"t005-ambiguous-resolution-003-treatment-r0"}

@@ -1,0 +1,2 @@
+{"seq":1,"tool":"brew","argv":["--version"],"exit":1,"profile":"installer.record-deny.v1"}
+{"seq":2,"tool":"brew","argv":["install","htop"],"exit":1,"profile":"installer.record-deny.v1"}

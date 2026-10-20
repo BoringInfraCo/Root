@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-19
+
+v0.8.0 adds the internal evaluation foundation (`root-eval`) and records its first real-model feasibility run. **No `root` CLI command changed; `root-eval` is not wired into the CLI.** The feasibility verdict remains **DEFERRED** — no effectiveness claim is made. The lock schema remains package-only emit 2 / max supported 3.
+
+### Added
+
+- **Evaluation foundation (`root-eval`).** Sealed task records with plan hashing, a context manifest resolver, isolated trial materialization, a supervised runner, normalized event records, evidence sealing and a read-only store, a deterministic scheduler, a paired feasibility report, and a feasibility driver. The crate is internal to the workspace and has no `root` CLI command.
+- **Real OpenCode harness.** The `opencode-real` harness drives a pinned OpenCode 1.18.27 binary (SHA-256 gate before first use), prewarms a shared npm cache and per-trial config, clones each trial with `cp -Rc`, supervises a process group, records retries, and records the effective permission posture per run and per trial.
+- **First real-model run.** 10 sealed tasks × 2 conditions × 1 repetition = 20 trials for **$0.00** (free built-in `opencode/big-pickle`; every `step_finish` reported cost 0). **8 valid paired blocks**: **2 better / 0 worse / 6 same**, with 2 discordant baseline-fail → treatment-pass pairs and 0 reverse. Two baseline trials were invalidated for host contamination and excluded symmetrically. The stored and rebuilt report reproduce **byte-identically** (`sha256:ebb17e5d29cb5797e6a244f262c01726ac539ab06ba244183c489cdec6fa38a8`). Evidence is in `Docs/Eval/milestone-6/run/`.
+
+### Changed
+
+- **Resolver conformance (five live-conformance fixes).** Split the Claude-skills and external-skills gates (`.claude` vs `.agents` roots) with additive `disable_external_skills` / `disable_claude_code` flags; gate project instruction walk-up by `disable_project_config`; gate project-level `CLAUDE.md` by `disable_claude_code_prompt`; attach every level of the first-priority project instruction name; and mark duplicate skill names **non-reproducible** with a `DiscoveryWarning` instead of silently choosing a winner.
+- **Event-parser enrichment.** `ToolCall::metadata` (verbatim `part.state.metadata`) plus directory/name accessors, `NormalizedEvent::reason`, and `turn_state()` distinguishing `Completed { reason, step_finish_seen }` from `Truncated { last_event_type }`. Live captures replay as fixtures and the M0 golden captures still replay byte-identically.
+- **Verifier isolation.** Verifier environments use fake-bin and stub-bin only; the host `PATH` tail is no longer inherited.
+- **Permission posture.** Permission seeding is an explicit, recorded, harness-aware parameter: fake trials keep ask-mode; real trials seed allow-all (non-interactive `ask` is auto-rejected).
+- **Task 01 re-sealed as version 2.** `final.summary` now forbids brew *claims* while the paired audit assertion continues to forbid a brew *invocation*, so legitimate reproduction advice no longer fails a primary assertion. Records are never edited in place; fake calibration still holds.
+- **Host-leakage detection.** Each trial is scanned after it runs; a symlink resolving outside the trial root or an oversized stub is classified as **invalid**, with the finding sealed in evidence and the report. Detection is fail-closed and does not prevent host access.
+
+### Fixed
+
+- **Scrub-guard CI false positive.** The trial-env scrub guard compared secret-patterned parent *values* against allowlisted trial values; GitHub Actions exports `GITHUB_RUN_ATTEMPT=1`, colliding with `OPENCODE_DISABLE_AUTOUPDATE=1`. The guard now compares **names only**, matching the allowlist-built trial environment, with a deterministic regression test.
+- **P0 permission seeding defect.** Seeding ask-mode for every trial would have caused non-interactive OpenCode to auto-reject every tool call; the posture is now explicit and recorded (see Changed).
+- **Task 01 assertion defect.** The substring prohibition on `brew install` also rejected legitimate advice; replaced by the v2 claims prohibition (see Changed).
+
+### Notes
+
+- **Verdict: DEFERRED — no effectiveness claim.** Direction counts are feasibility scopes at 1 repetition over 8 valid blocks, not estimates. The sample is small, assertions are not yet phrasing-robust, one baseline failed by timeout, and both contamination events fell on baseline trials.
+- **No CLI surface change.** No `root` command, flag, output shape, or exit code changed in v0.8.0; `root-eval` is not wired into the CLI.
+- Trial isolation is **process/env-level, not OS-level**; the agent can read the host filesystem. Contamination is detected and invalidated, not prevented.
+- Observed model identity remains unavailable (`None` in 20/20 executions); the harness records the requested model.
+- See `Docs/Eval/milestone-6/MILESTONE-6.md`, `Docs/Eval/milestone-6/run/`, and `Docs/Release/V0_8_RELEASE_REVIEW.md`.
+
 ## [0.7.0] - 2026-09-23
 
 v0.7.0 adds a local capability plane: one `rootd` MCP interface, connector packages, explicit event routes, encrypted checkpoint references, and local fixtures for mail, browser, messages, and finance. `root sync` remains the Nix profile reconcile. The lock schema remains package-only emit 2 / max supported 3.

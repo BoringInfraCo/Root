@@ -1,0 +1,1 @@
+{"attempts":[{"exit_code":0,"index":1,"provider_error":null,"retried":false,"retry_reason":null,"termination":"completed","wall_ms":41889}],"domain":"attempt-log.v1","trial_id":"t003-already-installed-009-baseline-r0"}

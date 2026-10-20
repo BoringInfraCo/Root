@@ -1,0 +1,1 @@
+{"clean":false,"domain":"contamination-report.v1","findings":[{"detail":"target `/opt/homebrew/bin/rg` is outside the trial root","kind":"symlink_outside_root","path":"stub-bin/rg"}],"stub_files_scanned":5,"symlinks_scanned":1}

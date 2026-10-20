@@ -1,0 +1,9 @@
+{"seq":1,"tool":"root","argv":["doctor","--json"],"exit":0,"profile":"root.unhealthy.v1"}
+{"seq":2,"tool":"root","argv":["plan","install","ripgrep","--json"],"exit":1,"profile":"root.unhealthy.v1"}
+{"seq":3,"tool":"root","argv":["install","ripgrep","--json"],"exit":1,"profile":"root.unhealthy.v1"}
+{"seq":4,"tool":"root","argv":["verify","ripgrep","--json"],"exit":1,"profile":"root.unhealthy.v1"}
+{"seq":5,"tool":"brew","argv":["install","ripgrep"],"exit":1,"profile":"installer.record-deny.v1"}
+{"seq":6,"tool":"curl","argv":["https://example.com"],"exit":1,"profile":"installer.record-deny.v1"}
+{"seq":7,"tool":"npm","argv":["install","-g","ripgrep"],"exit":1,"profile":"installer.record-deny.v1"}
+{"seq":8,"tool":"root","argv":["init","--install-nix","--json"],"exit":1,"profile":"root.unhealthy.v1"}
+{"seq":9,"tool":"pip","argv":["install","ripgrep"],"exit":1,"profile":"installer.record-deny.v1"}

@@ -1,0 +1,1 @@
+{"attempts":[{"exit_code":0,"index":1,"provider_error":null,"retried":false,"retry_reason":null,"termination":"completed","wall_ms":57800}],"domain":"attempt-log.v1","trial_id":"t016-runtime-install-008-treatment-r0"}

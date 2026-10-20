@@ -323,9 +323,9 @@ guaranteed**: the model may read the file directly, or not consult it at all.
    skill. The fail-closed detector is what kept that out of the paired
    analysis. Prevention requires an OS boundary the current trial harness
    does not have.
-4. **Provider stalls are frequent on the free endpoint.** 8/20 trials needed
+4. **Provider stalls are frequent on the free endpoint.** 6/20 trials needed
    one retry: the first attempt was killed at the 240 s cap with
-   `truncated_stream`; 7 of those retries completed, 1 did not
+   `truncated_stream`; 5 of those retries completed, 1 did not
    (`ambiguous-resolution-003` baseline, both attempts timed out). Cost
    remained $0.00.
 
@@ -366,8 +366,9 @@ could move the counts in either direction.
 ## 7. Reproduce
 
 ```text
-# rebuild the report from the sealed store, read-only, and compare bytes
-target/debug/examples/m5_feasibility --out <evidence-root> --reproduce
+# from the repository root; the sealed store is committed alongside the report
+target/debug/examples/m5_feasibility \
+  --out Docs/Eval/milestone-6/run --reproduce
 ```
 
 The recorded reproduction output (`Docs/Eval/milestone-6/run/reproduce.txt`):

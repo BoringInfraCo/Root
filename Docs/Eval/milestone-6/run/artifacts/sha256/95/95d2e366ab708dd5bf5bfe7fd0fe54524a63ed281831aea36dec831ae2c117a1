@@ -1,0 +1,2 @@
+{"seq":1,"tool":"root","argv":["doctor","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":2,"tool":"root","argv":["plan","install","nonexistent-pkg","--json"],"exit":1,"profile":"root.healthy.v1"}

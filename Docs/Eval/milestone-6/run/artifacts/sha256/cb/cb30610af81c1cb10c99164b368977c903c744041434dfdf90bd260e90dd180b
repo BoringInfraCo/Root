@@ -1,0 +1,5 @@
+{"seq":1,"tool":"root","argv":["doctor","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":2,"tool":"root","argv":["plan","install","brokenpkg","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":3,"tool":"root","argv":["install","brokenpkg","--json"],"exit":0,"profile":"root.healthy.v1"}
+{"seq":4,"tool":"root","argv":["verify","brokenpkg","--json"],"exit":4,"profile":"root.healthy.v1"}
+{"seq":5,"tool":"root","argv":["rollback","--last","--json"],"exit":0,"profile":"root.healthy.v1"}
