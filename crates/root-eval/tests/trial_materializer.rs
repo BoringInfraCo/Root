@@ -445,6 +445,45 @@ fn parent_secret_is_never_inherited() {
     cleanup_trial(&layout).expect("cleanup");
 }
 
+/// Regression for the GitHub Actions failure on 2026-10-20.
+///
+/// CI exports `GITHUB_RUN_ATTEMPT=1`; the allowlisted trial env also carries
+/// `OPENCODE_DISABLE_AUTOUPDATE=1`. A value-equality scrub check therefore
+/// reported a secret leak even though the parent variable was never
+/// inherited. The guard must compare names only.
+#[test]
+fn common_ci_value_does_not_trigger_a_false_secret_leak() {
+    let base_dir = unique_dir("scrub-ci");
+    let (source, commit) = init_source_repo();
+    let (base_tree, _) = fixture_trees();
+    let spec = make_spec(
+        "trial-scrub-ci",
+        "baseline",
+        resolve(&base_tree),
+        ConditionOverlay { entries: vec![] },
+        &source,
+        &commit,
+        &fake_digest("tree"),
+    );
+    let layout = materialize_trial(&spec, &base_dir).expect("materialize");
+
+    let parent = BTreeMap::from([("GITHUB_RUN_ATTEMPT".to_string(), "1".to_string())]);
+    let scrubbed = scrub_env(&layout, &parent);
+    assert!(
+        !scrubbed.contains_key("GITHUB_RUN_ATTEMPT"),
+        "the CI variable itself must never be inherited"
+    );
+    assert_eq!(
+        scrubbed
+            .get("OPENCODE_DISABLE_AUTOUPDATE")
+            .map(String::as_str),
+        Some("1"),
+        "the allowlisted value is unrelated to the parent variable"
+    );
+
+    cleanup_trial(&layout).expect("cleanup");
+}
+
 // ---------------------------------------------------------------------------
 // 4. Cleanup + residue scan
 // ---------------------------------------------------------------------------

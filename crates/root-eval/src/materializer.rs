@@ -539,17 +539,23 @@ pub fn allowed_env(layout: &TrialLayout) -> BTreeMap<String, String> {
 /// Starts from empty and inserts only [`allowed_env`] entries; `parent` (the
 /// caller's snapshot of the process environment, passed explicitly so this
 /// crate never reads ambient state itself) is consulted solely to fail closed:
-/// any secret-patterned parent key whose name *or value* appears in the trial
-/// map is refused with [`MaterializerError::SecretLeak`].
+/// any secret-patterned parent **key** that appears in the trial map is
+/// refused with [`MaterializerError::SecretLeak`].
+///
+/// The check deliberately does **not** compare parent values against the trial
+/// values. The trial map is built from an allowlist and never reads the
+/// parent, so a value comparison adds no protection; it only produces false
+/// positives when a secret-patterned parent variable carries a common value.
+/// GitHub Actions is the canonical example: `GITHUB_RUN_ATTEMPT=1` collides
+/// with the allowlisted `OPENCODE_DISABLE_AUTOUPDATE=1` and must not be
+/// reported as a leak.
 pub fn scrub_env(
     layout: &TrialLayout,
     parent: &BTreeMap<String, String>,
 ) -> BTreeMap<String, String> {
     let env = allowed_env(layout);
-    for (key, value) in parent {
-        if secret_pattern_hit(key)
-            && (env.contains_key(key.as_str()) || env.values().any(|v| v == value))
-        {
+    for key in parent.keys() {
+        if secret_pattern_hit(key) && env.contains_key(key.as_str()) {
             // `allowed_env` is constructed without parent input, so this
             // branch is unreachable by construction; it exists so a future
             // allowlist edit that reintroduces inheritance fails loudly in
